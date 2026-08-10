@@ -29,7 +29,7 @@
 
 ## 🚀 Installation
 
-Ensure you have **Python 3.10+** and [`uv`](https://github.com/astral-sh/uv) installed on your system.
+Ensure you have [`uv`](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) installed on your system.
 
 1. **Clone the Repository:**
 
@@ -62,7 +62,7 @@ uv run python -m src.app
 uv run taxo-trainer
 ```
 
-Open your browser and navigate to **`http://127.0.0.1:8080`**.
+Open your browser and navigate to [**`http://127.0.0.1:8080`**](http://127.0.0.1:8080).
 
 ---
 
