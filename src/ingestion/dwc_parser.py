@@ -167,7 +167,7 @@ def load_multimedia_index(source: Path) -> dict[str, list[str]]:
     """Index media URLs from multimedia.txt if present in the dataset directory.
 
     Args:
-        base_dir: Directory containing DarwinCore files.
+        source: Path to occurrence.txt or DarwinCore archive (.zip).
 
     Returns:
         Dict[str, List[str]]: Map of gbifID/occurrence_id -> list of image URLs.
@@ -178,6 +178,11 @@ def load_multimedia_index(source: Path) -> dict[str, list[str]]:
             source.parent / "multimedia.txt",
             source.parent / "verbatim" / "multimedia.txt",
         ]
+        for cand in candidates:
+            if cand.exists():
+                with open(cand, "r", encoding="utf-8", errors="replace") as f:
+                    reader = csv.DictReader(f, delimiter="\t")
+                    return parse_multimedia_txt(reader)
     elif source.name.lower().endswith(".zip"):
         try:
             with open_file_in_zip(source, "multimedia.txt", encoding="utf-8") as f:
@@ -193,14 +198,7 @@ def load_multimedia_index(source: Path) -> dict[str, list[str]]:
                 return parse_multimedia_txt(reader)
         except FileNotFoundError:
             pass
-    else:
-        raise ValueError("Source must be a file ending with .txt or .zip")
 
-    for cand in candidates:
-        if cand.exists():
-            with open(cand, "r", encoding="utf-8", errors="replace") as f:
-                reader = csv.DictReader(f, delimiter="\t")
-                return parse_multimedia_txt(reader)
     return media_map
 
 
