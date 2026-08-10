@@ -1,0 +1,3 @@
+"""
+Taxo-Trainer package root.
+"""
