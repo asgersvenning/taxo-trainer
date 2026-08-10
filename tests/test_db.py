@@ -48,3 +48,35 @@ def test_init_user_db_in_memory():
         "guessed_taxon_key", "is_correct", "used_hint", "attempt_timestamp"
     }
     assert expected_cols.issubset(columns)
+
+
+def test_prune_gbif_cache():
+    """Test 7-day expiration and LRU size pruning in gbif_cache.db."""
+    import time
+
+    from src.db import prune_gbif_cache
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE gbif_api_cache (
+            taxon_key TEXT PRIMARY KEY,
+            response_json TEXT NOT NULL,
+            cached_at INTEGER NOT NULL
+        );
+    """)
+
+    now = int(time.time())
+    old_ts = now - (10 * 86400)  # 10 days old (expired)
+    recent_ts = now - (1 * 86400)  # 1 day old (valid)
+
+    conn.execute("INSERT INTO gbif_api_cache VALUES ('old_key', '{}', ?)", (old_ts,))
+    conn.execute("INSERT INTO gbif_api_cache VALUES ('new_key', '{}', ?)", (recent_ts,))
+
+    # Prune with 7-day max age
+    pruned = prune_gbif_cache(conn, max_size_mb=100.0, max_age_days=7)
+    assert pruned == 1
+
+    remaining = conn.execute("SELECT taxon_key FROM gbif_api_cache").fetchall()
+    keys = [r["taxon_key"] for r in remaining]
+    assert keys == ["new_key"]

@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 APP_DB_PATH = DATA_DIR / "app_data.db"
 USER_DB_PATH = DATA_DIR / "user_data.db"
+GBIF_CACHE_DB_PATH = DATA_DIR / "gbif_cache.db"
 
 
 def ensure_data_dir() -> Path:
@@ -40,6 +41,87 @@ def get_db_connection(db_path: Path = APP_DB_PATH) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA foreign_keys=ON;")
     return conn
+
+
+def get_gbif_cache_connection() -> sqlite3.Connection:
+    """Create and initialize a dedicated connection for the gbif_cache.db database file.
+
+    Returns:
+        sqlite3.Connection: Database connection to separate gbif_cache.db file.
+    """
+    conn = get_db_connection(GBIF_CACHE_DB_PATH)
+    with conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS gbif_api_cache (
+                taxon_key TEXT PRIMARY KEY,
+                response_json TEXT NOT NULL,
+                cached_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_gbif_cache_ts ON gbif_api_cache(cached_at);
+        """)
+    return conn
+
+
+def prune_gbif_cache(
+    conn: sqlite3.Connection | None = None,
+    max_size_mb: float = 100.0,
+    max_age_days: int = 7,
+) -> int:
+    """Prune expired (> 7 days) and LRU cache entries to maintain size under max_size_mb (100 MB).
+
+    Args:
+        conn: Optional SQLite connection to gbif_cache.db.
+        max_size_mb: Maximum allowed database size in MB (default: 100.0).
+        max_age_days: Maximum age of cached entries in days (default: 7).
+
+    Returns:
+        int: Number of deleted cache rows.
+    """
+    import time
+
+    should_close = False
+    if conn is None:
+        conn = get_gbif_cache_connection()
+        should_close = True
+
+    deleted_count = 0
+    now_ts = int(time.time())
+    max_age_sec = max_age_days * 86400
+
+    try:
+        # 1. Delete entries older than max_age_days (7 days)
+        cutoff_ts = now_ts - max_age_sec
+        with conn:
+            cursor = conn.execute(
+                "DELETE FROM gbif_api_cache WHERE cached_at < ?", (cutoff_ts,)
+            )
+            deleted_count += cursor.rowcount
+
+        # 2. Enforce 100 MB max size limit via LRU eviction
+        max_bytes = int(max_size_mb * 1024 * 1024)
+        cache_file = GBIF_CACHE_DB_PATH
+
+        if cache_file.exists() and cache_file.stat().st_size > max_bytes:
+            while cache_file.exists() and cache_file.stat().st_size > max_bytes:
+                with conn:
+                    c_del = conn.execute("""
+                        DELETE FROM gbif_api_cache
+                        WHERE taxon_key IN (
+                            SELECT taxon_key FROM gbif_api_cache
+                            ORDER BY cached_at ASC
+                            LIMIT 50
+                        );
+                    """)
+                    if c_del.rowcount == 0:
+                        break
+                    deleted_count += c_del.rowcount
+
+        if deleted_count > 0:
+            conn.execute("VACUUM;")
+        return deleted_count
+    finally:
+        if should_close:
+            conn.close()
 
 
 def init_app_db(conn: sqlite3.Connection | None = None) -> None:
@@ -86,12 +168,6 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
                     coordinate_uncertainty_m REAL,
                     recorded_by TEXT,
                     references_url TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS gbif_api_cache (
-                    taxon_key TEXT PRIMARY KEY,
-                    response_json TEXT NOT NULL,
-                    cached_at INTEGER NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS app_metadata (

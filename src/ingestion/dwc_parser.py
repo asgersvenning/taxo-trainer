@@ -11,10 +11,10 @@ import re
 import sqlite3
 import zipfile
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 from src.db import APP_DB_PATH, get_db_connection, init_app_db, set_app_metadata
 
@@ -68,7 +68,7 @@ def parse_month(month_str: str, date_str: str) -> int | None:
 
 @contextmanager
 def open_file_in_zip(
-    zip_path: Union[str, Path],
+    zip_path: str | Path,
     file_name: str,
     mode: str = "r",
     encoding: str = "utf-8",

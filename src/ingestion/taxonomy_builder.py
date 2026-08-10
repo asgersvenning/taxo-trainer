@@ -9,7 +9,12 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
-from src.db import APP_DB_PATH, get_db_connection
+from src.db import (
+    APP_DB_PATH,
+    get_db_connection,
+    get_gbif_cache_connection,
+    prune_gbif_cache,
+)
 
 
 def update_occurrence_counts(conn: sqlite3.Connection | None = None) -> int:
@@ -145,7 +150,6 @@ def rebuild_indices(conn: sqlite3.Connection | None = None) -> None:
         if should_close:
             conn.close()
 
-
 LANG_MAP = {
     "dan": "da", "da": "da", "danish": "da",
     "eng": "en", "en": "en", "english": "en",
@@ -157,13 +161,59 @@ LANG_MAP = {
     "nld": "nl", "dut": "nl", "nl": "nl", "dutch": "nl",
 }
 
+LANG_COUNTRY_MAP = {
+    "da": "DK",
+    "sv": "SE",
+    "no": "NO",
+    "de": "DE",
+    "nl": "NL",
+    "fr": "FR",
+    "es": "ES",
+    "en": "GB",
+}
+
+
+def score_vernacular_item(item: dict, code: str) -> int:
+    """Calculate quality score for a GBIF vernacular name record.
+
+    Higher scores indicate higher authority/official national sources.
+    Negative scores indicate known corrupt datasets (e.g., DAISIE misalignments).
+    """
+    source = (item.get("source") or "").lower()
+    country = (item.get("country") or "").upper()
+    preferred = bool(item.get("preferred"))
+
+    if "daisie" in source or "alien invasive species" in source:
+        return -100
+
+    score = 0
+    if preferred:
+        score += 100
+
+    target_country = LANG_COUNTRY_MAP.get(code)
+    if target_country and country == target_country:
+        score += 50
+
+    trusted_keywords = (
+        "national checklist", "rødliste", "red list", "catalogue of life",
+        "dyntaxa", "nordic crop", "artsdatabanken", "artdatabanken", "flora",
+        "danish", "sweden", "norway", "denmark", "checklist",
+    )
+    if any(kw in source for kw in trusted_keywords):
+        score += 30
+
+    vname = (item.get("vernacularName") or "").strip()
+    if vname and vname[0].isupper():
+        score += 5
+
+    return score
+
 
 def enrich_vernacular_names_from_gbif(
     conn: sqlite3.Connection | None = None,
     limit: int | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> int:
-
     """Fetch missing Danish (and English) vernacular names from GBIF Species API.
 
     Resolves canonical names via GBIF match API and fetches backbone vernacular names
@@ -189,16 +239,10 @@ def enrich_vernacular_names_from_gbif(
         conn = get_db_connection(APP_DB_PATH)
         should_close = True
 
-    try:
-        with conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS gbif_api_cache (
-                    taxon_key TEXT PRIMARY KEY,
-                    response_json TEXT NOT NULL,
-                    cached_at INTEGER NOT NULL
-                );
-            """)
+    cache_conn = get_gbif_cache_connection()
+    prune_gbif_cache(cache_conn, max_size_mb=100.0, max_age_days=7)
 
+    try:
         cursor = conn.execute(
             "SELECT taxon_key, canonical_name, vernacular_da, vernacular_en FROM taxa"
         )
@@ -219,8 +263,8 @@ def enrich_vernacular_names_from_gbif(
             cache_key = canonical.lower()
             data = None
 
-            # 1. Check persistent SQLite disk cache by canonical name
-            cache_cursor = conn.execute(
+            # 1. Check persistent SQLite disk cache in gbif_cache.db by canonical name
+            cache_cursor = cache_conn.execute(
                 "SELECT response_json, cached_at FROM gbif_api_cache WHERE taxon_key = ?",
                 (cache_key,),
             )
@@ -253,18 +297,17 @@ def enrich_vernacular_names_from_gbif(
                                         raw_bytes = v_resp.read()
                                         raw_str = raw_bytes.decode("utf-8")
                                         data = json.loads(raw_str)
-                                        with conn:
-                                            conn.execute(
+                                        with cache_conn:
+                                            cache_conn.execute(
                                                 "INSERT OR REPLACE INTO gbif_api_cache (taxon_key, response_json, cached_at) VALUES (?, ?, ?)",
                                                 (cache_key, raw_str, now_ts),
                                             )
                 except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, sqlite3.Error):
                     pass
 
-
             if data and "results" in data:
                 results = data.get("results", [])
-                by_lang = {}
+                by_lang_scored: dict[str, dict[str, int]] = {}
 
                 for item in results:
                     raw_lang = (item.get("language") or "").lower()
@@ -275,14 +318,19 @@ def enrich_vernacular_names_from_gbif(
 
                     code = LANG_MAP.get(raw_lang)
                     if code:
-                        by_lang.setdefault(code, [])
-                        if vname not in by_lang[code]:
-                            by_lang[code].append(vname)
+                        sc = score_vernacular_item(item, code)
+                        if sc < 0:
+                            continue
+                        by_lang_scored.setdefault(code, {})
+                        by_lang_scored[code][vname] = max(by_lang_scored[code].get(vname, -999), sc)
 
                 vernacular_dict = {}
-                for code, candidates in by_lang.items():
-                    candidates.sort(key=lambda x: (len(x.split()), len(x)))
-                    vernacular_dict[code] = "|".join(candidates)
+                for code, name_scores in by_lang_scored.items():
+                    sorted_names = sorted(
+                        name_scores.keys(),
+                        key=lambda x, ns=name_scores: (-ns[x], len(x.split()), len(x)),
+                    )
+                    vernacular_dict[code] = "|".join(sorted_names)
 
                 new_da = vernacular_dict.get("da")
                 new_en = vernacular_dict.get("en")
@@ -298,7 +346,6 @@ def enrich_vernacular_names_from_gbif(
                             v_dict = {}
                         v_dict["en"] = old_da
                         v_json_str = json.dumps(v_dict, ensure_ascii=False)
-
 
                 if v_json_str or new_da or new_en:
                     with conn:
@@ -320,6 +367,7 @@ def enrich_vernacular_names_from_gbif(
 
         return updated_count
     finally:
+        cache_conn.close()
         if should_close:
             conn.close()
 

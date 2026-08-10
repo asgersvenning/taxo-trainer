@@ -139,7 +139,6 @@ def render_settings_view(
                             app_conn.execute("DELETE FROM occurrences;")
                             app_conn.execute("DELETE FROM taxa;")
                             app_conn.execute("DELETE FROM app_metadata;")
-                            app_conn.execute("DELETE FROM gbif_api_cache;")
                         rebuild_indices(app_conn)
                         ui.notify(
                             "Data source cleared successfully. Database reset.",
