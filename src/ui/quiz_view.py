@@ -38,8 +38,9 @@ class QuizViewState:
         self.last_validation_result = None
         self.diagnostic_photo_url: str | None = None
         self.diagnostic_guessed_name: str | None = None
-
-
+        self.matched_genus: str | None = None
+        self.matched_family: str | None = None
+        self.matched_order: str | None = None
 
 
 def render_quiz_view(state: QuizViewState) -> None:
@@ -65,6 +66,9 @@ def render_quiz_view(state: QuizViewState) -> None:
         state.last_validation_result = None
         state.diagnostic_photo_url = None
         state.diagnostic_guessed_name = None
+        state.matched_genus = None
+        state.matched_family = None
+        state.matched_order = None
         state.current_question = sample_next_question(
             app_conn, user_conn, state.filters, state.seen_set
         )
@@ -85,6 +89,8 @@ def render_quiz_view(state: QuizViewState) -> None:
 
         if res.is_correct and res.matched_rank == "SPECIES":
             state.solved = True
+            state.matched_genus = state.current_question.genus
+            state.matched_family = state.current_question.family
             log_attempt(
                 user_conn,
                 state.current_question.occurrence_id,
@@ -99,6 +105,18 @@ def render_quiz_view(state: QuizViewState) -> None:
             }
         elif res.is_correct:
             # Correct Family or Genus rank (allow user to refine to Species)
+            if res.matched_rank == "GENUS":
+                state.matched_genus = state.current_question.genus
+            elif res.matched_rank == "FAMILY":
+                state.matched_family = state.current_question.family
+            elif res.matched_rank == "ORDER":
+                target_row = app_conn.execute(
+                    "SELECT order_name FROM taxa WHERE taxon_key = ?",
+                    (state.current_question.taxon_key,),
+                ).fetchone()
+                if target_row and "order_name" in target_row and target_row["order_name"]:
+                    state.matched_order = target_row["order_name"]
+
             state.last_feedback = {
                 "type": "info",
                 "message": res.feedback_message,
@@ -324,7 +342,15 @@ def render_quiz_view(state: QuizViewState) -> None:
                             if not text or len(text.strip()) < 2:
                                 suggestions_container.classes(add="hidden")
                                 return
-                            matches = autocomplete_taxa(app_conn, text, limit=5)
+                            matches = autocomplete_taxa(
+                                app_conn,
+                                text,
+                                limit=5,
+                                lang=state.filters.language,
+                                parent_genus=state.matched_genus,
+                                parent_family=state.matched_family,
+                                parent_order=state.matched_order,
+                            )
                             suggestions_container.clear()
                             if matches:
                                 suggestions_container.classes(remove="hidden")
@@ -344,7 +370,15 @@ def render_quiz_view(state: QuizViewState) -> None:
                             val = input_field.value
                             if not val or not val.strip():
                                 return
-                            matches = autocomplete_taxa(app_conn, val, limit=1)
+                            matches = autocomplete_taxa(
+                                app_conn,
+                                val,
+                                limit=1,
+                                lang=state.filters.language,
+                                parent_genus=state.matched_genus,
+                                parent_family=state.matched_family,
+                                parent_order=state.matched_order,
+                            )
                             if matches:
                                 handle_submit_guess(matches[0]["value"])
                             else:

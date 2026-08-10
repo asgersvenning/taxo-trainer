@@ -206,3 +206,21 @@ def test_sampling_whitelist_and_blacklist(setup_engine_dbs):
     sampled_f = sample_stage1_taxon(app_conn, f_exc)
     assert str(sampled_f) == "2865545"  # Fagus sylvatica
 
+
+def test_parent_scoped_autocomplete(setup_engine_dbs):
+    """Test parent rank scoping (parent_genus, parent_family) in autocomplete_taxa."""
+    app_conn, _ = setup_engine_dbs
+
+    # When parent_genus='Quercus' is set, matching 'rob' returns Quercus robur
+    matches_q = autocomplete_taxa(app_conn, "rob", parent_genus="Quercus")
+    assert len(matches_q) == 1
+    assert matches_q[0]["canonical_name"] == "Quercus robur"
+
+    # When parent_genus='Quercus' is set, typing 'sylv' (Fagus) returns 0 results
+    matches_f = autocomplete_taxa(app_conn, "sylv", parent_genus="Quercus")
+    assert len(matches_f) == 0
+
+    # When parent_family='Fagaceae' is set, matching 'Eg' returns Quercus robur (Stilk-Eg)
+    matches_fam = autocomplete_taxa(app_conn, "Eg", parent_family="Fagaceae")
+    assert len(matches_fam) >= 1
+
