@@ -400,7 +400,7 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
 
         for r_name, r_level in targets:
             existing = conn.execute("SELECT vernacular_da, vernacular_en FROM higher_ranks WHERE rank_name = ?", (r_name,)).fetchone()
-            if existing and (existing["vernacular_da"] or existing["vernacular_en"]):
+            if existing and existing["vernacular_da"]:
                 continue
 
             match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(r_name)}"
@@ -410,7 +410,13 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
                 with urllib.request.urlopen(req, timeout=4) as resp:
                     if resp.status == 200:
                         mdata = json.loads(resp.read().decode("utf-8"))
-                        gbif_key = mdata.get("usageKey") or mdata.get("speciesKey")
+                        gbif_key = None
+                        if r_level == "GENUS":
+                            gbif_key = mdata.get("genusKey") or mdata.get("usageKey")
+                        elif r_level == "FAMILY":
+                            gbif_key = mdata.get("familyKey") or mdata.get("usageKey")
+                        else:
+                            gbif_key = mdata.get("usageKey") or mdata.get("speciesKey")
                         if gbif_key:
                             v_url = f"https://api.gbif.org/v1/species/{gbif_key}/vernacularNames?limit=100"
                             req2 = urllib.request.Request(v_url, headers={"User-Agent": "taxo-trainer/1.0"})

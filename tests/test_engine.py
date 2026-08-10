@@ -224,3 +224,72 @@ def test_parent_scoped_autocomplete(setup_engine_dbs):
     matches_fam = autocomplete_taxa(app_conn, "Eg", parent_family="Fagaceae")
     assert len(matches_fam) >= 1
 
+
+def test_autocomplete_rank_ordering_species_before_genus(setup_engine_dbs):
+    """Test that equal priority matches are ordered by rank level (species before genus)."""
+    app_conn, _ = setup_engine_dbs
+
+    # Insert a genus 'Quercus' with vernacular_da 'Stilk-Eg' in higher_ranks to create equal priority match
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Quercus', 'GENUS', 'Stilk-Eg');
+    """)
+    app_conn.commit()
+
+    # Querying 'Stilk-Eg' matches both Species (Quercus robur) and Genus (Quercus) at Priority 0.
+    # Species should come BEFORE Genus.
+    matches = autocomplete_taxa(app_conn, "Stilk-Eg")
+    assert len(matches) >= 2
+    assert matches[0]["rank"] == "SPECIES"
+    assert matches[0]["canonical_name"] == "Quercus robur"
+    assert matches[1]["rank"] == "GENUS"
+    assert matches[1]["canonical_name"] == "Quercus"
+
+
+def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(setup_engine_dbs):
+    """Test that exact canonical match on genus beats secondary vernacular match on species."""
+    app_conn, _ = setup_engine_dbs
+
+    # Insert Artemisia vulgaris species with English/secondary vernacular 'Artemisia'
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES (99999, 'Artemisia vulgaris', 'Artemisia vulgaris L.', 'Artemisia vulgaris L.', 'SPECIES', 'Asteraceae', 'Artemisia', 'Grå-bynke', 'Artemisia|Mugwort');
+    """)
+    # Insert Artemisia genus
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level)
+        VALUES ('Artemisia', 'GENUS');
+    """)
+    app_conn.commit()
+
+    # Searching 'Artemisia' (with lang='da') should rank Genus (canonical exact match) before Species (secondary vernacular match)
+    matches = autocomplete_taxa(app_conn, "artemisia", lang="da")
+    assert len(matches) >= 2
+    assert matches[0]["rank"] == "GENUS"
+    assert matches[0]["canonical_name"] == "Artemisia"
+    assert matches[1]["rank"] == "SPECIES"
+    assert matches[1]["canonical_name"] == "Artemisia vulgaris"
+
+
+def test_autocomplete_prefix_match_ranks_genus_before_species(setup_engine_dbs):
+    """Test that a prefix match on a genus name ranks Genus before species."""
+    app_conn, _ = setup_engine_dbs
+
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES (88888, 'Trifolium dubium', 'Trifolium dubium Sibth.', 'Trifolium dubium Sibth.', 'SPECIES', 'Fabaceae', 'Trifolium', 'Fin kløver', 'Lesser trefoil');
+    """)
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Trifolium', 'GENUS', 'Kløver-slægten');
+    """)
+    app_conn.commit()
+
+    # Searching 'trifoliu' should rank Genus (Trifolium) before Species (Trifolium dubium)
+    matches = autocomplete_taxa(app_conn, "trifoliu", lang="da")
+    assert len(matches) >= 2
+    assert matches[0]["rank"] == "GENUS"
+    assert matches[0]["canonical_name"] == "Trifolium"
+    assert matches[1]["rank"] == "SPECIES"
+    assert matches[1]["canonical_name"] == "Trifolium dubium"
+

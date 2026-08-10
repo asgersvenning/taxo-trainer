@@ -137,13 +137,16 @@ def render_quiz_view(state: QuizViewState) -> None:
                     "message": res.feedback_message,
                 }
 
-                guessed_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (res.matched_taxon_key,)).fetchone()
-                if guessed_row:
-                    g_disp = get_display_name(guessed_row, lang=state.filters.language)
-                    g_sci = guessed_row["canonical_name"]
-                    state.diagnostic_guessed_name = f"{g_disp} ({g_sci})" if g_disp != g_sci else g_sci
+                if res.matched_rank in ("GENUS", "FAMILY"):
+                    state.diagnostic_guessed_name = res.matched_name
                 else:
-                    state.diagnostic_guessed_name = res.matched_name or guess_text
+                    guessed_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (res.matched_taxon_key,)).fetchone()
+                    if guessed_row:
+                        g_disp = get_display_name(guessed_row, lang=state.filters.language)
+                        g_sci = guessed_row["canonical_name"]
+                        state.diagnostic_guessed_name = f"{g_disp} ({g_sci})" if g_disp != g_sci else g_sci
+                    else:
+                        state.diagnostic_guessed_name = res.matched_name or guess_text
 
                 diag_cursor = app_conn.execute(
                     "SELECT media_urls FROM occurrences WHERE taxon_key = ? LIMIT 1",
@@ -250,6 +253,8 @@ def render_quiz_view(state: QuizViewState) -> None:
         refresh_quiz_ui()
 
     nav_callbacks: dict = {}
+    active_input: list = [None]
+    is_input_focused: list[bool] = [False]
 
     def handle_key_event(e) -> None:
         """Global keyboard shortcut handler for observation and photo navigation."""
@@ -264,18 +269,39 @@ def render_quiz_view(state: QuizViewState) -> None:
             ctrl = ctrl or ("control" in mod_set or "ctrl" in mod_set)
             alt = alt or ("alt" in mod_set)
 
-        if ctrl and e.key == "ArrowRight":
-            load_new_question()
-        elif alt and e.key == "ArrowRight" and nav_callbacks.get("next"):
-            nav_callbacks["next"]()
-        elif alt and e.key == "ArrowLeft" and nav_callbacks.get("prev"):
-            nav_callbacks["prev"]()
+        inp = active_input[0]
+
+        # 1. Escape key toggles/defocuses input field
+        if e.key == "Escape":
+            if inp:
+                if is_input_focused[0]:
+                    inp.run_method("blur")
+                else:
+                    inp.run_method("focus")
+            return
+
+        # 2. Focus shortcuts when input is NOT focused: '/', 'F2', or 'Ctrl+K'
+        key_str = str(e.key).lower()
+        if (key_str in ("/", "f2") or (ctrl and key_str == "k")) and not is_input_focused[0]:
+            if inp:
+                inp.run_method("focus")
+            return
+
+        # 3. Global navigation actions (only when input field is NOT focused)
+        if not is_input_focused[0]:
+            if (ctrl and e.key == "ArrowRight") or e.key in ("n", "N"):
+                load_new_question()
+            elif (e.key == "ArrowRight" or e.key in ("d", "D") or (alt and e.key == "ArrowRight")) and nav_callbacks.get("next"):
+                nav_callbacks["next"]()
+            elif (e.key == "ArrowLeft" or e.key in ("a", "A") or (alt and e.key == "ArrowLeft")) and nav_callbacks.get("prev"):
+                nav_callbacks["prev"]()
 
 
     ui.keyboard(on_key=handle_key_event)
 
     def refresh_quiz_ui() -> None:
         """Re-render reactive quiz interface using 75% Image / 25% UI layout."""
+        is_input_focused[0] = False
         main_container.clear()
         with main_container:
             if not state.current_question:
@@ -313,7 +339,7 @@ def render_quiz_view(state: QuizViewState) -> None:
                     # 2. Next Observation / Skip Action Buttons
                     with ui.row().classes("w-full justify-between items-center gap-1"):
                         ui.button(
-                            "Next Observation ▶",
+                            "Next Observation ▶  [ n ]",
                             color="positive" if (state.solved or state.last_feedback) else "primary",
                             on_click=load_new_question,
                         ).classes("w-full font-bold text-xs py-1 shadow")
@@ -328,14 +354,29 @@ def render_quiz_view(state: QuizViewState) -> None:
 
                     # 3. Input & Guess Submission Box
                     with ui.card().classes("w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700 space-y-2"):
-                        ui.label("Identify Taxon (Species / Genus / Family):").classes("font-bold text-xs text-gray-200")
+                        with ui.row().classes("w-full justify-between items-center"):
+                            ui.label("Identify Taxon:").classes("font-bold text-xs text-gray-200")
+                            ui.label("Focus: / or Esc | Blur: Esc").classes("text-[10px] text-yellow-400 font-mono")
 
                         input_field = ui.input(
-                            placeholder="Type species, genus, family, or vernacular name...",
+                            placeholder="Type species, genus, family... (/ to focus, Esc to blur)",
                         ).classes("w-full text-xs text-white").props("outlined dark dense clearable")
+
+                        active_input[0] = input_field
 
                         # Dynamic Autocomplete Suggestion Chips
                         suggestions_container = ui.column().classes("w-full gap-1 hidden max-h-36 overflow-y-auto")
+
+                        def on_focus() -> None:
+                            is_input_focused[0] = True
+
+                        def on_blur() -> None:
+                            is_input_focused[0] = False
+                            ui.timer(0.25, lambda: suggestions_container.classes(add="hidden"), once=True)
+
+                        input_field.on("focus", on_focus)
+                        input_field.on("blur", on_blur)
+                        input_field.on("keydown.escape", lambda: input_field.run_method("blur"))
 
                         def update_suggestions(e) -> None:
                             text = e.value
