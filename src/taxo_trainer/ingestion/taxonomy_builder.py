@@ -247,6 +247,7 @@ def enrich_vernacular_names_from_gbif(
     conn: sqlite3.Connection | None = None,
     limit: int | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    force_all: bool = False,
 ) -> int:
     """Fetch missing Danish (and English) vernacular names from GBIF Species API.
 
@@ -258,6 +259,7 @@ def enrich_vernacular_names_from_gbif(
         conn: Optional SQLite connection.
         limit: Max number of taxa to enrich in one call.
         progress_callback: Optional callback receiving (processed_count, total_count).
+        force_all: If True, re-fetch all taxa even if vernacular names are already present.
 
     Returns:
         int: Number of taxa updated with new vernacular names.
@@ -385,54 +387,65 @@ def enrich_vernacular_names_from_gbif(
                 ):
                     pass
 
-                # Query GBIF species search API for all input and species name variations
-                for sname in search_names:
-                    try:
-                        search_url = f"https://api.gbif.org/v1/species/search?q={urllib.parse.quote(sname)}&limit=50"
-                        req3 = urllib.request.Request(
-                            search_url, headers={"User-Agent": "taxo-trainer/1.0"}
-                        )
-                        with urllib.request.urlopen(req3, timeout=5) as s_resp:
-                            if s_resp.status == 200:
-                                sdata = json.loads(s_resp.read().decode("utf-8"))
-                                for s_item in sdata.get("results", []):
-                                    all_vernacular_items.extend(
-                                        s_item.get("vernacularNames", [])
-                                    )
-                                    sk = s_item.get("key")
-                                    if sk and sk not in keys_to_fetch:
-                                        try:
-                                            v_url2 = f"https://api.gbif.org/v1/species/{sk}/vernacularNames?limit=1000"
-                                            req4 = urllib.request.Request(
-                                                v_url2,
-                                                headers={
-                                                    "User-Agent": "taxo-trainer/1.0"
-                                                },
-                                            )
-                                            with urllib.request.urlopen(
-                                                req4, timeout=3
-                                            ) as v_resp2:
-                                                if v_resp2.status == 200:
-                                                    v_json2 = json.loads(
-                                                        v_resp2.read().decode("utf-8")
-                                                    )
-                                                    all_vernacular_items.extend(
-                                                        v_json2.get("results", [])
-                                                    )
-                                        except (
-                                            urllib.error.URLError,
-                                            urllib.error.HTTPError,
-                                            TimeoutError,
-                                            json.JSONDecodeError,
-                                        ):
-                                            pass
-                    except (
-                        urllib.error.URLError,
-                        urllib.error.HTTPError,
-                        TimeoutError,
-                        json.JSONDecodeError,
-                    ):
-                        pass
+                # If direct match already returned a trusted Danish name (score >= 30), skip expensive search API calls
+                has_good_da = any(
+                    item.get("vernacularName")
+                    and (item.get("language") or "").lower() in ("da", "dan")
+                    and score_vernacular_item(item, "da") >= 30
+                    for item in all_vernacular_items
+                )
+
+                if not has_good_da:
+                    # Fallback: Query GBIF species search API for input/species name variations
+                    for sname in search_names:
+                        try:
+                            search_url = f"https://api.gbif.org/v1/species/search?q={urllib.parse.quote(sname)}&limit=50"
+                            req3 = urllib.request.Request(
+                                search_url, headers={"User-Agent": "taxo-trainer/1.0"}
+                            )
+                            with urllib.request.urlopen(req3, timeout=5) as s_resp:
+                                if s_resp.status == 200:
+                                    sdata = json.loads(s_resp.read().decode("utf-8"))
+                                    for s_item in sdata.get("results", []):
+                                        all_vernacular_items.extend(
+                                            s_item.get("vernacularNames", [])
+                                        )
+                                        sk = s_item.get("key")
+                                        if sk and sk not in keys_to_fetch:
+                                            try:
+                                                v_url2 = f"https://api.gbif.org/v1/species/{sk}/vernacularNames?limit=1000"
+                                                req4 = urllib.request.Request(
+                                                    v_url2,
+                                                    headers={
+                                                        "User-Agent": "taxo-trainer/1.0"
+                                                    },
+                                                )
+                                                with urllib.request.urlopen(
+                                                    req4, timeout=3
+                                                ) as v_resp2:
+                                                    if v_resp2.status == 200:
+                                                        v_json2 = json.loads(
+                                                            v_resp2.read().decode(
+                                                                "utf-8"
+                                                            )
+                                                        )
+                                                        all_vernacular_items.extend(
+                                                            v_json2.get("results", [])
+                                                        )
+                                            except (
+                                                urllib.error.URLError,
+                                                urllib.error.HTTPError,
+                                                TimeoutError,
+                                                json.JSONDecodeError,
+                                            ):
+                                                pass
+                        except (
+                            urllib.error.URLError,
+                            urllib.error.HTTPError,
+                            TimeoutError,
+                            json.JSONDecodeError,
+                        ):
+                            pass
 
                 data = {"results": all_vernacular_items}
                 raw_str = json.dumps(data, ensure_ascii=False)
@@ -486,7 +499,7 @@ def enrich_vernacular_names_from_gbif(
         processed_count = 0
         row_dicts = [dict(r) for r in rows]
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=30) as executor:
             future_map = {
                 executor.submit(process_single_row, rd): rd for rd in row_dicts
             }
