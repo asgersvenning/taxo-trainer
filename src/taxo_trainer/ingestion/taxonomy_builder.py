@@ -265,55 +265,145 @@ def enrich_vernacular_names_from_gbif(
         now_ts = int(time.time())
         one_week_sec = 7 * 86400  # 1 week cache TTL
 
-        for idx, row in enumerate(rows):
-            tkey = str(row["taxon_key"])
-            canonical = row["canonical_name"].strip()
-            old_da = (row["vernacular_da"] or "").strip()
-            old_en = (row["vernacular_en"] or "").strip()
+        import threading
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        thread_local = threading.local()
+
+        def get_thread_cache_conn() -> sqlite3.Connection:
+            if not hasattr(thread_local, "conn"):
+                thread_local.conn = get_gbif_cache_connection()
+            return thread_local.conn
+
+        def process_single_row(
+            row_dict: dict,
+        ) -> tuple[str, str | None, str | None, str | None]:
+            tkey = str(row_dict["taxon_key"])
+            canonical = row_dict["canonical_name"].strip()
+            old_da = (row_dict["vernacular_da"] or "").strip()
+            old_en = (row_dict["vernacular_en"] or "").strip()
             cache_key = canonical.lower()
             data = None
 
-            # 1. Check persistent SQLite disk cache in gbif_cache.db by canonical name
-            cache_cursor = cache_conn.execute(
+            t_cache_conn = get_thread_cache_conn()
+
+            cache_cursor = t_cache_conn.execute(
                 "SELECT response_json, cached_at FROM gbif_api_cache WHERE taxon_key = ?",
                 (cache_key,),
             )
             cache_row = cache_cursor.fetchone()
 
             if cache_row:
-                cached_json, cached_at = cache_row["response_json"], cache_row["cached_at"]
+                cached_json, cached_at = (
+                    cache_row["response_json"],
+                    cache_row["cached_at"],
+                )
                 if (now_ts - cached_at) < one_week_sec:
                     try:
                         data = json.loads(cached_json)
                     except (json.JSONDecodeError, TypeError, ValueError):
                         data = None
 
-            # 2. Fetch from remote GBIF API if missing or cache expired (> 1 week)
             if data is None:
+                all_vernacular_items = []
+                gbif_key = None
                 match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canonical)}"
-                req = urllib.request.Request(match_url, headers={"User-Agent": "taxo-trainer/1.0"})
+                req = urllib.request.Request(
+                    match_url, headers={"User-Agent": "taxo-trainer/1.0"}
+                )
 
                 try:
                     with urllib.request.urlopen(req, timeout=5) as resp:
                         if resp.status == 200:
                             match_data = json.loads(resp.read().decode("utf-8"))
-                            gbif_key = match_data.get("usageKey") or match_data.get("speciesKey") or match_data.get("nubKey")
+                            gbif_key = (
+                                match_data.get("usageKey")
+                                or match_data.get("speciesKey")
+                                or match_data.get("nubKey")
+                            )
 
                             if gbif_key:
                                 v_url = f"https://api.gbif.org/v1/species/{gbif_key}/vernacularNames?limit=1000"
-                                req2 = urllib.request.Request(v_url, headers={"User-Agent": "taxo-trainer/1.0"})
+                                req2 = urllib.request.Request(
+                                    v_url, headers={"User-Agent": "taxo-trainer/1.0"}
+                                )
                                 with urllib.request.urlopen(req2, timeout=5) as v_resp:
                                     if v_resp.status == 200:
-                                        raw_bytes = v_resp.read()
-                                        raw_str = raw_bytes.decode("utf-8")
-                                        data = json.loads(raw_str)
-                                        with cache_conn:
-                                            cache_conn.execute(
-                                                "INSERT OR REPLACE INTO gbif_api_cache (taxon_key, response_json, cached_at) VALUES (?, ?, ?)",
-                                                (cache_key, raw_str, now_ts),
-                                            )
-                except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, sqlite3.Error):
+                                        m_json = json.loads(
+                                            v_resp.read().decode("utf-8")
+                                        )
+                                        all_vernacular_items.extend(
+                                            m_json.get("results", [])
+                                        )
+                except (
+                    urllib.error.URLError,
+                    urllib.error.HTTPError,
+                    TimeoutError,
+                    json.JSONDecodeError,
+                ):
                     pass
+
+                # Also query GBIF species search API to capture checklist sources (Arter.dk, CoL)
+                try:
+                    search_url = f"https://api.gbif.org/v1/species/search?q={urllib.parse.quote(canonical)}&rank=SPECIES&limit=20"
+                    req3 = urllib.request.Request(
+                        search_url, headers={"User-Agent": "taxo-trainer/1.0"}
+                    )
+                    with urllib.request.urlopen(req3, timeout=5) as s_resp:
+                        if s_resp.status == 200:
+                            sdata = json.loads(s_resp.read().decode("utf-8"))
+                            for s_item in sdata.get("results", []):
+                                c_name = (
+                                    s_item.get("canonicalName")
+                                    or s_item.get("scientificName")
+                                    or ""
+                                )
+                                if canonical.lower() in c_name.lower():
+                                    all_vernacular_items.extend(
+                                        s_item.get("vernacularNames", [])
+                                    )
+                                    sk = s_item.get("key")
+                                    if sk and sk != gbif_key:
+                                        try:
+                                            v_url2 = f"https://api.gbif.org/v1/species/{sk}/vernacularNames?limit=1000"
+                                            req4 = urllib.request.Request(
+                                                v_url2,
+                                                headers={
+                                                    "User-Agent": "taxo-trainer/1.0"
+                                                },
+                                            )
+                                            with urllib.request.urlopen(
+                                                req4, timeout=3
+                                            ) as v_resp2:
+                                                if v_resp2.status == 200:
+                                                    v_json2 = json.loads(
+                                                        v_resp2.read().decode("utf-8")
+                                                    )
+                                                    all_vernacular_items.extend(
+                                                        v_json2.get("results", [])
+                                                    )
+                                        except (
+                                            urllib.error.URLError,
+                                            urllib.error.HTTPError,
+                                            TimeoutError,
+                                            json.JSONDecodeError,
+                                        ):
+                                            pass
+                except (
+                    urllib.error.URLError,
+                    urllib.error.HTTPError,
+                    TimeoutError,
+                    json.JSONDecodeError,
+                ):
+                    pass
+
+                data = {"results": all_vernacular_items}
+                raw_str = json.dumps(data, ensure_ascii=False)
+                with t_cache_conn:
+                    t_cache_conn.execute(
+                        "INSERT OR REPLACE INTO gbif_api_cache (taxon_key, response_json, cached_at) VALUES (?, ?, ?)",
+                        (cache_key, raw_str, now_ts),
+                    )
 
             if data and "results" in data:
                 results = data.get("results", [])
@@ -332,7 +422,9 @@ def enrich_vernacular_names_from_gbif(
                         if sc < 0:
                             continue
                         by_lang_scored.setdefault(code, {})
-                        by_lang_scored[code][vname] = max(by_lang_scored[code].get(vname, -999), sc)
+                        by_lang_scored[code][vname] = max(
+                            by_lang_scored[code].get(vname, -999), sc
+                        )
 
                 vernacular_dict = {}
                 for code, name_scores in by_lang_scored.items():
@@ -344,7 +436,11 @@ def enrich_vernacular_names_from_gbif(
 
                 new_da = vernacular_dict.get("da")
                 new_en = vernacular_dict.get("en")
-                v_json_str = json.dumps(vernacular_dict, ensure_ascii=False) if vernacular_dict else None
+                v_json_str = (
+                    json.dumps(vernacular_dict, ensure_ascii=False)
+                    if vernacular_dict
+                    else None
+                )
 
                 # Move former English name if it was placed in vernacular_da
                 if not new_en and old_da and not old_en and old_da != new_da:
@@ -357,20 +453,37 @@ def enrich_vernacular_names_from_gbif(
                         v_dict["en"] = old_da
                         v_json_str = json.dumps(v_dict, ensure_ascii=False)
 
-                if v_json_str or new_da or new_en:
-                    with conn:
-                        conn.execute(
-                            """UPDATE taxa 
-                               SET vernacular_da = COALESCE(?, vernacular_da),
-                                   vernacular_en = COALESCE(?, vernacular_en),
-                                   vernacular_json = ? 
-                               WHERE taxon_key = ?""",
-                            (new_da, new_en, v_json_str, tkey),
-                        )
-                    updated_count += 1
+                return tkey, new_da, new_en, v_json_str
 
-            if progress_callback:
-                progress_callback(idx + 1, total)
+            return tkey, None, None, None
+
+        processed_count = 0
+        row_dicts = [dict(r) for r in rows]
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_map = {
+                executor.submit(process_single_row, rd): rd for rd in row_dicts
+            }
+            for future in as_completed(future_map):
+                try:
+                    tkey, new_da, new_en, v_json_str = future.result()
+                    if v_json_str or new_da or new_en:
+                        with conn:
+                            conn.execute(
+                                """UPDATE taxa 
+                                   SET vernacular_da = COALESCE(?, vernacular_da),
+                                       vernacular_en = COALESCE(?, vernacular_en),
+                                       vernacular_json = ? 
+                                   WHERE taxon_key = ?""",
+                                (new_da, new_en, v_json_str, tkey),
+                            )
+                        updated_count += 1
+                except (sqlite3.Error, OSError, ValueError):
+                    pass
+
+                processed_count += 1
+                if progress_callback:
+                    progress_callback(processed_count, total)
 
         # Enrich higher rank (Genus & Family) vernacular names
         enrich_higher_ranks_vernacular_names(conn)

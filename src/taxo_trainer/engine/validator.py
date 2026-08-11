@@ -176,7 +176,9 @@ def autocomplete_taxa(
             else (2 if r == "GENUS" else (3 if r == "FAMILY" else 4))
         )
 
-        def is_word_prefix(name: str | None, target: str, target_clean: str) -> bool:
+        def is_title_prefix(
+            name: str | None, target: str, target_clean: str
+        ) -> bool:
             if not name:
                 return False
             for part in str(name).split("|"):
@@ -184,7 +186,32 @@ def autocomplete_taxa(
                 p_c = normalize_name(part)
                 if p_l.startswith(target) or p_c.startswith(target_clean):
                     return True
-                words = [w for w in p_l.replace("-", " ").replace("/", " ").split() if w]
+                for suf in (
+                    "-slægten",
+                    " slægten",
+                    "-familien",
+                    " familien",
+                    "-ordenen",
+                    " ordenen",
+                ):
+                    if p_l.endswith(suf):
+                        base_l = p_l[: -len(suf)].strip()
+                        base_c = normalize_name(base_l)
+                        if base_l.startswith(target) or base_c.startswith(target_clean):
+                            return True
+            return False
+
+        def is_word_prefix(
+            name: str | None, target: str, target_clean: str
+        ) -> bool:
+            if not name:
+                return False
+            for part in str(name).split("|"):
+                p_l = part.strip().lower()
+                p_c = normalize_name(part)
+                words = [
+                    w for w in p_l.replace("-", " ").replace("/", " ").split() if w
+                ]
                 if any(w.startswith(target) for w in words):
                     return True
                 clean_words = [
@@ -203,9 +230,16 @@ def autocomplete_taxa(
                 p_c = normalize_name(p)
                 if p_l == q_strip or p_c == q_clean:
                     return 0, rw
-                for suf in ("-slægten", " slægten", "-familien", " familien", "-ordenen", " ordenen"):
+                for suf in (
+                    "-slægten",
+                    " slægten",
+                    "-familien",
+                    " familien",
+                    "-ordenen",
+                    " ordenen",
+                ):
                     if p_l.endswith(suf):
-                        base_l = p_l[:-len(suf)].strip()
+                        base_l = p_l[: -len(suf)].strip()
                         base_c = normalize_name(base_l)
                         if base_l == q_strip or base_c == q_clean:
                             return 0, rw
@@ -220,17 +254,27 @@ def autocomplete_taxa(
                 if p_l == q_strip or p_c == q_clean:
                     return 1, rw
 
-        # 3. Word-prefix match on canonical or primary vernaculars
+        # 3. Title/Full-name prefix match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
-            if is_word_prefix(n, q_strip, q_clean):
+            if is_title_prefix(n, q_strip, q_clean):
                 return 2, rw
 
-        # 4. Word-prefix match on secondary names
+        # 4. Title/Full-name prefix match on secondary names
         for n in secondary_names:
-            if is_word_prefix(n, q_strip, q_clean):
+            if is_title_prefix(n, q_strip, q_clean):
                 return 3, rw
 
-        # 5. Substring match on canonical or primary vernaculars
+        # 5. Subword prefix match on canonical or primary vernaculars
+        for n in [canon] + primary_vernaculars:
+            if is_word_prefix(n, q_strip, q_clean):
+                return 4, rw
+
+        # 6. Subword prefix match on secondary names
+        for n in secondary_names:
+            if is_word_prefix(n, q_strip, q_clean):
+                return 5, rw
+
+        # 7. Substring match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
             if not n:
                 continue
@@ -238,9 +282,9 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if q_strip in p_l or q_clean in p_c:
-                    return 4, rw
+                    return 6, rw
 
-        # 6. Substring match on secondary names
+        # 8. Substring match on secondary names
         for n in secondary_names:
             if not n:
                 continue
@@ -248,9 +292,9 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if q_strip in p_l or q_clean in p_c:
-                    return 5, rw
+                    return 7, rw
 
-        return 6, 4
+        return 8, 4
 
     # 1. Species matches
     sp_where_extra = ""
@@ -299,7 +343,7 @@ def autocomplete_taxa(
                 secondary_v.append(row["vernacular_da"])
             r_str = row["rank"] or "SPECIES"
             prio, rw = calc_priority_and_rank_weight(canon, r_str, primary_v, secondary_v)
-            if prio >= 6:
+            if prio >= 8:
                 continue
             label = f"{display} ({canon})" if display != canon else canon
             candidates.append(
@@ -437,23 +481,32 @@ def autocomplete_taxa(
                     }
                 )
 
-    # Count match occurrences per rank for strong matches (priority <= 2) to determine rank ambiguity
-    rank_counts: dict[str, int] = {}
+    # Count distinct concept/display names per rank group for strong matches (priority <= 4) to determine rank ambiguity
+    rank_distinct_names: dict[str, set[str]] = {}
     for c in candidates:
-        if c["priority"] <= 2:
+        if c["priority"] <= 4:
             r_str = (c["rank"] or "").upper()
-            rank_counts[r_str] = rank_counts.get(r_str, 0) + 1
+            r_grp = (
+                "SPECIES"
+                if r_str in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM")
+                else r_str
+            )
+            norm_disp = normalize_name(c["display_name"])
+            rank_distinct_names.setdefault(r_grp, set()).add(norm_disp)
 
     def get_sort_key(c: dict[str, Any]) -> tuple:
         r_upper = (c["rank"] or "").upper()
-        # 1. Exact species match always at the top
-        is_exact_species = (
-            0
-            if (c["priority"] == 0 and r_upper in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM"))
-            else 1
+        r_grp = (
+            "SPECIES"
+            if r_upper in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM")
+            else r_upper
         )
-        # 2. Unambiguous rank matches first (rank count == 1)
-        is_unambiguous = 0 if rank_counts.get(r_upper, 0) == 1 else 1
+        # 1. Exact species match (priority 0 on species rank) always at the very top
+        is_exact_species = 0 if (c["priority"] == 0 and r_grp == "SPECIES") else 1
+        # 2. Unambiguous rank level first (only 1 distinct display name matched at this rank level)
+        distinct_cnt = len(rank_distinct_names.get(r_grp, set()))
+        is_unambiguous = 0 if distinct_cnt == 1 else 1
+
         return (
             is_exact_species,
             is_unambiguous,

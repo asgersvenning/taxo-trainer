@@ -80,8 +80,14 @@ def render_settings_view(
     app_conn = get_db_connection(APP_DB_PATH)
 
     # Query active dataset metadata & stats
+    default_dataset_zip = DATA_DIR / "datasets" / "danske_planter_2026.zip"
+    default_path_str = (
+        str(default_dataset_zip)
+        if default_dataset_zip.exists()
+        else str(DATA_DIR / "datasets" / "")
+    )
     active_path = get_app_metadata(
-        "active_dwc_path", str(DATA_DIR / "datasets" / "."), conn=app_conn
+        "active_dwc_path", default_path_str, conn=app_conn
     )
     taxa_cnt = app_conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
     occ_cnt = app_conn.execute("SELECT COUNT(*) FROM occurrences;").fetchone()[0]
@@ -350,10 +356,26 @@ def render_settings_view(
             enrich_status = ui.label("Ready for GBIF API enrichment.").classes(
                 "text-sm text-gray-300 font-semibold mb-3"
             )
-            progress_bar = ui.linear_progress(value=0.0).classes("w-full mb-4 hidden")
+            progress_bar = (
+                ui.linear_progress(value=0.0, show_value=False)
+                .props("size=10px stripe rounded color=primary")
+                .classes("w-full mb-4 hidden")
+            )
+            progress_state = {"curr": 0, "total": 0}
+
+            def tick_progress() -> None:
+                curr = progress_state["curr"]
+                tot = progress_state["total"]
+                if tot > 0:
+                    pct = min(curr / tot, 1.0)
+                    pct_str = f"{pct * 100:.1f}%"
+                    progress_bar.set_value(pct)
+                    enrich_status.set_text(f"Checked {curr}/{tot} taxa ({pct_str})...")
 
             async def run_enrichment() -> None:
                 enrich_button.disable()
+                progress_state["curr"] = 0
+                progress_state["total"] = 0
                 progress_bar.set_value(0.0)
                 progress_bar.classes(remove="hidden")
                 enrich_status.set_text(
@@ -363,11 +385,12 @@ def render_settings_view(
                     "Starting GBIF API enrichment in background thread...", type="info"
                 )
 
+                timer = ui.timer(0.1, tick_progress)
+
                 def sync_worker() -> int:
                     def update_progress(curr: int, tot: int) -> None:
-                        pct = curr / tot if tot > 0 else 1.0
-                        progress_bar.set_value(round(pct, 4))
-                        enrich_status.set_text(f"Checked {curr}/{tot} taxa...")
+                        progress_state["curr"] = curr
+                        progress_state["total"] = tot
 
                     return enrich_vernacular_names_from_gbif(
                         progress_callback=update_progress
@@ -375,18 +398,21 @@ def render_settings_view(
 
                 try:
                     updated = await run.io_bound(sync_worker)
+                    timer.cancel()
                     progress_bar.set_value(1.0)
                     enrich_status.set_text(
-                        f"Enrichment Complete! Updated {updated} species with Danish/English vernacular names."
+                        f"Enrichment Complete! Updated {updated} species with Danish/English vernacular names (100.0%)."
                     )
                     ui.notify(
                         f"Enriched {updated} species names from GBIF!", type="positive"
                     )
                     on_filters_changed()
                 except (sqlite3.Error, OSError, RuntimeError, ValueError) as ex:
+                    timer.cancel()
                     enrich_status.set_text(f"Enrichment Error: {ex}")
                     ui.notify(f"Enrichment failed: {ex}", type="negative")
                 finally:
+                    timer.cancel()
                     enrich_button.enable()
 
             enrich_button = ui.button(

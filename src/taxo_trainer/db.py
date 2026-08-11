@@ -73,7 +73,7 @@ def get_gbif_cache_connection() -> sqlite3.Connection:
     """
     conn = get_db_connection(GBIF_CACHE_DB_PATH)
     with conn:
-        conn.execute("""
+        conn.executescript("""
             CREATE TABLE IF NOT EXISTS gbif_api_cache (
                 taxon_key TEXT PRIMARY KEY,
                 response_json TEXT NOT NULL,
