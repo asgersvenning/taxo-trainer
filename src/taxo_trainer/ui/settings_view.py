@@ -10,7 +10,13 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from taxo_trainer.db import APP_DB_PATH, DATA_DIR, get_app_metadata, get_db_connection
+from taxo_trainer.db import (
+    APP_DB_PATH,
+    DATA_DIR,
+    get_app_metadata,
+    get_db_connection,
+    set_app_metadata,
+)
 from taxo_trainer.engine.sampling import SamplingFilter
 from taxo_trainer.ingestion.dwc_parser import ingest_dwc_file
 from taxo_trainer.ingestion.taxonomy_builder import (
@@ -61,13 +67,16 @@ def get_path_suggestions(input_str: str, limit: int = 8) -> list[tuple[str, str,
 
 
 def render_settings_view(
-    active_filters: SamplingFilter, on_filters_changed: Callable[[], None]
+    active_filters: SamplingFilter,
+    on_filters_changed: Callable[[], None],
+    dark_mode: ui.dark_mode | None = None,
 ) -> None:
     """Render application settings, sampling controls, and dataset ingestion view.
 
     Args:
         active_filters: Active SamplingFilter configuration instance.
         on_filters_changed: Callback to notify quiz view when filters change.
+        dark_mode: NiceGUI dark_mode instance for theme toggling.
     """
     app_conn = get_db_connection(APP_DB_PATH)
 
@@ -202,7 +211,48 @@ def render_settings_view(
 
             lang_select.on_value_change(lambda e: update_language(e.value))
 
-        # 2. DarwinCore Ingestion Engine Card
+        # 1.5 Theme & Appearance Card
+        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+            ui.label("Theme & Appearance").classes(
+                "text-lg font-bold text-yellow-300 mb-2"
+            )
+            ui.label(
+                "Select UI color mode. System Default (Auto) automatically matches your operating system theme."
+            ).classes("text-xs text-gray-400 mb-4")
+
+            theme_options = {
+                "auto": "🌗 System Default (Auto)",
+                "dark": "🌙 Dark Mode",
+                "light": "☀️ Light Mode",
+            }
+
+            curr_theme = get_app_metadata("theme_preference", "auto", conn=app_conn)
+
+            theme_select = (
+                ui.select(
+                    options=theme_options,
+                    value=curr_theme if curr_theme in theme_options else "auto",
+                    label="Theme Preference",
+                )
+                .classes("w-72 text-white")
+                .props("outlined dark")
+            )
+
+            def update_theme(val: str) -> None:
+                set_app_metadata("theme_preference", val, conn=app_conn)
+                if dark_mode:
+                    if val == "dark":
+                        dark_mode.enable()
+                    elif val == "light":
+                        dark_mode.disable()
+                    else:
+                        dark_mode.auto()
+                ui.notify(
+                    f"Theme preference set to {theme_options.get(val, val)}",
+                    type="info",
+                )
+
+            theme_select.on_value_change(lambda e: update_theme(e.value))
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
             ui.label("DarwinCore (DwC) Occurrence Ingestion").classes(
                 "text-lg font-bold text-yellow-300 mb-2"

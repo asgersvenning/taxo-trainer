@@ -204,10 +204,6 @@ def render_satellite_map(
     )
 
     with card:
-        ui.label("Location Context").classes("text-xs font-bold text-gray-300 mb-1")
-        if locality:
-            ui.label(locality).classes("text-[10px] text-gray-400 mb-1 truncate")
-
         if latitude is not None and longitude is not None:
             map_widget = ui.leaflet(center=(latitude, longitude), zoom=zoom).classes(
                 "w-full aspect-square max-h-64 rounded-md"
@@ -484,10 +480,6 @@ def render_taxonomic_hierarchy_feedback(
     )
 
     with card:
-        ui.label("Taxonomic Hierarchy Breakdown:").classes(
-            "text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-1"
-        )
-
         # 1. Fetch Target Rank Details
         row_keys = target_row.keys() if hasattr(target_row, "keys") else []
         target_order = (
