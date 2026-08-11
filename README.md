@@ -1,72 +1,68 @@
 # Taxo-Trainer
 
-**Taxo-Trainer** is a modernized, high-performance species and higher-rank taxonomy training engine built with **Python 3.10+**, **NiceGUI**, and **SQLite**. Powered by GBIF DarwinCore occurrence datasets, it helps naturalists, students, and researchers practice species identification across field photos, satellite maps, and multi-level taxonomic hierarchies.
+Taxo-Trainer is a desktop web application for practicing plant and wildlife identification using GBIF DarwinCore occurrence datasets. It features interactive photo quiz workflows, multi-rank taxonomic validation, structured hints, dataset filtering, and detailed analytics.
 
 ---
 
-## 🌟 Key Features
+## Features
 
-* **📷 75% / 25% Split Interface:** 75% width canvas reserved for whole-photo inspection with interactive carousel controls, photo credits (`👤 Photo by`), and direct external links to original observation records (`🔗 View Source / GBIF Obs ↗`).
-* **🏛️ Taxonomic Hierarchy Breakdown:** Displays dynamic, color-coded level badges (**Order**, **Family**, **Genus**, **Species**) for every guess, providing instant feedback on which taxonomic levels were correctly identified.
-* **🔍 Multi-Language & Higher-Rank Autocomplete:** Full support for scientific binomials, higher rank names (Genus & Family), and vernacular names across 8+ languages (Danish, English, German, Swedish, Norwegian, French, Spanish, Dutch). Symmetric matching ignores spaces and dashes while prioritizing exact exact matches.
-* **🎯 Taxa Whitelist & Blacklist Filtering:** Filter training sessions to specific target taxa at any rank level (Species, Genus, Family). Whitelist specific genera to practice focused groups or blacklist non-native taxa.
-* **💡 Hints & Diagnostic References:** Includes Taxonomic Rank hints, Multiple Choice (1/5) distractor options, misidentification reporting, and side-by-side diagnostic reference photos when guessing real species.
-* **📂 DarwinCore (DwC) Ingestion:** Fast zero-pandas streaming TSV parser for GBIF occurrence archives with an interactive directory/file selector and multi-language taxonomy enrichment.
-* **📊 Analytics Dashboard:** Performance metrics, monthly phenology heatmaps, and diagnostic review tools for tracking learning progress over time.
+### Quiz & Identification Interface
+- **Photo Inspection Canvas**: High-resolution image canvas with keyboard-driven carousel navigation (`Alt+←` / `Alt+→`), photo attribution credits, and external links to original GBIF/Catalogue of Life taxonomy records.
+- **Taxonomic Hierarchy Breakdown**: Visual breakdown displaying Order, Family, Genus, and Species ranks. Highlights correct rank matches, incorrect guesses, and unrevealed ranks.
+- **Streak & Record Tracker**: Tracks consecutive correct species identifications (🔥 active streak and 🏆 all-time record) persisted in SQLite. The streak resets only when proceeding to a new observation following an uncorrected error.
+- **Keyboard Navigation**:
+  - `Ctrl + Right Arrow`: Next observation
+  - `Alt + Left / Right Arrow`: Navigate photo carousel
+  - `Enter`: Submit selected autocomplete suggestion or typed guess
 
----
+### Autocomplete & Name Validation
+- **Multi-Rank Autocomplete**: Searches scientific names (binomials, genera, families) and vernacular names across 8 languages (Danish, English, German, French, Dutch, Swedish, Norwegian, etc.).
+- **Context-Aware Rank Prioritization**: Sorts search candidates by match quality, giving top priority to exact species matches, unambiguous rank matches, and hierarchical order (Species $\rightarrow$ Genus $\rightarrow$ Family).
+- **Taxonomic Scope Interpolation**: Guessing or revealing a higher rank (e.g. Family or Genus) automatically constrains autocomplete suggestions to that specific rank scope.
 
-## ⌨️ Keyboard Shortcuts
+### Guided Hints & Assistance
+- **Higher-Order Rank Hint**: Sequentially reveals the highest unrevealed rank (Order $\rightarrow$ Family $\rightarrow$ Genus $\rightarrow$ Species), updating the hierarchy breakdown and restricting input interpolation accordingly.
+- **1/5 Multiple Choice Hint**: Generates multiple choice options restricted strictly to candidates within the currently revealed scope without duplicates or artificial random fill.
 
-| Shortcut             | Action                                              |
-| :------------------- | :-------------------------------------------------- |
-| `CTRL + Right Arrow` | Load Next Target Observation                        |
-| `ALT + Right Arrow`  | Next Photo in Carousel                              |
-| `ALT + Left Arrow`   | Previous Photo in Carousel                          |
-| `Enter`              | Submit Top Autocomplete Suggestion or Guessed Taxon |
+### Analytics & Mastery Dashboard
+- **Time-Range Filters**: Filter analytics by time window (1 Hour, 24 Hours, 7 Days, 30 Days, 1 Year, or All Time).
+- **Core Performance Metrics**: Tracks total attempts, unassisted accuracy percentage, active/best streaks, and mastered species counts ($\ge 90\%$ accuracy over $\ge 5$ attempts).
+- **Dataset Coverage**: Tracks the percentage of dataset species encountered during training sessions.
+- **Family Mastery Breakdown**: Side-by-side analysis highlighting highest accuracy plant families and families needing practice.
+- **Trouble Taxa Table**: Identifies species with the lowest unassisted accuracy ($\ge 2$ attempts).
+- **Taxonomic Confusion Matrix**: Logs pairwise misidentifications to identify common lookalike species pairs.
 
----
-
-## 🚀 Installation
-
-Ensure you have [`uv`](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) installed on your system.
-
-1. **Clone the Repository:**
-
-   ```bash
-   git clone https://github.com/user/taxo-trainer.git
-   cd taxo-trainer
-   ```
-
-2. **Install Dependencies with UV:**
-
-   ```bash
-   uv sync
-   ```
+### Dataset Ingestion & Filtering
+- **DarwinCore Stream Ingestion**: Fast streaming parser for GBIF occurrence archives (`occurrence.txt`) with an interactive file selector.
+- **Taxa Whitelist & Blacklist Filtering**: Restrict training sessions to specific target families, genera, or species, or exclude non-native taxa.
 
 ---
 
-## 🏃 Running the Application
+## Installation
 
-Launch the desktop web application interface locally:
-
-### Option 1: Via Python Module
+Ensure you have [`uv`](https://docs.astral.sh/uv/) installed.
 
 ```bash
-uv run python -m src.app
+git clone https://github.com/asgersvenning/taxo-trainer.git
+cd taxo-trainer
+uv sync
 ```
 
-### Option 2: Via UV Script Entry Point
+---
+
+## Running the Application
+
+Launch the application locally:
 
 ```bash
 uv run taxo-trainer
 ```
 
-Open your browser and navigate to [**`http://127.0.0.1:8080`**](http://127.0.0.1:8080).
+Open a web browser and navigate to `http://127.0.0.1:8080`.
 
 ---
 
-## 🧪 Running Unit Tests
+## Running Tests
 
 Execute the automated test suite with `pytest`:
 
@@ -76,10 +72,9 @@ uv run pytest
 
 ---
 
-## 🛠️ Technology Stack
+## Technical Architecture
 
-* **UI Framework:** [NiceGUI](https://nicegui.io/) (Quasar & TailwindCSS wrapper)
-* **Package & Environment Manager:** [uv](https://github.com/astral-sh/uv)
-* **Storage Engine:** SQLite (WAL mode)
-* **Taxonomy & Occurrence Standards:** [GBIF DarwinCore (DwC)](https://www.gbif.org/dwc)
-* **Language Support:** Multi-language GBIF Vernacular Name API integration
+- **UI Framework**: [NiceGUI](https://nicegui.io/) (Quasar & TailwindCSS)
+- **Database**: SQLite (WAL mode)
+- **Taxonomy Standard**: GBIF DarwinCore (DwC) & Catalogue of Life Backbone
+- **Package Manager**: [uv](https://github.com/astral-sh/uv)

@@ -26,14 +26,13 @@ def render_dashboard_view() -> None:
 
     with container:
         # Header & Time Filter Bar
-        with ui.card().classes("w-full bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700"):
-            with ui.row().classes("w-full justify-between items-center flex-wrap gap-3"):
-                with ui.column().classes("gap-0"):
-                    ui.label("Analytics & Mastery Dashboard").classes("text-2xl font-bold text-primary")
-                    ui.label("Track your species identification progress, streaks, and taxonomic mastery over time.").classes("text-xs text-gray-400")
+        with ui.card().classes("w-full bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700"), ui.row().classes("w-full justify-between items-center flex-wrap gap-3"):
+            with ui.column().classes("gap-0"):
+                ui.label("Analytics & Mastery Dashboard").classes("text-2xl font-bold text-primary")
+                ui.label("Track your species identification progress, streaks, and taxonomic mastery over time.").classes("text-xs text-gray-400")
 
-                # Time Range Filter Buttons
-                with ui.row().classes("items-center gap-1.5 bg-gray-900 p-1.5 rounded-lg border border-gray-700"):
+            # Time Range Filter Buttons
+            with ui.row().classes("items-center gap-1.5 bg-gray-900 p-1.5 rounded-lg border border-gray-700"):
                     ui.label("Time Range:").classes("text-xs font-bold text-gray-400 mr-1")
 
                     ranges = [

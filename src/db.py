@@ -43,6 +43,15 @@ def get_db_connection(db_path: Path = APP_DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def row_to_dict(row: sqlite3.Row | dict | None) -> dict:
+    """Safely convert a sqlite3.Row or dict-like database row to a standard Python dictionary."""
+    if not row:
+        return {}
+    if isinstance(row, dict):
+        return row
+    return dict(row)
+
+
 def get_gbif_cache_connection() -> sqlite3.Connection:
     """Create and initialize a dedicated connection for the gbif_cache.db database file.
 

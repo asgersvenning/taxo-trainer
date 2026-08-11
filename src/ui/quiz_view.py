@@ -136,7 +136,7 @@ def render_quiz_view(state: QuizViewState) -> None:
                 "SELECT order_name FROM taxa WHERE taxon_key = ?",
                 (state.current_question.taxon_key,),
             ).fetchone()
-            target_order_val = target_row["order_name"] if target_row and "order_name" in target_row.keys() and target_row["order_name"] else None
+            target_order_val = target_row["order_name"] if target_row and "order_name" in target_row and target_row["order_name"] else None
 
             if res.matched_rank == "GENUS":
                 state.matched_genus = state.current_question.genus
@@ -220,12 +220,7 @@ def render_quiz_view(state: QuizViewState) -> None:
         refresh_quiz_ui()
 
     def handle_higher_order_hint() -> None:
-        """Trigger higher order taxonomic rank hint.
-
-        Reveals the highest unrevealed taxonomic rank (Order -> Family -> Genus -> Species),
-        updates the taxonomic breakdown, restricts autocomplete interpolation, and flags hint usage
-        without logging a user guess.
-        """
+        """Trigger sequential higher order rank revelation hint."""
         if not state.current_question:
             return
 
@@ -238,7 +233,7 @@ def render_quiz_view(state: QuizViewState) -> None:
 
         target_order = (
             target_row["order_name"]
-            if target_row and "order_name" in target_row.keys() and target_row["order_name"]
+            if target_row and "order_name" in target_row and target_row["order_name"]
             else None
         )
         target_family = state.current_question.family

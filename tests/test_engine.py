@@ -439,7 +439,7 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
     # Simulate 1st hint click: reveals Order
     state.used_hint = True
     target_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (9901,)).fetchone()
-    target_order = target_row["order_name"] if target_row and "order_name" in target_row.keys() and target_row["order_name"] else "Santalales"
+    target_order = target_row["order_name"] if target_row and "order_name" in target_row and target_row["order_name"] else "Santalales"
 
     if not state.matched_order and target_order:
         state.matched_order = target_order

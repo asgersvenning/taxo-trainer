@@ -24,7 +24,10 @@ class ValidationResult:
     feedback_message: str
 
 
-def get_display_name(taxon_row: sqlite3.Row | dict, lang: str = "da") -> str:
+from src.db import row_to_dict
+
+
+def get_display_name(taxon_row: sqlite3.Row | dict | None, lang: str = "da") -> str:
     """Execute vernacular fallback chain according to preferred language (da, en, de, sv, no, fr, es, nl, la).
 
     Args:
@@ -34,55 +37,19 @@ def get_display_name(taxon_row: sqlite3.Row | dict, lang: str = "da") -> str:
     Returns:
         str: Best user-facing primary display name.
     """
+    if not taxon_row:
+        return "Unknown Species"
+
+    d = row_to_dict(taxon_row)
+    canon = d.get("canonical_name") or d.get("rank_name") or d.get("genus") or d.get("family")
+    sci = d.get("scientific_name")
+
     if lang == "la":
-        if isinstance(taxon_row, sqlite3.Row):
-            keys = taxon_row.keys()
-            canon = taxon_row["canonical_name"] if "canonical_name" in keys else None
-            sci = taxon_row["scientific_name"] if "scientific_name" in keys else None
-        elif isinstance(taxon_row, dict):
-            canon = taxon_row.get("canonical_name")
-            sci = taxon_row.get("scientific_name")
-        else:
-            return "Unknown Species"
         return str(canon or sci or "Unknown Species").strip()
 
-    v_json_raw = None
-    if isinstance(taxon_row, sqlite3.Row):
-        keys = taxon_row.keys()
-        v_da_raw = taxon_row["vernacular_da"] if "vernacular_da" in keys else None
-        v_en_raw = taxon_row["vernacular_en"] if "vernacular_en" in keys else None
-        v_json_raw = taxon_row["vernacular_json"] if "vernacular_json" in keys else None
-        canon = (
-            taxon_row["canonical_name"]
-            if "canonical_name" in keys and taxon_row["canonical_name"]
-            else (
-                taxon_row["rank_name"]
-                if "rank_name" in keys and taxon_row["rank_name"]
-                else (
-                    taxon_row["genus"]
-                    if "genus" in keys and taxon_row["genus"]
-                    else (
-                        taxon_row["family"]
-                        if "family" in keys and taxon_row["family"]
-                        else None
-                    )
-                )
-            )
-        )
-        sci = taxon_row["scientific_name"] if "scientific_name" in keys else None
-    elif isinstance(taxon_row, dict):
-        v_da_raw = taxon_row.get("vernacular_da")
-        v_en_raw = taxon_row.get("vernacular_en")
-        v_json_raw = taxon_row.get("vernacular_json")
-        canon = (
-            taxon_row.get("canonical_name")
-            or taxon_row.get("rank_name")
-            or taxon_row.get("genus")
-            or taxon_row.get("family")
-        )
-        sci = taxon_row.get("scientific_name")
-    else:
-        return "Unknown Species"
+    v_da_raw = d.get("vernacular_da")
+    v_en_raw = d.get("vernacular_en")
+    v_json_raw = d.get("vernacular_json")
 
     v_dict = {}
     if v_json_raw and str(v_json_raw).strip():
@@ -317,7 +284,7 @@ def autocomplete_taxa(
             primary_v = (
                 [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
             )
-            v_json_raw = row["vernacular_json"] if ("vernacular_json" in row.keys() and row["vernacular_json"]) else None
+            v_json_raw = row.get("vernacular_json") if "vernacular_json" in row else None
             if v_json_raw:
                 try:
                     v_dict = json.loads(v_json_raw)
@@ -377,7 +344,7 @@ def autocomplete_taxa(
                     [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
                 )
                 v_json_raw = (
-                    row["vernacular_json"] if ("vernacular_json" in row.keys() and row["vernacular_json"]) else None
+                    row.get("vernacular_json") if "vernacular_json" in row else None
                 )
                 if v_json_raw:
                     try:
@@ -437,7 +404,7 @@ def autocomplete_taxa(
                     [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
                 )
                 v_json_raw = (
-                    row["vernacular_json"] if ("vernacular_json" in row.keys() and row["vernacular_json"]) else None
+                    row.get("vernacular_json") if "vernacular_json" in row else None
                 )
                 if v_json_raw:
                     try:
@@ -597,7 +564,7 @@ def validate_user_guess(
 
     v_json_raw = (
         target_row["vernacular_json"]
-        if "vernacular_json" in target_row.keys()
+        if "vernacular_json" in target_row.keys()  # noqa: SIM118
         else None
     )
     v_dict = {}

@@ -644,7 +644,7 @@ def render_taxonomic_hierarchy_feedback(
                     if key:
                         gbif_cache[raw_name] = str(key)
                         return str(key)
-            except Exception:
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
                 pass
 
             return None
