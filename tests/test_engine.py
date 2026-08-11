@@ -129,7 +129,6 @@ def test_validator_multi_rank_and_autocomplete(setup_engine_dbs):
     assert "Quercus" in s_values
     assert "Quercus robur" in s_values
 
-
     # Exact species match (vernacular Danish)
     res1 = validate_user_guess(app_conn, "Stilk-Eg", 2435140)
     assert res1.is_correct is True
@@ -167,9 +166,10 @@ def test_validator_multi_rank_and_autocomplete(setup_engine_dbs):
     assert "Unrecognized taxon name" in res_unrec.feedback_message
 
     # Test get_display_name with partial columns in sqlite3.Row
-    partial_row = app_conn.execute("SELECT taxon_key, canonical_name FROM taxa LIMIT 1;").fetchone()
+    partial_row = app_conn.execute(
+        "SELECT taxon_key, canonical_name FROM taxa LIMIT 1;"
+    ).fetchone()
     assert get_display_name(partial_row) == "Quercus robur"
-
 
 
 def test_analytics_and_hint_penalties(setup_engine_dbs):
@@ -181,7 +181,9 @@ def test_analytics_and_hint_penalties(setup_engine_dbs):
     # Log 2: Assisted correct attempt (used hint)
     log_attempt(user_conn, "occ_q2", 2435140, 2435140, is_correct=True, used_hint=True)
     # Log 3: Incorrect attempt (mistook Quercus for Fagus)
-    log_attempt(user_conn, "occ_q1", 2435140, 2865545, is_correct=False, used_hint=False)
+    log_attempt(
+        user_conn, "occ_q1", 2435140, 2865545, is_correct=False, used_hint=False
+    )
 
     stats = get_global_stats(user_conn, app_conn)
     assert stats["total_attempts"] == 3
@@ -250,7 +252,9 @@ def test_autocomplete_rank_ordering_species_before_genus(setup_engine_dbs):
     assert matches[1]["canonical_name"] == "Quercus"
 
 
-def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(setup_engine_dbs):
+def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(
+    setup_engine_dbs,
+):
     """Test that exact canonical match on genus beats secondary vernacular match on species."""
     app_conn, _ = setup_engine_dbs
 
@@ -362,7 +366,9 @@ def test_render_taxonomic_hierarchy_gbif_links(setup_engine_dbs):
 
     app_conn, _ = setup_engine_dbs
 
-    t_row = app_conn.execute("SELECT * FROM taxa WHERE canonical_name = 'Quercus robur'").fetchone()
+    t_row = app_conn.execute(
+        "SELECT * FROM taxa WHERE canonical_name = 'Quercus robur'"
+    ).fetchone()
     v_res = ValidationResult(
         user_input="Quercus robur",
         is_correct=True,
@@ -423,16 +429,20 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
     app_conn.commit()
 
     state = QuizViewState()
-    state.current_question = type("Obj", (), {
-        "occurrence_id": "occ_100",
-        "taxon_key": 9901,
-        "scientific_name": "Viscum album L.",
-        "canonical_name": "Viscum album",
-        "family": "Santalaceae",
-        "genus": "Viscum",
-        "vernacular_da": "Mistelten",
-        "vernacular_en": "Mistletoe",
-    })()
+    state.current_question = type(
+        "Obj",
+        (),
+        {
+            "occurrence_id": "occ_100",
+            "taxon_key": 9901,
+            "scientific_name": "Viscum album L.",
+            "canonical_name": "Viscum album",
+            "family": "Santalaceae",
+            "genus": "Viscum",
+            "vernacular_da": "Mistelten",
+            "vernacular_en": "Mistletoe",
+        },
+    )()
 
     # Initial state: unrevealed
     assert state.matched_order is None
@@ -442,8 +452,14 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
 
     # Simulate 1st hint click: reveals Order
     state.used_hint = True
-    target_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (9901,)).fetchone()
-    target_order = target_row["order_name"] if target_row and "order_name" in target_row and target_row["order_name"] else "Santalales"
+    target_row = app_conn.execute(
+        "SELECT * FROM taxa WHERE taxon_key = ?", (9901,)
+    ).fetchone()
+    target_order = (
+        target_row["order_name"]
+        if target_row and "order_name" in target_row and target_row["order_name"]
+        else "Santalales"
+    )
 
     if not state.matched_order and target_order:
         state.matched_order = target_order
@@ -474,7 +490,9 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
             assert "Viscum" in m["canonical_name"] or "Viscum" in m["label"]
 
     # Verify no attempts were logged in user_progress
-    attempts = user_conn.execute("SELECT COUNT(*) as cnt FROM user_progress").fetchone()["cnt"]
+    attempts = user_conn.execute(
+        "SELECT COUNT(*) as cnt FROM user_progress"
+    ).fetchone()["cnt"]
     assert attempts == 0
 
 
@@ -543,7 +561,9 @@ def test_dashboard_analytics_time_range_filtering(setup_engine_dbs):
     assert coverage["encountered_species"] >= 1
     assert coverage["coverage_pct"] > 0
 
-    best_fams, worst_fams = get_family_mastery_stats(user_conn, app_conn, time_range="ALL")
+    best_fams, worst_fams = get_family_mastery_stats(
+        user_conn, app_conn, time_range="ALL"
+    )
     assert isinstance(best_fams, list)
     assert isinstance(worst_fams, list)
 
@@ -578,16 +598,20 @@ def test_multiple_choice_hint_revealed_scope_filtering(setup_engine_dbs):
     app_conn.commit()
 
     state = QuizViewState()
-    state.current_question = type("Obj", (), {
-        "occurrence_id": "occ_ficaria",
-        "taxon_key": 9910,
-        "scientific_name": "Ficaria verna Huds.",
-        "canonical_name": "Ficaria verna",
-        "family": "Ranunculaceae",
-        "genus": "Ficaria",
-        "vernacular_da": "Vorterod",
-        "vernacular_en": "Lesser Celandine",
-    })()
+    state.current_question = type(
+        "Obj",
+        (),
+        {
+            "occurrence_id": "occ_ficaria",
+            "taxon_key": 9910,
+            "scientific_name": "Ficaria verna Huds.",
+            "canonical_name": "Ficaria verna",
+            "family": "Ranunculaceae",
+            "genus": "Ficaria",
+            "vernacular_da": "Vorterod",
+            "vernacular_en": "Lesser Celandine",
+        },
+    )()
 
     state.matched_genus = "Ficaria"
 
@@ -711,15 +735,3 @@ def test_autocomplete_min_count_filtering(setup_engine_dbs) -> None:
     canonical_names_5 = [m["canonical_name"] for m in matches_5]
     assert "Rare species" not in canonical_names_5
     assert "Common species" in canonical_names_5
-
-
-
-
-
-
-
-
-
-
-
-
