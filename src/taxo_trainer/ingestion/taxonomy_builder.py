@@ -233,8 +233,14 @@ def score_vernacular_item(item: dict, code: str) -> int:
         score += 30
 
     vname = (item.get("vernacularName") or "").strip()
+    vname_lower = vname.lower()
     if vname and vname[0].isupper():
         score += 5
+
+    # Reject higher-rank vernacular names (e.g. ending in "-slægten", "-familien", etc.) when enriching a species
+    higher_suffixes = ("slægten", "slækt", "familien", "familie", "ordenen", "orden")
+    if any(vname_lower.endswith(sfx) for sfx in higher_suffixes):
+        return -100
 
     # For Danish, reject untrusted datasets without preferred status or trusted source (score >= 30)
     if code == "da" and score < 30 and not preferred:
@@ -645,11 +651,15 @@ def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> in
                         or data.get("canonicalName")
                         or name
                     )
+                    match_type = data.get("matchType")
+                    rank_str = (data.get("rank") or "").upper()
                     res = {
                         "species_key": str(sp_key) if sp_key else None,
                         "species_name": sp_name,
                         "is_synonym": data.get("status") == "SYNONYM"
                         or data.get("synonym", False),
+                        "is_higher_rank": match_type == "HIGHERRANK"
+                        or rank_str in ("GENUS", "FAMILY", "ORDER", "CLASS", "PHYLUM", "KINGDOM"),
                     }
                     gbif_cache[name] = res
                     return res
@@ -667,9 +677,18 @@ def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> in
             tkey = str(r["taxon_key"])
             canon = r["canonical_name"]
             match = match_gbif(canon)
+            if not match:
+                continue
+
+            if match.get("is_higher_rank"):
+                # Species resolved to a higher order taxon (e.g. ambiguous synonym like Ranunculus tuberosus -> Genus Ranunculus)
+                with conn:
+                    conn.execute("DELETE FROM taxa WHERE taxon_key = ?", (tkey,))
+                merged_count += 1
+                continue
+
             if (
-                match
-                and match["is_synonym"]
+                match["is_synonym"]
                 and match["species_name"]
                 and match["species_name"] != canon
             ):
