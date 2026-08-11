@@ -95,6 +95,13 @@ def render_settings_view(
         "SELECT COUNT(*) FROM taxa WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
     ).fetchone()[0]
 
+    # Query discarded vs active taxa based on active min_count cutoff
+    min_cutoff = active_filters.min_count
+    active_taxa_cnt = app_conn.execute(
+        "SELECT COUNT(*) FROM taxa WHERE occurrence_count >= ?;", (min_cutoff,)
+    ).fetchone()[0]
+    discarded_taxa_cnt = taxa_cnt - active_taxa_cnt
+
     # Query distinct families for dropdown
     fam_cursor = app_conn.execute(
         "SELECT DISTINCT family FROM taxa WHERE family != '' ORDER BY family;"
@@ -137,6 +144,11 @@ def render_settings_view(
                         f"{taxa_cnt:,} Taxa Registered",
                         icon="diversity_3",
                         color="indigo",
+                    ).props("dense dark")
+                    ui.chip(
+                        f"{active_taxa_cnt:,} Active ({discarded_taxa_cnt:,} Discarded)",
+                        icon="filter_alt",
+                        color="amber",
                     ).props("dense dark")
                     ui.chip(
                         f"{occ_cnt:,} Occurrences Loaded",
@@ -215,6 +227,71 @@ def render_settings_view(
                 )
 
             lang_select.on_value_change(lambda e: update_language(e.value))
+
+        # 1.2 Minimum Occurrences per Taxon Card
+        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+            ui.label("Minimum Occurrences per Taxon").classes(
+                "text-lg font-bold text-yellow-300 mb-2"
+            )
+            ui.label(
+                "Set the minimum occurrence limit per taxon used in the quiz. Taxa with fewer occurrences than this threshold are omitted from quiz sampling, autocomplete suggestions, and input interpolation to filter out spurious/rare taxa."
+            ).classes("text-xs text-gray-400 mb-4")
+
+            with ui.column().classes("w-full space-y-3"):
+                with ui.row().classes("w-full gap-4 items-center flex-wrap"):
+                    cutoff_input_main = (
+                        ui.number(
+                            label="Minimum Occurrence Threshold",
+                            value=active_filters.min_count,
+                            min=1,
+                            step=1,
+                        )
+                        .classes("w-72 text-white")
+                        .props("outlined dark")
+                    )
+
+                stats_row = ui.row().classes("gap-3 text-xs flex-wrap items-center mt-1")
+
+                def refresh_cutoff_stats(mc: int) -> None:
+                    stats_row.clear()
+                    act_c = app_conn.execute(
+                        "SELECT COUNT(*) FROM taxa WHERE occurrence_count >= ?;", (mc,)
+                    ).fetchone()[0]
+                    disc_c = taxa_cnt - act_c
+                    pct_act = (act_c / taxa_cnt * 100) if taxa_cnt else 0
+                    pct_disc = (disc_c / taxa_cnt * 100) if taxa_cnt else 0
+
+                    with stats_row:
+                        ui.chip(
+                            f"✓ {act_c:,} Taxa Retained ({pct_act:.1f}%)",
+                            icon="check_circle",
+                            color="positive",
+                        ).props("dense dark")
+                        ui.chip(
+                            f"🚫 {disc_c:,} Taxa Discarded ({pct_disc:.1f}%)",
+                            icon="block",
+                            color="negative" if disc_c > 0 else "grey",
+                        ).props("dense dark")
+                        ui.label(
+                            f"Taxa with fewer than {mc} occurrences are omitted."
+                        ).classes("text-xs text-gray-400 italic flex-align-center")
+
+                refresh_cutoff_stats(active_filters.min_count)
+
+                def update_cutoff_main(val: float | None) -> None:
+                    if val is not None and int(val) >= 1:
+                        c_val = int(val)
+                        active_filters.min_count = c_val
+                        refresh_cutoff_stats(c_val)
+                        on_filters_changed()
+                        ui.notify(
+                            f"Minimum occurrence limit set to {c_val} per taxon",
+                            type="positive",
+                        )
+
+                cutoff_input_main.on_value_change(
+                    lambda e: update_cutoff_main(e.value)
+                )
 
         # 1.5 Theme & Appearance Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):

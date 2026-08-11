@@ -687,6 +687,32 @@ def test_autocomplete_unicode_non_ascii_casing(setup_engine_dbs):
     assert res.matched_rank == "SPECIES"
 
 
+def test_autocomplete_min_count_filtering(setup_engine_dbs) -> None:
+    """Verify that autocomplete_taxa and validate_user_guess exclude taxa below min_count threshold."""
+    app_conn, _ = setup_engine_dbs
+    app_conn.execute("""
+        INSERT OR REPLACE INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, occurrence_count)
+        VALUES ('KEY_RARE', 'Rare species L.', 'Rare species', 'Rare species L.', 'SPECIES', 'Rarefam', 'Raregenus', 'Sjælden plante', 2);
+    """)
+    app_conn.execute("""
+        INSERT OR REPLACE INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, occurrence_count)
+        VALUES ('KEY_COMMON', 'Common species L.', 'Common species', 'Common species L.', 'SPECIES', 'Commonfam', 'Commongenus', 'Almindelig plante', 20);
+    """)
+    app_conn.commit()
+
+    # With min_count=1: both rare and common appear in autocomplete
+    matches_1 = autocomplete_taxa(app_conn, "plante", min_count=1, lang="da")
+    canonical_names_1 = [m["canonical_name"] for m in matches_1]
+    assert "Rare species" in canonical_names_1
+    assert "Common species" in canonical_names_1
+
+    # With min_count=5: Rare species (occurrence_count=2) is omitted from autocomplete
+    matches_5 = autocomplete_taxa(app_conn, "plante", min_count=5, lang="da")
+    canonical_names_5 = [m["canonical_name"] for m in matches_5]
+    assert "Rare species" not in canonical_names_5
+    assert "Common species" in canonical_names_5
+
+
 
 
 

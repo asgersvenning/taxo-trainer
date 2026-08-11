@@ -111,7 +111,8 @@ def autocomplete_taxa(
     parent_genus: str | None = None,
     parent_family: str | None = None,
     parent_order: str | None = None,
-) -> list[dict[str, str]]:
+    min_count: int = 1,
+) -> list[dict[str, Any]]:
     """Autocomplete taxa query returning matching canonical, vernacular, genus, and family names.
 
     Prioritizes exact matches first (Priority 0), followed by Genus/Family matches,
@@ -126,6 +127,7 @@ def autocomplete_taxa(
         parent_genus: Optional genus constraint to restrict suggestions to species within genus.
         parent_family: Optional family constraint to restrict suggestions to genera/species within family.
         parent_order: Optional order constraint to restrict suggestions to family/genus/species within order.
+        min_count: Minimum occurrence count cutoff threshold.
 
     Returns:
         List[Dict[str, str]]: List of suggestion objects containing label, value, rank, taxon_key.
@@ -158,6 +160,7 @@ def autocomplete_taxa(
         "p_gen": p_gen or "",
         "p_fam": p_fam or "",
         "p_ord": p_ord or "",
+        "min_count": min_count if min_count > 1 else 0,
     }
 
     candidates: list[dict[str, Any]] = []
@@ -308,7 +311,8 @@ def autocomplete_taxa(
     sp_sql = f"""
         SELECT taxon_key, canonical_name, scientific_name, rank, family, genus, vernacular_da, vernacular_en, vernacular_json
         FROM taxa
-        WHERE (LOWER(canonical_name) LIKE :sub
+        WHERE occurrence_count >= :min_count
+          AND (LOWER(canonical_name) LIKE :sub
            OR LOWER(vernacular_da) LIKE :sub
            OR LOWER(vernacular_en) LIKE :sub
            OR LOWER(scientific_name) LIKE :sub
@@ -371,7 +375,7 @@ def autocomplete_taxa(
             SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
             FROM taxa t
             LEFT JOIN higher_ranks h ON h.rank_name = t.genus
-            WHERE t.genus IS NOT NULL AND t.genus != ''{g_where_extra}
+            WHERE t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
               AND (LOWER(t.genus) LIKE :sub 
                 OR LOWER(h.vernacular_da) LIKE :sub 
                 OR LOWER(h.vernacular_en) LIKE :sub
@@ -431,7 +435,7 @@ def autocomplete_taxa(
             SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
             FROM taxa t
             LEFT JOIN higher_ranks h ON h.rank_name = t.family
-            WHERE t.family IS NOT NULL AND t.family != ''{f_where_extra}
+            WHERE t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
               AND (LOWER(t.family) LIKE :sub 
                 OR LOWER(h.vernacular_da) LIKE :sub 
                 OR LOWER(h.vernacular_en) LIKE :sub
@@ -555,9 +559,10 @@ def check_string_similarity(a: str, b: str) -> float:
 def validate_user_guess(
     conn: sqlite3.Connection,
     user_input: str,
-    target_taxon_key: int,
+    target_taxon_key: int | str,
     typo_threshold: float = 0.90,
     lang: str = "da",
+    min_count: int = 1,
 ) -> ValidationResult:
     """Validate user guess against target taxon across Family, Genus, and Species ranks.
 
@@ -567,6 +572,7 @@ def validate_user_guess(
         target_taxon_key: Target GBIF taxon_key for observation.
         typo_threshold: SequenceMatcher similarity threshold for soft typo acceptance (default >0.90).
         lang: Preferred language ("da" or "en").
+        min_count: Minimum occurrence count cutoff threshold for valid taxa lookup.
 
     Returns:
         ValidationResult: Detailed validation outcome dataclass.

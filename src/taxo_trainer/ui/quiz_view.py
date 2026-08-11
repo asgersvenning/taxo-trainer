@@ -111,6 +111,7 @@ def render_quiz_view(state: QuizViewState) -> None:
             guess_text,
             state.current_question.taxon_key,
             lang=state.filters.language,
+            min_count=state.filters.min_count,
         )
         state.last_validation_result = res
 

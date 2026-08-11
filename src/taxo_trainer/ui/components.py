@@ -311,7 +311,9 @@ def render_taxa_filter_controls(
                 if len(txt.strip()) < 2:
                     inc_suggestions.classes(add="hidden")
                     return
-                matches = autocomplete_taxa(app_conn, txt, limit=5)
+                matches = autocomplete_taxa(
+                    app_conn, txt, limit=5, min_count=filters.min_count
+                )
                 inc_suggestions.clear()
                 if matches:
                     inc_suggestions.classes(remove="hidden")
@@ -386,7 +388,9 @@ def render_taxa_filter_controls(
                 if len(txt.strip()) < 2:
                     exc_suggestions.classes(add="hidden")
                     return
-                matches = autocomplete_taxa(app_conn, txt, limit=5)
+                matches = autocomplete_taxa(
+                    app_conn, txt, limit=5, min_count=filters.min_count
+                )
                 exc_suggestions.clear()
                 if matches:
                     exc_suggestions.classes(remove="hidden")
