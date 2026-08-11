@@ -25,13 +25,13 @@ from taxo_trainer.db import (
 
 
 def extract_canonical_name(scientific_name: str) -> str:
-    """Extract clean binomial canonical name from full scientific name string.
+    """Return clean binomial canonical name string (first two words e.g. Genus species).
 
     Args:
-        scientific_name: Binomial with potential authority details e.g. "Quercus robur L."
+        scientific_name: Full scientific name string e.g. "Quercus robur L." or "Pinus".
 
     Returns:
-        str: Binomial canonical name e.g. "Quercus robur".
+        str: Binomial canonical name string e.g. "Quercus robur".
     """
     if not scientific_name:
         return ""
@@ -245,9 +245,9 @@ def ingest_dwc_file(
         for row in stream_occurrence_tsv(file_path):
             occ_id = row.get("gbifID") or row.get("occurrenceID") or row.get("id")
             taxon_key_raw = (
-                row.get("acceptedTaxonKey")
+                row.get("speciesKey")
+                or row.get("acceptedTaxonKey")
                 or row.get("taxonKey")
-                or row.get("speciesKey")
                 or row.get("taxonID")
                 or row.get("acceptedNameUsageID")
             )
@@ -335,7 +335,20 @@ def ingest_dwc_file(
             )
             canonical = row.get("canonicalName") or extract_canonical_name(sci_name)
             accepted = row.get("acceptedScientificName") or sci_name
-            rank = (row.get("taxonRank") or row.get("rank") or "SPECIES").upper()
+            rank_raw = (row.get("taxonRank") or row.get("rank") or "SPECIES").upper()
+            rank = (
+                "SPECIES"
+                if rank_raw
+                in (
+                    "SUBSPECIES",
+                    "VARIETY",
+                    "FORM",
+                    "INFRASPECIFIC_NAME",
+                    "SUBFAMILY",
+                    "TRIBE",
+                )
+                else rank_raw
+            )
             kingdom = row.get("kingdom") or ""
             phylum = row.get("phylum") or ""
             cls_name = row.get("class") or ""

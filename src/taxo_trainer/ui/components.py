@@ -593,30 +593,11 @@ def render_taxonomic_hierarchy_feedback(
             if not raw_name or raw_name.startswith("Unknown") or raw_name == "???":
                 return None
 
-            if rank_lvl == "Species":
-                if target_row and "taxon_key" in target_row and target_row["taxon_key"]:
-                    return str(target_row["taxon_key"])
-                if (
-                    guessed_row
-                    and "taxon_key" in guessed_row
-                    and guessed_row["taxon_key"]
-                ):
-                    return str(guessed_row["taxon_key"])
+            cache_key = f"{rank_lvl}:{raw_name}"
+            if cache_key in gbif_cache:
+                return gbif_cache[cache_key]
 
-            if raw_name in gbif_cache:
-                return gbif_cache[raw_name]
-
-            # 1. Look up exact canonical_name and rank in taxa
-            r = app_conn.execute(
-                "SELECT taxon_key FROM taxa WHERE LOWER(canonical_name) = LOWER(?) AND LOWER(rank) = LOWER(?) AND taxon_key IS NOT NULL LIMIT 1",
-                (raw_name, rank_lvl),
-            ).fetchone()
-            if r and r["taxon_key"]:
-                key = str(r["taxon_key"])
-                gbif_cache[raw_name] = key
-                return key
-
-            # 2. Query GBIF match API for exact rank key
+            # Query GBIF match API to get authoritative rank key (preferring speciesKey for SPECIES rank)
             import json
             import urllib.parse
             import urllib.request
@@ -636,10 +617,20 @@ def render_taxonomic_hierarchy_feedback(
                     }
                     key = rank_key_map.get(rank_lvl.upper()) or data.get("usageKey")
                     if key:
-                        gbif_cache[raw_name] = str(key)
+                        gbif_cache[cache_key] = str(key)
                         return str(key)
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
                 pass
+
+            # Fallback: database lookup for taxon_key
+            r = app_conn.execute(
+                "SELECT taxon_key FROM taxa WHERE LOWER(canonical_name) = LOWER(?) AND taxon_key IS NOT NULL LIMIT 1",
+                (raw_name,),
+            ).fetchone()
+            if r and r["taxon_key"]:
+                key = str(r["taxon_key"])
+                gbif_cache[cache_key] = key
+                return key
 
             return None
 

@@ -280,8 +280,6 @@ def enrich_vernacular_names_from_gbif(
         ) -> tuple[str, str | None, str | None, str | None]:
             tkey = str(row_dict["taxon_key"])
             canonical = row_dict["canonical_name"].strip()
-            old_da = (row_dict["vernacular_da"] or "").strip()
-            old_en = (row_dict["vernacular_en"] or "").strip()
             cache_key = canonical.lower()
             data = None
 
@@ -306,7 +304,9 @@ def enrich_vernacular_names_from_gbif(
 
             if data is None:
                 all_vernacular_items = []
-                gbif_key = None
+                species_key = None
+                species_name = canonical
+
                 match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canonical)}"
                 req = urllib.request.Request(
                     match_url, headers={"User-Agent": "taxo-trainer/1.0"}
@@ -316,14 +316,19 @@ def enrich_vernacular_names_from_gbif(
                     with urllib.request.urlopen(req, timeout=5) as resp:
                         if resp.status == 200:
                             match_data = json.loads(resp.read().decode("utf-8"))
-                            gbif_key = (
-                                match_data.get("usageKey")
-                                or match_data.get("speciesKey")
+                            species_key = (
+                                match_data.get("speciesKey")
+                                or match_data.get("usageKey")
                                 or match_data.get("nubKey")
                             )
+                            species_name = (
+                                match_data.get("species")
+                                or match_data.get("canonicalName")
+                                or canonical
+                            )
 
-                            if gbif_key:
-                                v_url = f"https://api.gbif.org/v1/species/{gbif_key}/vernacularNames?limit=1000"
+                            if species_key:
+                                v_url = f"https://api.gbif.org/v1/species/{species_key}/vernacularNames?limit=1000"
                                 req2 = urllib.request.Request(
                                     v_url, headers={"User-Agent": "taxo-trainer/1.0"}
                                 )
@@ -343,9 +348,9 @@ def enrich_vernacular_names_from_gbif(
                 ):
                     pass
 
-                # Also query GBIF species search API to capture checklist sources (Arter.dk, CoL)
+                # Query GBIF species search API using GBIF-resolved species name
                 try:
-                    search_url = f"https://api.gbif.org/v1/species/search?q={urllib.parse.quote(canonical)}&rank=SPECIES&limit=20"
+                    search_url = f"https://api.gbif.org/v1/species/search?q={urllib.parse.quote(species_name)}&limit=50"
                     req3 = urllib.request.Request(
                         search_url, headers={"User-Agent": "taxo-trainer/1.0"}
                     )
@@ -353,42 +358,36 @@ def enrich_vernacular_names_from_gbif(
                         if s_resp.status == 200:
                             sdata = json.loads(s_resp.read().decode("utf-8"))
                             for s_item in sdata.get("results", []):
-                                c_name = (
-                                    s_item.get("canonicalName")
-                                    or s_item.get("scientificName")
-                                    or ""
+                                all_vernacular_items.extend(
+                                    s_item.get("vernacularNames", [])
                                 )
-                                if canonical.lower() in c_name.lower():
-                                    all_vernacular_items.extend(
-                                        s_item.get("vernacularNames", [])
-                                    )
-                                    sk = s_item.get("key")
-                                    if sk and sk != gbif_key:
-                                        try:
-                                            v_url2 = f"https://api.gbif.org/v1/species/{sk}/vernacularNames?limit=1000"
-                                            req4 = urllib.request.Request(
-                                                v_url2,
-                                                headers={
-                                                    "User-Agent": "taxo-trainer/1.0"
-                                                },
-                                            )
-                                            with urllib.request.urlopen(
-                                                req4, timeout=3
-                                            ) as v_resp2:
-                                                if v_resp2.status == 200:
-                                                    v_json2 = json.loads(
-                                                        v_resp2.read().decode("utf-8")
-                                                    )
-                                                    all_vernacular_items.extend(
-                                                        v_json2.get("results", [])
-                                                    )
-                                        except (
-                                            urllib.error.URLError,
-                                            urllib.error.HTTPError,
-                                            TimeoutError,
-                                            json.JSONDecodeError,
-                                        ):
-                                            pass
+                                sk = s_item.get("key")
+                                if sk and sk != species_key:
+                                    try:
+                                        v_url2 = f"https://api.gbif.org/v1/species/{sk}/vernacularNames?limit=1000"
+                                        req4 = urllib.request.Request(
+                                            v_url2,
+                                            headers={
+                                                "User-Agent": "taxo-trainer/1.0"
+                                            },
+                                        )
+                                        with urllib.request.urlopen(
+                                            req4, timeout=3
+                                        ) as v_resp2:
+                                            if v_resp2.status == 200:
+                                                v_json2 = json.loads(
+                                                    v_resp2.read().decode("utf-8")
+                                                )
+                                                all_vernacular_items.extend(
+                                                    v_json2.get("results", [])
+                                                )
+                                    except (
+                                        urllib.error.URLError,
+                                        urllib.error.HTTPError,
+                                        TimeoutError,
+                                        json.JSONDecodeError,
+                                    ):
+                                        pass
                 except (
                     urllib.error.URLError,
                     urllib.error.HTTPError,
@@ -441,17 +440,6 @@ def enrich_vernacular_names_from_gbif(
                     if vernacular_dict
                     else None
                 )
-
-                # Move former English name if it was placed in vernacular_da
-                if not new_en and old_da and not old_en and old_da != new_da:
-                    new_en = old_da
-                    if v_json_str:
-                        try:
-                            v_dict = json.loads(v_json_str)
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            v_dict = {}
-                        v_dict["en"] = old_da
-                        v_json_str = json.dumps(v_dict, ensure_ascii=False)
 
                 return tkey, new_da, new_en, v_json_str
 
