@@ -69,3 +69,61 @@ def test_ingest_dwc_file_and_taxonomy_builder(tmp_path):
     assert cursor.fetchone()["vernacular_da"] == "Stilke-Eg Custom"
 
     conn.close()
+
+
+def test_consolidate_synonyms_with_gbif(tmp_path, monkeypatch):
+    """Test consolidating synonym species into accepted species using mocked GBIF Match response."""
+    from taxo_trainer.db import init_app_db
+    from taxo_trainer.ingestion.taxonomy_builder import consolidate_synonyms_with_gbif
+
+    db_path = tmp_path / "test_synonyms.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    init_app_db(conn)
+
+    # Insert accepted species and a synonym species
+    with conn:
+        conn.execute(
+            "INSERT INTO taxa (taxon_key, canonical_name, accepted_name, scientific_name, rank) VALUES ('LX6F', 'Bistorta officinalis', 'Bistorta officinalis', 'Bistorta officinalis Raf.', 'SPECIES')"
+        )
+        conn.execute(
+            "INSERT INTO taxa (taxon_key, canonical_name, accepted_name, scientific_name, rank) VALUES ('5FY79', 'Persicaria bistorta', 'Bistorta officinalis', 'Persicaria bistorta (L.) Samp.', 'SPECIES')"
+        )
+        conn.execute(
+            "INSERT INTO occurrences (occurrence_id, taxon_key, media_urls) VALUES ('1', '5FY79', 'http://example.com/img.jpg')"
+        )
+
+    # Mock GBIF Match API response for Persicaria bistorta -> Bistorta officinalis
+    def mock_urlopen(req, timeout=5):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+
+        class MockResp:
+            status = 200
+
+            def read(self):
+                if "Persicaria" in url:
+                    return b'{"status": "SYNONYM", "synonym": true, "speciesKey": "LX6F", "species": "Bistorta officinalis"}'
+                return b'{"status": "ACCEPTED", "synonym": false, "speciesKey": "LX6F", "species": "Bistorta officinalis"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        return MockResp()
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    merged = consolidate_synonyms_with_gbif(conn)
+    assert merged == 1
+
+    # Verify synonym 5FY79 was merged into LX6F and occurrence updated
+    occ = conn.execute("SELECT taxon_key FROM occurrences WHERE occurrence_id = '1'").fetchone()
+    assert occ["taxon_key"] == "LX6F"
+
+    syn_row = conn.execute("SELECT * FROM taxa WHERE taxon_key = '5FY79'").fetchone()
+    assert syn_row is None
+
+    conn.close()

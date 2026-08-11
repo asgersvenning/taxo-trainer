@@ -610,10 +610,16 @@ def validate_user_guess(
     input_clean = normalize_name(clean_input)
 
     # Direct exact / symmetric check against target species (including all multi-language pipe-separated vernacular variations)
+    import re
+
     target_names_clean = [
         normalize_name(target_canonical),
         normalize_name(target_sci),
     ]
+    for syn in re.findall(r"\((.*?)\)", target_sci):
+        norm_syn = normalize_name(syn)
+        if norm_syn and norm_syn not in target_names_clean:
+            target_names_clean.append(norm_syn)
 
     v_json_raw = (
         target_row["vernacular_json"]
