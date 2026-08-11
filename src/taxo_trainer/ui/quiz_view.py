@@ -153,12 +153,8 @@ def render_quiz_view(state: QuizViewState) -> None:
             if res.matched_rank == "GENUS":
                 state.matched_genus = state.current_question.genus
                 state.matched_family = state.current_question.family
-                if target_order_val:
-                    state.matched_order = target_order_val
             elif res.matched_rank == "FAMILY":
                 state.matched_family = state.current_question.family
-                if target_order_val:
-                    state.matched_order = target_order_val
             elif res.matched_rank == "ORDER":
                 if target_order_val:
                     state.matched_order = target_order_val
@@ -241,41 +237,52 @@ def render_quiz_view(state: QuizViewState) -> None:
         }
         refresh_quiz_ui()
 
+    def get_target_order(question) -> str:
+        if not question:
+            return ""
+        q_key = str(question.taxon_key)
+        r = app_conn.execute(
+            "SELECT order_name FROM taxa WHERE taxon_key = ? OR taxon_key = ?",
+            (question.taxon_key, q_key),
+        ).fetchone()
+        if r and r["order_name"]:
+            return r["order_name"].strip()
+        r = app_conn.execute(
+            "SELECT order_name FROM taxa WHERE LOWER(canonical_name) = LOWER(?)",
+            (question.canonical_name,),
+        ).fetchone()
+        if r and r["order_name"]:
+            return r["order_name"].strip()
+        if question.family:
+            r = app_conn.execute(
+                "SELECT order_name FROM taxa WHERE LOWER(family) = LOWER(?) AND order_name IS NOT NULL AND order_name != '' LIMIT 1",
+                (question.family,),
+            ).fetchone()
+            if r and r["order_name"]:
+                return r["order_name"].strip()
+        return ""
+
     def handle_higher_order_hint() -> None:
-        """Trigger sequential higher order rank revelation hint."""
+        """Trigger sequential higher order rank revelation hint, revealing the highest current hidden rank."""
         if not state.current_question:
             return
 
         state.used_hint = True
 
-        target_row = app_conn.execute(
-            "SELECT * FROM taxa WHERE taxon_key = ?",
-            (state.current_question.taxon_key,),
-        ).fetchone()
-
-        target_order = (
-            target_row["order_name"]
-            if target_row and "order_name" in target_row and target_row["order_name"]
-            else None
-        )
-        target_family = state.current_question.family
-        target_genus = state.current_question.genus
+        target_order = get_target_order(state.current_question)
+        target_family = (state.current_question.family or "").strip()
+        target_genus = (state.current_question.genus or "").strip()
 
         revealed_desc = None
 
-        if not state.matched_order and target_order:
+        if target_order and not state.matched_order:
             state.matched_order = target_order
             revealed_desc = f"Order '{target_order}'"
-        elif not state.matched_family and target_family:
+        elif target_family and not state.matched_family:
             state.matched_family = target_family
-            if target_order:
-                state.matched_order = target_order
             revealed_desc = f"Family '{target_family}'"
-        elif not state.matched_genus and target_genus:
+        elif target_genus and not state.matched_genus:
             state.matched_genus = target_genus
-            state.matched_family = target_family
-            if target_order:
-                state.matched_order = target_order
             revealed_desc = f"Genus '{target_genus}'"
         elif not state.solved:
             state.solved = True
