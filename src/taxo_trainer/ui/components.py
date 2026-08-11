@@ -144,7 +144,7 @@ def render_photo_viewer(
         ):
             if len(media_urls) > 1:
                 prev_btn = (
-                    ui.button("◀ Previous Photo", color="primary", icon="chevron_left")
+                    ui.button("◀ Previous Photo", color="primary")
                     .props("flat dense")
                     .classes("text-xs")
                 )
@@ -173,7 +173,7 @@ def render_photo_viewer(
 
             if len(media_urls) > 1:
                 next_btn = (
-                    ui.button("Next Photo ▶", color="primary", icon="chevron_right")
+                    ui.button("Next Photo ▶", color="primary")
                     .props("flat dense")
                     .classes("text-xs")
                 )

@@ -25,6 +25,18 @@ def ensure_data_dir() -> Path:
     return DATA_DIR
 
 
+def _sqlite_unicode_lower(s: str | None) -> str | None:
+    """Unicode-aware lowercasing function for SQLite LOWER() queries."""
+    if s is None:
+        return None
+    return str(s).lower()
+
+
+def register_sqlite_functions(conn: sqlite3.Connection) -> None:
+    """Register custom Python unicode-aware functions on a SQLite connection."""
+    conn.create_function("lower", 1, _sqlite_unicode_lower)
+
+
 def get_db_connection(db_path: Path = APP_DB_PATH) -> sqlite3.Connection:
     """Create and configure a SQLite connection with WAL mode enabled.
 
@@ -40,6 +52,7 @@ def get_db_connection(db_path: Path = APP_DB_PATH) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA foreign_keys=ON;")
+    register_sqlite_functions(conn)
     return conn
 
 
@@ -143,6 +156,8 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
     if conn is None:
         conn = get_db_connection(APP_DB_PATH)
         should_close = True
+    else:
+        register_sqlite_functions(conn)
 
     try:
         with conn:

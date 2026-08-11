@@ -661,6 +661,33 @@ def test_autocomplete_exact_species_match_always_top(setup_engine_dbs):
     assert matches[1]["rank"] == "GENUS"
 
 
+def test_autocomplete_unicode_non_ascii_casing(setup_engine_dbs):
+    """Test that non-ASCII Unicode characters (Å, Æ, Ø) match case-insensitively in autocomplete and validation."""
+    app_conn, _ = setup_engine_dbs
+
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES ('KEY_ZOS', 'Zostera marina L.', 'Zostera marina', 'Zostera marina L.', 'SPECIES', 'Zosteraceae', 'Zostera', 'Ålegræs|Almindelig bændeltang', 'Eelgrass');
+    """)
+    app_conn.commit()
+
+    # Lowercase query 'ålegræs' matching capitalized DB entry 'Ålegræs'
+    matches_lower = autocomplete_taxa(app_conn, "ålegræs", lang="da")
+    assert len(matches_lower) == 1
+    assert matches_lower[0]["canonical_name"] == "Zostera marina"
+
+    # Uppercase query 'ÅLEGRÆS' matching capitalized DB entry 'Ålegræs'
+    matches_upper = autocomplete_taxa(app_conn, "ÅLEGRÆS", lang="da")
+    assert len(matches_upper) == 1
+    assert matches_upper[0]["canonical_name"] == "Zostera marina"
+
+    # Validate guess
+    res = validate_user_guess(app_conn, "ålegræs", "KEY_ZOS", lang="da")
+    assert res.is_correct is True
+    assert res.matched_rank == "SPECIES"
+
+
+
 
 
 

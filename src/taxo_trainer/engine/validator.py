@@ -619,6 +619,11 @@ def validate_user_guess(
                         np = normalize_name(part)
                         if np and np not in genus_names_clean:
                             genus_names_clean.append(np)
+                        for suf in ("slægten", "familien", "ordenen"):
+                            if np.endswith(suf) and len(np) > len(suf):
+                                base_np = np[: -len(suf)].strip()
+                                if base_np and base_np not in genus_names_clean:
+                                    genus_names_clean.append(base_np)
             if g_row["vernacular_json"]:
                 try:
                     g_dict = json.loads(g_row["vernacular_json"])
@@ -628,6 +633,11 @@ def validate_user_guess(
                                 np = normalize_name(part)
                                 if np and np not in genus_names_clean:
                                     genus_names_clean.append(np)
+                                for suf in ("slægten", "familien", "ordenen"):
+                                    if np.endswith(suf) and len(np) > len(suf):
+                                        base_np = np[: -len(suf)].strip()
+                                        if base_np and base_np not in genus_names_clean:
+                                            genus_names_clean.append(base_np)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
@@ -660,6 +670,11 @@ def validate_user_guess(
                         np = normalize_name(part)
                         if np and np not in family_names_clean:
                             family_names_clean.append(np)
+                        for suf in ("slægten", "familien", "ordenen"):
+                            if np.endswith(suf) and len(np) > len(suf):
+                                base_np = np[: -len(suf)].strip()
+                                if base_np and base_np not in family_names_clean:
+                                    family_names_clean.append(base_np)
             if f_row["vernacular_json"]:
                 try:
                     f_dict = json.loads(f_row["vernacular_json"])
@@ -669,6 +684,11 @@ def validate_user_guess(
                                 np = normalize_name(part)
                                 if np and np not in family_names_clean:
                                     family_names_clean.append(np)
+                                for suf in ("slægten", "familien", "ordenen"):
+                                    if np.endswith(suf) and len(np) > len(suf):
+                                        base_np = np[: -len(suf)].strip()
+                                        if base_np and base_np not in family_names_clean:
+                                            family_names_clean.append(base_np)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 

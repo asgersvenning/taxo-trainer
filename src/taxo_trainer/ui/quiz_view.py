@@ -491,6 +491,23 @@ def render_quiz_view(state: QuizViewState) -> None:
                     with ui.card().classes(
                         "w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700 space-y-2"
                     ):
+                        # Streak Info
+                        with ui.row().classes("w-full justify-between items-center"):
+                            with ui.row().classes("items-center gap-1.5"):
+                                ui.icon("whatshot", color="amber-500").classes(
+                                    "text-sm"
+                                )
+                                ui.label(f"Streak: {state.current_streak}").classes(
+                                    "text-xs font-bold text-amber-400"
+                                )
+                            with ui.row().classes("items-center gap-1.5"):
+                                ui.icon("emoji_events", color="yellow-400").classes(
+                                    "text-sm"
+                                )
+                                ui.label(f"Record: {state.best_streak}").classes(
+                                    "text-xs font-bold text-yellow-300"
+                                )
+
                         with ui.row().classes("w-full justify-between items-center"):
                             ui.label("Identify Taxon:").classes(
                                 "font-bold text-xs text-gray-200"
@@ -587,25 +604,6 @@ def render_quiz_view(state: QuizViewState) -> None:
                                 color="primary",
                                 on_click=handle_enter_submission,
                             ).classes("w-full font-bold text-xs")
-
-                        # Streak Info
-                        with ui.row().classes(
-                            "w-full justify-between items-center bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-md shadow-sm"
-                        ):
-                            with ui.row().classes("items-center gap-1.5"):
-                                ui.icon("whatshot", color="amber-500").classes(
-                                    "text-sm"
-                                )
-                                ui.label(f"Streak: {state.current_streak}").classes(
-                                    "text-xs font-bold text-amber-400"
-                                )
-                            with ui.row().classes("items-center gap-1.5"):
-                                ui.icon("emoji_events", color="yellow-400").classes(
-                                    "text-sm"
-                                )
-                                ui.label(f"Record: {state.best_streak}").classes(
-                                    "text-xs font-bold text-yellow-300"
-                                )
 
                     # Hints Controls Card & Misidentification Flag
                     with ui.card().classes(
