@@ -113,8 +113,7 @@ def render_quiz_view(state: QuizViewState) -> None:
                 state.solved = True
                 state.is_incorrect = False
                 state.current_streak += 1
-                if state.current_streak > state.best_streak:
-                    state.best_streak = state.current_streak
+                state.best_streak = max(state.best_streak, state.current_streak)
                 set_user_streak(state.current_streak, state.best_streak, user_conn)
 
             state.matched_genus = state.current_question.genus

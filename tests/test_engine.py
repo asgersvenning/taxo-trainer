@@ -353,9 +353,8 @@ def test_autocomplete_sennep_ordering_and_vernacular(setup_engine_dbs):
 
 def test_render_taxonomic_hierarchy_gbif_links(setup_engine_dbs):
     """Test that render_taxonomic_hierarchy_feedback renders GBIF links for revealed ranks."""
-    from nicegui import ui
-    from src.ui.components import render_taxonomic_hierarchy_feedback
     from src.engine.validator import ValidationResult
+    from src.ui.components import render_taxonomic_hierarchy_feedback
 
     app_conn, _ = setup_engine_dbs
 
@@ -503,6 +502,50 @@ def test_user_streak_persistence(setup_engine_dbs):
     curr, best = get_user_streak(user_conn)
     assert curr == 0
     assert best == 2  # Best record preserved!
+
+
+def test_dashboard_analytics_time_range_filtering(setup_engine_dbs):
+    """Test dashboard analytics queries with time_range filtering."""
+    app_conn, user_conn = setup_engine_dbs
+    from src.engine.analytics import (
+        get_dataset_coverage,
+        get_family_mastery_stats,
+        get_global_stats,
+        get_time_cutoff_sql,
+        get_trouble_taxa,
+        log_attempt,
+    )
+
+    # Verify time cutoff SQL fragment generator
+    assert "DATETIME" in get_time_cutoff_sql("1H")
+    assert "DATETIME" in get_time_cutoff_sql("24H")
+    assert "DATETIME" in get_time_cutoff_sql("7D")
+    assert "DATETIME" in get_time_cutoff_sql("30D")
+    assert "DATETIME" in get_time_cutoff_sql("1Y")
+    assert get_time_cutoff_sql("ALL") == "1=1"
+
+    # Insert test attempts
+    log_attempt(user_conn, "occ_1", 9901, 9901, is_correct=True, used_hint=False)
+    log_attempt(user_conn, "occ_2", 9901, 9901, is_correct=True, used_hint=False)
+    log_attempt(user_conn, "occ_3", 9901, 8000, is_correct=False, used_hint=False)
+
+    stats = get_global_stats(user_conn, app_conn, time_range="24H")
+    assert stats["total_attempts"] == 3
+    assert stats["unassisted_attempts"] == 3
+    assert stats["unassisted_correct"] == 2
+
+    coverage = get_dataset_coverage(user_conn, app_conn)
+    assert coverage["total_species"] >= 1
+    assert coverage["encountered_species"] >= 1
+    assert coverage["coverage_pct"] > 0
+
+    best_fams, worst_fams = get_family_mastery_stats(user_conn, app_conn, time_range="ALL")
+    assert isinstance(best_fams, list)
+    assert isinstance(worst_fams, list)
+
+    trouble = get_trouble_taxa(user_conn, app_conn, time_range="ALL")
+    assert isinstance(trouble, list)
+
 
 
 

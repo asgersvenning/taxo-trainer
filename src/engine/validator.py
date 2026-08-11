@@ -571,7 +571,7 @@ def validate_user_guess(
         target_row["vernacular_json"]
         if "vernacular_json" in target_row.keys()
         else None
-    )  # noqa: SIM118
+    )
     v_dict = {}
     if v_json_raw and str(v_json_raw).strip():
         try:
