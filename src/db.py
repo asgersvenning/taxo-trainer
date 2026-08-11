@@ -300,9 +300,72 @@ def init_user_db(conn: sqlite3.Connection | None = None) -> None:
                     attempt_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
 
+                CREATE TABLE IF NOT EXISTS user_streak (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    current_streak INTEGER NOT NULL DEFAULT 0,
+                    best_streak INTEGER NOT NULL DEFAULT 0
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_user_progress ON user_progress(target_taxon_key, is_correct);
                 CREATE INDEX IF NOT EXISTS idx_user_progress_occ ON user_progress(occurrence_id, is_correct);
             """)
+    finally:
+        if should_close:
+            conn.close()
+
+
+def get_user_streak(conn: sqlite3.Connection | None = None) -> tuple[int, int]:
+    """Get (current_streak, best_streak) from user_data.db.
+
+    Returns:
+        tuple[int, int]: (current_streak, best_streak)
+    """
+    should_close = False
+    if conn is None:
+        conn = get_db_connection(USER_DB_PATH)
+        should_close = True
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_streak (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                current_streak INTEGER NOT NULL DEFAULT 0,
+                best_streak INTEGER NOT NULL DEFAULT 0
+            );
+        """)
+        row = conn.execute("SELECT current_streak, best_streak FROM user_streak WHERE id = 1").fetchone()
+        if row:
+            return (int(row["current_streak"]), int(row["best_streak"]))
+        return (0, 0)
+    finally:
+        if should_close:
+            conn.close()
+
+
+def set_user_streak(current_streak: int, best_streak: int, conn: sqlite3.Connection | None = None) -> None:
+    """Save (current_streak, best_streak) to user_data.db.
+
+    Args:
+        current_streak: Current active streak count.
+        best_streak: User record best streak count.
+        conn: Optional SQLite connection.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_db_connection(USER_DB_PATH)
+        should_close = True
+    try:
+        with conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_streak (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    current_streak INTEGER NOT NULL DEFAULT 0,
+                    best_streak INTEGER NOT NULL DEFAULT 0
+                );
+            """)
+            conn.execute(
+                "INSERT OR REPLACE INTO user_streak (id, current_streak, best_streak) VALUES (1, ?, ?)",
+                (current_streak, max(current_streak, best_streak)),
+            )
     finally:
         if should_close:
             conn.close()

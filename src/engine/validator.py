@@ -25,7 +25,6 @@ class ValidationResult:
 
 
 def get_display_name(taxon_row: sqlite3.Row | dict, lang: str = "da") -> str:
-
     """Execute vernacular fallback chain according to preferred language (da, en, de, sv, no, fr, es, nl, la).
 
     Args:
@@ -54,17 +53,33 @@ def get_display_name(taxon_row: sqlite3.Row | dict, lang: str = "da") -> str:
         v_en_raw = taxon_row["vernacular_en"] if "vernacular_en" in keys else None
         v_json_raw = taxon_row["vernacular_json"] if "vernacular_json" in keys else None
         canon = (
-            taxon_row["canonical_name"] if "canonical_name" in keys and taxon_row["canonical_name"]
-            else (taxon_row["rank_name"] if "rank_name" in keys and taxon_row["rank_name"]
-            else (taxon_row["genus"] if "genus" in keys and taxon_row["genus"]
-            else (taxon_row["family"] if "family" in keys and taxon_row["family"] else None)))
+            taxon_row["canonical_name"]
+            if "canonical_name" in keys and taxon_row["canonical_name"]
+            else (
+                taxon_row["rank_name"]
+                if "rank_name" in keys and taxon_row["rank_name"]
+                else (
+                    taxon_row["genus"]
+                    if "genus" in keys and taxon_row["genus"]
+                    else (
+                        taxon_row["family"]
+                        if "family" in keys and taxon_row["family"]
+                        else None
+                    )
+                )
+            )
         )
         sci = taxon_row["scientific_name"] if "scientific_name" in keys else None
     elif isinstance(taxon_row, dict):
         v_da_raw = taxon_row.get("vernacular_da")
         v_en_raw = taxon_row.get("vernacular_en")
         v_json_raw = taxon_row.get("vernacular_json")
-        canon = taxon_row.get("canonical_name") or taxon_row.get("rank_name") or taxon_row.get("genus") or taxon_row.get("family")
+        canon = (
+            taxon_row.get("canonical_name")
+            or taxon_row.get("rank_name")
+            or taxon_row.get("genus")
+            or taxon_row.get("family")
+        )
         sci = taxon_row.get("scientific_name")
     else:
         return "Unknown Species"
@@ -81,21 +96,30 @@ def get_display_name(taxon_row: sqlite3.Row | dict, lang: str = "da") -> str:
         return target_lang_str.split("|")[0].strip()
 
     # Fallbacks: requested lang -> da -> en -> canonical_name
-    v_da = str(v_da_raw).split("|")[0].strip() if (v_da_raw and str(v_da_raw).strip()) else ""
-    v_en = str(v_en_raw).split("|")[0].strip() if (v_en_raw and str(v_en_raw).strip()) else ""
+    v_da = (
+        str(v_da_raw).split("|")[0].strip()
+        if (v_da_raw and str(v_da_raw).strip())
+        else ""
+    )
+    v_en = (
+        str(v_en_raw).split("|")[0].strip()
+        if (v_en_raw and str(v_en_raw).strip())
+        else ""
+    )
     c_str = str(canon).strip() if (canon and str(canon).strip()) else ""
     s_str = str(sci).strip() if (sci and str(sci).strip()) else ""
 
+    if lang == "da" and v_da:
+        return v_da
     if lang == "en" and v_en:
         return v_en
-    if v_da:
+    if v_da and lang not in ("en", "la"):
         return v_da
-    if v_en:
+    if v_en and lang == "en":
         return v_en
     if c_str:
         return c_str
     return s_str if s_str else "Unknown Species"
-
 
 
 def normalize_name(s: str) -> str:
@@ -148,13 +172,22 @@ def autocomplete_taxa(
     sub_pat = f"%{q_strip}%"
     clean_sub_pat = f"%{q_clean}%"
 
-    p_gen = parent_genus.strip().lower() if parent_genus and parent_genus.strip() else None
-    p_fam = parent_family.strip().lower() if parent_family and parent_family.strip() else None
-    p_ord = parent_order.strip().lower() if parent_order and parent_order.strip() else None
+    p_gen = (
+        parent_genus.strip().lower() if parent_genus and parent_genus.strip() else None
+    )
+    p_fam = (
+        parent_family.strip().lower()
+        if parent_family and parent_family.strip()
+        else None
+    )
+    p_ord = (
+        parent_order.strip().lower() if parent_order and parent_order.strip() else None
+    )
 
     params = {
         "sub": sub_pat,
         "clean_sub": clean_sub_pat,
+        "lang_code": lang,
         "p_gen": p_gen or "",
         "p_fam": p_fam or "",
         "p_ord": p_ord or "",
@@ -163,8 +196,34 @@ def autocomplete_taxa(
     candidates: list[dict[str, Any]] = []
     seen_values = set()
 
-    def calc_priority(canon: str, primary_vernaculars: list[str | None], secondary_names: list[str | None]) -> int:
-        # Priority 0: Exact match on canonical_name or primary vernacular (e.g. vernacular_da when lang=='da')
+    def calc_priority_and_rank_weight(
+        canon: str,
+        rank_str: str,
+        primary_vernaculars: list[str | None],
+        secondary_names: list[str | None],
+    ) -> tuple[int, int]:
+        r = (rank_str or "").upper()
+        rw = 1 if r == "GENUS" else (2 if r == "FAMILY" else (3 if r in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM") else 4))
+
+        def is_word_prefix(name: str | None, target: str, target_clean: str) -> bool:
+            if not name:
+                return False
+            for part in str(name).split("|"):
+                p_l = part.strip().lower()
+                p_c = normalize_name(part)
+                if p_l.startswith(target) or p_c.startswith(target_clean):
+                    return True
+                words = [w for w in p_l.replace("-", " ").replace("/", " ").split() if w]
+                if any(w.startswith(target) for w in words):
+                    return True
+                clean_words = [
+                    w for w in p_c.replace("-", " ").replace("/", " ").split() if w
+                ]
+                if any(w.startswith(target_clean) for w in clean_words):
+                    return True
+            return False
+
+        # 1. Exact match on canonical_name or primary vernacular
         for n in [canon] + primary_vernaculars:
             if not n:
                 continue
@@ -172,9 +231,9 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if p_l == q_strip or p_c == q_clean:
-                    return 0
+                    return 0, rw
 
-        # Priority 1: Exact match on secondary vernaculars (e.g. secondary languages)
+        # 2. Exact match on secondary names
         for n in secondary_names:
             if not n:
                 continue
@@ -182,60 +241,39 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if p_l == q_strip or p_c == q_clean:
-                    return 1
+                    return 1, rw
 
-        # Priority 2: Prefix match on canonical or primary vernaculars
+        # 3. Word-prefix match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
-            if not n:
-                continue
-            for p in str(n).split("|"):
-                p_l = p.strip().lower()
-                p_c = normalize_name(p)
-                if p_l.startswith(q_strip) or p_c.startswith(q_clean):
-                    return 2
+            if is_word_prefix(n, q_strip, q_clean):
+                return 2, rw
 
-        # Priority 3: Prefix match on secondary names
+        # 4. Word-prefix match on secondary names
         for n in secondary_names:
-            if not n:
-                continue
-            for p in str(n).split("|"):
-                p_l = p.strip().lower()
-                p_c = normalize_name(p)
-                if p_l.startswith(q_strip) or p_c.startswith(q_clean):
-                    return 3
+            if is_word_prefix(n, q_strip, q_clean):
+                return 3, rw
 
-        # Priority 4: Substring match
-        for n in [canon] + primary_vernaculars + secondary_names:
+        # 5. Substring match on canonical or primary vernaculars
+        for n in [canon] + primary_vernaculars:
             if not n:
                 continue
             for p in str(n).split("|"):
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if q_strip in p_l or q_clean in p_c:
-                    return 4
+                    return 4, rw
 
-        return 5
+        # 6. Substring match on secondary names
+        for n in secondary_names:
+            if not n:
+                continue
+            for p in str(n).split("|"):
+                p_l = p.strip().lower()
+                p_c = normalize_name(p)
+                if q_strip in p_l or q_clean in p_c:
+                    return 5, rw
 
-    def get_rank_weight(r_str: str | None, priority: int) -> int:
-        r = (r_str or "").upper()
-        if priority == 0:
-            # Exact matches: Species first, then Genus, then Family
-            if r in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM"):
-                return 1
-            if r == "GENUS":
-                return 2
-            if r == "FAMILY":
-                return 3
-            return 4
-        else:
-            # Prefix / Substring matches: Genus first, then Family, then Species
-            if r == "GENUS":
-                return 1
-            if r == "FAMILY":
-                return 2
-            if r in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM"):
-                return 3
-            return 4
+        return 6, 4
 
     # 1. Species matches
     sp_where_extra = ""
@@ -253,7 +291,7 @@ def autocomplete_taxa(
            OR LOWER(vernacular_da) LIKE :sub
            OR LOWER(vernacular_en) LIKE :sub
            OR LOWER(scientific_name) LIKE :sub
-           OR LOWER(vernacular_json) LIKE :sub
+           OR json_extract(vernacular_json, '$.' || :lang_code) LIKE :sub
            OR family LIKE :sub
            OR genus LIKE :sub
            OR REPLACE(REPLACE(LOWER(canonical_name), '-', ''), ' ', '') LIKE :clean_sub
@@ -266,21 +304,39 @@ def autocomplete_taxa(
         if canon not in seen_values:
             seen_values.add(canon)
             display = get_display_name(row, lang=lang)
-            primary_v = [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
-            secondary_v = [row["scientific_name"], row["vernacular_en"] if lang == "da" else row["vernacular_da"], row["vernacular_json"]]
-            prio = calc_priority(canon, primary_v, secondary_v)
-            label = f"{display} ({canon})" if display != canon else canon
+            primary_v = (
+                [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
+            )
+            v_json_raw = row["vernacular_json"] if ("vernacular_json" in row.keys() and row["vernacular_json"]) else None
+            if v_json_raw:
+                try:
+                    v_dict = json.loads(v_json_raw)
+                    if v_dict.get(lang):
+                        primary_v.append(v_dict[lang])
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+            secondary_v = [row["scientific_name"]]
+            if lang == "da" and row["vernacular_en"]:
+                secondary_v.append(row["vernacular_en"])
+            elif lang != "da" and row["vernacular_da"]:
+                secondary_v.append(row["vernacular_da"])
             r_str = row["rank"] or "SPECIES"
-            candidates.append({
-                "label": label,
-                "value": canon,
-                "display_name": display,
-                "canonical_name": canon,
-                "rank": r_str,
-                "taxon_key": row["taxon_key"],
-                "priority": prio,
-                "rank_order": get_rank_weight(r_str, prio),
-            })
+            prio, rw = calc_priority_and_rank_weight(canon, r_str, primary_v, secondary_v)
+            if prio >= 6:
+                continue
+            label = f"{display} ({canon})" if display != canon else canon
+            candidates.append(
+                {
+                    "label": label,
+                    "value": canon,
+                    "display_name": display,
+                    "canonical_name": canon,
+                    "rank": r_str,
+                    "taxon_key": row["taxon_key"],
+                    "priority": prio,
+                    "rank_order": rw,
+                }
+            )
 
     # 2. Genus matches (only if genus has not already been guessed)
     if not p_gen:
@@ -298,6 +354,7 @@ def autocomplete_taxa(
               AND (LOWER(t.genus) LIKE :sub 
                 OR LOWER(h.vernacular_da) LIKE :sub 
                 OR LOWER(h.vernacular_en) LIKE :sub
+                OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
                 OR REPLACE(REPLACE(LOWER(t.genus), '-', ''), ' ', '') LIKE :clean_sub
                 OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
         """
@@ -306,20 +363,42 @@ def autocomplete_taxa(
             if g_name and g_name not in seen_values:
                 seen_values.add(g_name)
                 g_disp = get_display_name(row, lang=lang)
-                primary_v = [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
-                secondary_v = [row["vernacular_en"] if lang == "da" else row["vernacular_da"], row["vernacular_json"]]
-                prio = calc_priority(g_name, primary_v, secondary_v)
-                g_label = f"📁 Genus: {g_disp} ({g_name})" if g_disp and g_disp != g_name and g_disp != "Unknown Species" else f"📁 Genus: {g_name}"
-                candidates.append({
-                    "label": g_label,
-                    "value": g_name,
-                    "display_name": g_disp,
-                    "canonical_name": g_name,
-                    "rank": "GENUS",
-                    "taxon_key": None,
-                    "priority": prio,
-                    "rank_order": get_rank_weight("GENUS", prio),
-                })
+                primary_v = (
+                    [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
+                )
+                v_json_raw = (
+                    row["vernacular_json"] if ("vernacular_json" in row.keys() and row["vernacular_json"]) else None
+                )
+                if v_json_raw:
+                    try:
+                        v_dict = json.loads(v_json_raw)
+                        if v_dict.get(lang):
+                            primary_v.append(v_dict[lang])
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+                secondary_v = [
+                    row["vernacular_en"] if lang == "da" else row["vernacular_da"]
+                ]
+                prio, rw = calc_priority_and_rank_weight(g_name, "GENUS", primary_v, secondary_v)
+                if prio >= 6:
+                    continue
+                g_label = (
+                    f"📁 Genus: {g_disp} ({g_name})"
+                    if g_disp and g_disp != g_name and g_disp != "Unknown Species"
+                    else f"📁 Genus: {g_name}"
+                )
+                candidates.append(
+                    {
+                        "label": g_label,
+                        "value": g_name,
+                        "display_name": g_disp,
+                        "canonical_name": g_name,
+                        "rank": "GENUS",
+                        "taxon_key": None,
+                        "priority": prio,
+                        "rank_order": rw,
+                    }
+                )
 
     # 3. Family matches (only if family or genus has not already been guessed)
     if not p_gen and not p_fam:
@@ -335,6 +414,7 @@ def autocomplete_taxa(
               AND (LOWER(t.family) LIKE :sub 
                 OR LOWER(h.vernacular_da) LIKE :sub 
                 OR LOWER(h.vernacular_en) LIKE :sub
+                OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
                 OR REPLACE(REPLACE(LOWER(t.family), '-', ''), ' ', '') LIKE :clean_sub
                 OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
         """
@@ -343,36 +423,66 @@ def autocomplete_taxa(
             if f_name and f_name not in seen_values:
                 seen_values.add(f_name)
                 f_disp = get_display_name(row, lang=lang)
-                primary_v = [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
-                secondary_v = [row["vernacular_en"] if lang == "da" else row["vernacular_da"], row["vernacular_json"]]
-                prio = calc_priority(f_name, primary_v, secondary_v)
-                f_label = f"🏛️ Family: {f_disp} ({f_name})" if f_disp and f_disp != f_name and f_disp != "Unknown Species" else f"🏛️ Family: {f_name}"
-                candidates.append({
-                    "label": f_label,
-                    "value": f_name,
-                    "display_name": f_disp,
-                    "canonical_name": f_name,
-                    "rank": "FAMILY",
-                    "taxon_key": None,
-                    "priority": prio,
-                    "rank_order": get_rank_weight("FAMILY", prio),
-                })
+                primary_v = (
+                    [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
+                )
+                v_json_raw = (
+                    row["vernacular_json"] if ("vernacular_json" in row.keys() and row["vernacular_json"]) else None
+                )
+                if v_json_raw:
+                    try:
+                        v_dict = json.loads(v_json_raw)
+                        if v_dict.get(lang):
+                            primary_v.append(v_dict[lang])
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+                secondary_v = [
+                    row["vernacular_en"] if lang == "da" else row["vernacular_da"]
+                ]
+                prio, rw = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
+                if prio >= 6:
+                    continue
+                f_label = (
+                    f"🏛️ Family: {f_disp} ({f_name})"
+                    if f_disp and f_disp != f_name and f_disp != "Unknown Species"
+                    else f"🏛️ Family: {f_name}"
+                )
+                candidates.append(
+                    {
+                        "label": f_label,
+                        "value": f_name,
+                        "display_name": f_disp,
+                        "canonical_name": f_name,
+                        "rank": "FAMILY",
+                        "taxon_key": None,
+                        "priority": prio,
+                        "rank_order": rw,
+                    }
+                )
 
     # Sort by (match priority, rank_order [species before genus], length of display_name, display_name)
-    candidates.sort(key=lambda c: (c["priority"], c["rank_order"], len(c["display_name"]), c["display_name"]))
+    candidates.sort(
+        key=lambda c: (
+            c["priority"],
+            c["rank_order"],
+            len(c["display_name"]),
+            c["display_name"],
+        )
+    )
 
     results: list[dict[str, Any]] = []
     for c in candidates[:limit]:
-        results.append({
-            "label": c["label"],
-            "value": c["value"],
-            "display_name": c["display_name"],
-            "canonical_name": c["canonical_name"],
-            "rank": c["rank"],
-            "taxon_key": c["taxon_key"],
-        })
+        results.append(
+            {
+                "label": c["label"],
+                "value": c["value"],
+                "display_name": c["display_name"],
+                "canonical_name": c["canonical_name"],
+                "rank": c["rank"],
+                "taxon_key": c["taxon_key"],
+            }
+        )
     return results
-
 
 
 def check_string_similarity(a: str, b: str) -> float:
@@ -457,7 +567,11 @@ def validate_user_guess(
         normalize_name(target_sci),
     ]
 
-    v_json_raw = target_row["vernacular_json"] if "vernacular_json" in target_row.keys() else None  # noqa: SIM118
+    v_json_raw = (
+        target_row["vernacular_json"]
+        if "vernacular_json" in target_row.keys()
+        else None
+    )  # noqa: SIM118
     v_dict = {}
     if v_json_raw and str(v_json_raw).strip():
         try:
@@ -484,7 +598,6 @@ def validate_user_guess(
             if norm_p and norm_p not in target_names_clean:
                 target_names_clean.append(norm_p)
 
-
     if input_clean in target_names_clean and input_clean != "":
         return ValidationResult(
             user_input=user_input,
@@ -500,7 +613,10 @@ def validate_user_guess(
     # Direct exact / symmetric check against target genus (including scientific name and higher_ranks vernaculars)
     if target_genus:
         genus_names_clean = [normalize_name(target_genus)]
-        g_row = conn.execute("SELECT vernacular_da, vernacular_en, vernacular_json FROM higher_ranks WHERE rank_name = ?", (target_genus,)).fetchone()
+        g_row = conn.execute(
+            "SELECT vernacular_da, vernacular_en, vernacular_json FROM higher_ranks WHERE rank_name = ?",
+            (target_genus,),
+        ).fetchone()
         if g_row:
             for v_col in [g_row["vernacular_da"], g_row["vernacular_en"]]:
                 if v_col:
@@ -527,7 +643,9 @@ def validate_user_guess(
                 is_correct=True,
                 matched_rank="GENUS",
                 matched_taxon_key=None,
-                matched_name=f"{g_disp} ({target_genus})" if g_disp != target_genus else target_genus,
+                matched_name=f"{g_disp} ({target_genus})"
+                if g_disp != target_genus
+                else target_genus,
                 similarity_score=1.0,
                 is_soft_typo=False,
                 feedback_message=f"Correct Genus! ({g_disp} / {target_genus}). Now identify the species.",
@@ -536,7 +654,10 @@ def validate_user_guess(
     # Direct exact / symmetric check against target family (including scientific name and higher_ranks vernaculars)
     if target_family:
         family_names_clean = [normalize_name(target_family)]
-        f_row = conn.execute("SELECT vernacular_da, vernacular_en, vernacular_json FROM higher_ranks WHERE rank_name = ?", (target_family,)).fetchone()
+        f_row = conn.execute(
+            "SELECT vernacular_da, vernacular_en, vernacular_json FROM higher_ranks WHERE rank_name = ?",
+            (target_family,),
+        ).fetchone()
         if f_row:
             for v_col in [f_row["vernacular_da"], f_row["vernacular_en"]]:
                 if v_col:
@@ -563,19 +684,24 @@ def validate_user_guess(
                 is_correct=True,
                 matched_rank="FAMILY",
                 matched_taxon_key=None,
-                matched_name=f"{f_disp} ({target_family})" if f_disp != target_family else target_family,
+                matched_name=f"{f_disp} ({target_family})"
+                if f_disp != target_family
+                else target_family,
                 similarity_score=1.0,
                 is_soft_typo=False,
                 feedback_message=f"Correct Family! ({f_disp} / {target_family}). Now refine to Genus or Species.",
             )
 
-
     # Check fuzzy typo match against target names
     all_target_variants = [target_canonical, target_sci]
     if target_da:
-        all_target_variants.extend([p.strip() for p in target_da.split("|") if p.strip()])
+        all_target_variants.extend(
+            [p.strip() for p in target_da.split("|") if p.strip()]
+        )
     if target_en:
-        all_target_variants.extend([p.strip() for p in target_en.split("|") if p.strip()])
+        all_target_variants.extend(
+            [p.strip() for p in target_en.split("|") if p.strip()]
+        )
 
     for name in all_target_variants:
         if not name:
@@ -592,7 +718,6 @@ def validate_user_guess(
                 is_soft_typo=True,
                 feedback_message=f"Correct! (Soft typo correction for '{name.title()}')",
             )
-
 
     # Fuzzy check on Genus
     if target_genus:
@@ -647,8 +772,15 @@ def validate_user_guess(
     if g_match and g_match["genus"]:
         g_name = g_match["genus"]
         g_disp = get_display_name(g_match, lang=lang)
-        g_label = f"📁 Genus: {g_disp} ({g_name})" if g_disp and g_disp != g_name and g_disp != "Unknown Species" else f"📁 Genus: {g_name}"
-        sample_sp = conn.execute("SELECT taxon_key FROM taxa WHERE genus = ? AND taxon_key IS NOT NULL LIMIT 1", (g_name,)).fetchone()
+        g_label = (
+            f"📁 Genus: {g_disp} ({g_name})"
+            if g_disp and g_disp != g_name and g_disp != "Unknown Species"
+            else f"📁 Genus: {g_name}"
+        )
+        sample_sp = conn.execute(
+            "SELECT taxon_key FROM taxa WHERE genus = ? AND taxon_key IS NOT NULL LIMIT 1",
+            (g_name,),
+        ).fetchone()
         sample_key = sample_sp["taxon_key"] if sample_sp else None
         return ValidationResult(
             user_input=user_input,
@@ -683,8 +815,15 @@ def validate_user_guess(
     if f_match and f_match["family"]:
         f_name = f_match["family"]
         f_disp = get_display_name(f_match, lang=lang)
-        f_label = f"🏛️ Family: {f_disp} ({f_name})" if f_disp and f_disp != f_name and f_disp != "Unknown Species" else f"🏛️ Family: {f_name}"
-        sample_sp = conn.execute("SELECT taxon_key FROM taxa WHERE family = ? AND taxon_key IS NOT NULL LIMIT 1", (f_name,)).fetchone()
+        f_label = (
+            f"🏛️ Family: {f_disp} ({f_name})"
+            if f_disp and f_disp != f_name and f_disp != "Unknown Species"
+            else f"🏛️ Family: {f_name}"
+        )
+        sample_sp = conn.execute(
+            "SELECT taxon_key FROM taxa WHERE family = ? AND taxon_key IS NOT NULL LIMIT 1",
+            (f_name,),
+        ).fetchone()
         sample_key = sample_sp["taxon_key"] if sample_sp else None
         return ValidationResult(
             user_input=user_input,
@@ -724,7 +863,7 @@ def validate_user_guess(
             "pipe_prefix": f"{input_lower}|%",
             "pipe_suffix": f"%|{input_lower}",
             "pipe_mid": f"%|{input_lower}|%",
-            "json_pat": f"%\"{input_lower}\"%",
+            "json_pat": f'%"{input_lower}"%',
             "clean_pipe_prefix": f"{input_clean}|%",
             "clean_pipe_suffix": f"%|{input_clean}",
             "clean_pipe_mid": f"%|{input_clean}|%",
@@ -745,7 +884,11 @@ def validate_user_guess(
         )
 
     sp_disp = get_display_name(guessed_row, lang=lang)
-    sp_label = f"{sp_disp} ({guessed_row['canonical_name']})" if sp_disp != guessed_row['canonical_name'] else guessed_row['canonical_name']
+    sp_label = (
+        f"{sp_disp} ({guessed_row['canonical_name']})"
+        if sp_disp != guessed_row["canonical_name"]
+        else guessed_row["canonical_name"]
+    )
 
     return ValidationResult(
         user_input=user_input,
@@ -757,6 +900,3 @@ def validate_user_guess(
         is_soft_typo=False,
         feedback_message=f"Incorrect. Target species was {get_display_name(target_row)} ({target_row['canonical_name']}).",
     )
-
-
-

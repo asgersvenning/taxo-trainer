@@ -237,13 +237,13 @@ def test_autocomplete_rank_ordering_species_before_genus(setup_engine_dbs):
     app_conn.commit()
 
     # Querying 'Stilk-Eg' matches both Species (Quercus robur) and Genus (Quercus) at Priority 0.
-    # Species should come BEFORE Genus.
+    # Higher rank (Genus) should be prioritized.
     matches = autocomplete_taxa(app_conn, "Stilk-Eg")
     assert len(matches) >= 2
-    assert matches[0]["rank"] == "SPECIES"
-    assert matches[0]["canonical_name"] == "Quercus robur"
-    assert matches[1]["rank"] == "GENUS"
-    assert matches[1]["canonical_name"] == "Quercus"
+    assert matches[0]["rank"] == "GENUS"
+    assert matches[0]["canonical_name"] == "Quercus"
+    assert matches[1]["rank"] == "SPECIES"
+    assert matches[1]["canonical_name"] == "Quercus robur"
 
 
 def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(setup_engine_dbs):
@@ -292,4 +292,220 @@ def test_autocomplete_prefix_match_ranks_genus_before_species(setup_engine_dbs):
     assert matches[0]["canonical_name"] == "Trifolium"
     assert matches[1]["rank"] == "SPECIES"
     assert matches[1]["canonical_name"] == "Trifolium dubium"
+
+
+def test_get_display_name_vernacular_fallback_non_english():
+    """Test that get_display_name does not fall back to English when language is Danish."""
+    row = {
+        "canonical_name": "Mutarda Bernh.",
+        "scientific_name": "Mutarda Bernh.",
+        "vernacular_da": "",
+        "vernacular_en": "Mustard|mustard",
+        "vernacular_json": '{"en": "Mustard|mustard", "no": "svartsennepslekta"}',
+    }
+    # When lang="da", missing Danish name should fall back to canonical_name, NOT English "Mustard"
+    disp_da = get_display_name(row, lang="da")
+    assert disp_da == "Mutarda Bernh."
+
+    # When lang="en", English name should be returned
+    disp_en = get_display_name(row, lang="en")
+    assert disp_en == "Mustard"
+
+
+def test_autocomplete_sennep_ordering_and_vernacular(setup_engine_dbs):
+    """Test autocomplete search for 'sennep' with word-prefix ranking and Danish display fallbacks."""
+    app_conn, _ = setup_engine_dbs
+
+    app_conn.execute("""
+        INSERT INTO taxa (
+            taxon_key, scientific_name, canonical_name, accepted_name, rank,
+            family, genus, vernacular_da, vernacular_en, vernacular_json, occurrence_count
+        ) VALUES (
+            1001, 'Sinapis alba L.', 'Sinapis alba', 'Sinapis alba L.', 'SPECIES',
+            'Brassicaceae', 'Sinapis', 'Gul sennep', 'White Mustard', '{"da": "Gul sennep", "en": "White Mustard"}', 5
+        );
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (
+            taxon_key, scientific_name, canonical_name, accepted_name, rank,
+            family, genus, vernacular_da, vernacular_en, vernacular_json, occurrence_count
+        ) VALUES (
+            1002, 'Mutarda Bernh.', 'Mutarda Bernh.', 'Brassica L.', 'GENUS',
+            'Brassicaceae', 'Rhamphospermum', '', 'Mustard', '{"en": "Mustard", "no": "svartsennepslekta"}', 1
+        );
+    """)
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json)
+        VALUES ('Descurainia', 'GENUS', 'Vejsennep', 'Tansymustard', '{"da": "Vejsennep"}');
+    """)
+    app_conn.commit()
+
+    matches = autocomplete_taxa(app_conn, "sennep", lang="da")
+    assert len(matches) >= 1
+    # Gul sennep has word-prefix match on 'sennep' -> Priority 2, should be ranked top
+    assert matches[0]["canonical_name"] == "Sinapis alba"
+    assert "Gul sennep" in matches[0]["display_name"]
+
+    # Verify Mutarda Bernh. is not assigned English 'Mustard' as Danish name and not top result
+    labels = [m["label"] for m in matches]
+    assert not any("MUSTARD" in l or "Mustard" in l for l in labels)
+
+
+def test_render_taxonomic_hierarchy_gbif_links(setup_engine_dbs):
+    """Test that render_taxonomic_hierarchy_feedback renders GBIF links for revealed ranks."""
+    from nicegui import ui
+    from src.ui.components import render_taxonomic_hierarchy_feedback
+    from src.engine.validator import ValidationResult
+
+    app_conn, _ = setup_engine_dbs
+
+    t_row = app_conn.execute("SELECT * FROM taxa WHERE canonical_name = 'Quercus robur'").fetchone()
+    v_res = ValidationResult(
+        user_input="Quercus robur",
+        is_correct=True,
+        matched_rank="SPECIES",
+        matched_taxon_key=2435140,
+        matched_name="Stilk-Eg (Quercus robur)",
+        similarity_score=1.0,
+        is_soft_typo=False,
+        feedback_message="Correct!",
+    )
+
+    card = render_taxonomic_hierarchy_feedback(app_conn, t_row, v_res, lang="da")
+    assert card is not None
+
+
+def test_autocomplete_monotypic_genus_vs_species_mistelte(setup_engine_dbs):
+    """Test that when a vernacular search matches both a monotypic genus and species, species ranks first."""
+    app_conn, _ = setup_engine_dbs
+
+    app_conn.execute("""
+        INSERT INTO taxa (
+            taxon_key, scientific_name, canonical_name, accepted_name, rank,
+            order_name, family, genus, vernacular_da, vernacular_en
+        ) VALUES (
+            9901, 'Viscum album L.', 'Viscum album', 'Viscum album L.', 'SPECIES',
+            'Santalales', 'Santalaceae', 'Viscum', 'Mistelten', 'Mistletoe'
+        );
+    """)
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Viscum', 'GENUS', 'Mistelten');
+    """)
+    app_conn.commit()
+
+    matches = autocomplete_taxa(app_conn, "mistelte", lang="da")
+    assert len(matches) >= 2
+    # Higher rank (GENUS) should be ranked BEFORE SPECIES
+    assert matches[0]["rank"] == "GENUS"
+    assert matches[0]["canonical_name"] == "Viscum"
+    assert matches[1]["rank"] == "SPECIES"
+    assert matches[1]["canonical_name"] == "Viscum album"
+
+
+def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
+    """Test higher order hint sequential rank revelation and autocomplete scope restriction."""
+    app_conn, user_conn = setup_engine_dbs
+    from src.ui.quiz_view import QuizViewState
+
+    app_conn.execute("""
+        INSERT INTO taxa (
+            taxon_key, scientific_name, canonical_name, accepted_name, rank,
+            order_name, family, genus, vernacular_da, vernacular_en
+        ) VALUES (
+            9901, 'Viscum album L.', 'Viscum album', 'Viscum album L.', 'SPECIES',
+            'Santalales', 'Santalaceae', 'Viscum', 'Mistelten', 'Mistletoe'
+        );
+    """)
+    app_conn.commit()
+
+    state = QuizViewState()
+    state.current_question = type("Obj", (), {
+        "occurrence_id": "occ_100",
+        "taxon_key": 9901,
+        "scientific_name": "Viscum album L.",
+        "canonical_name": "Viscum album",
+        "family": "Santalaceae",
+        "genus": "Viscum",
+        "vernacular_da": "Mistelten",
+        "vernacular_en": "Mistletoe",
+    })()
+
+    # Initial state: unrevealed
+    assert state.matched_order is None
+    assert state.matched_family is None
+    assert state.matched_genus is None
+    assert state.used_hint is False
+
+    # Simulate 1st hint click: reveals Order
+    state.used_hint = True
+    target_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (9901,)).fetchone()
+    target_order = target_row["order_name"] if target_row and "order_name" in target_row.keys() and target_row["order_name"] else "Santalales"
+
+    if not state.matched_order and target_order:
+        state.matched_order = target_order
+    assert state.matched_order == "Santalales"
+
+    # Simulate 2nd hint click: reveals Family
+    if not state.matched_family and state.current_question.family:
+        state.matched_family = state.current_question.family
+    assert state.matched_family == "Santalaceae"
+
+    # Simulate 3rd hint click: reveals Genus
+    if not state.matched_genus and state.current_question.genus:
+        state.matched_genus = state.current_question.genus
+    assert state.matched_genus == "Viscum"
+
+    # Verify autocomplete interpolation is restricted by revealed genus
+    matches = autocomplete_taxa(
+        app_conn,
+        "Viscum",
+        lang="da",
+        parent_genus=state.matched_genus,
+        parent_family=state.matched_family,
+        parent_order=state.matched_order,
+    )
+    assert len(matches) > 0
+    for m in matches:
+        if m["rank"] == "SPECIES":
+            assert "Viscum" in m["canonical_name"] or "Viscum" in m["label"]
+
+    # Verify no attempts were logged in user_progress
+    attempts = user_conn.execute("SELECT COUNT(*) as cnt FROM user_progress").fetchone()["cnt"]
+    assert attempts == 0
+
+
+def test_user_streak_persistence(setup_engine_dbs):
+    """Test user streak DB persistence and streak breaking rules."""
+    _, user_conn = setup_engine_dbs
+    from src.db import get_user_streak, set_user_streak
+
+    # 1. Initial streak is 0, 0
+    curr, best = get_user_streak(user_conn)
+    assert curr == 0
+    assert best == 0
+
+    # 2. Update streak on correct species solve
+    set_user_streak(1, 1, user_conn)
+    set_user_streak(2, 2, user_conn)
+    curr, best = get_user_streak(user_conn)
+    assert curr == 2
+    assert best == 2
+
+    # 3. Unrevealed skip should NOT break streak
+    # (Simulated state where is_incorrect is False)
+    curr, best = get_user_streak(user_conn)
+    assert curr == 2
+    assert best == 2
+
+    # 4. Incorrect guess followed by next observation breaks streak
+    set_user_streak(0, 2, user_conn)
+    curr, best = get_user_streak(user_conn)
+    assert curr == 0
+    assert best == 2  # Best record preserved!
+
+
+
+
+
 

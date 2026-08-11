@@ -49,8 +49,14 @@ def render_photo_viewer(
         "view": "photo",  # "photo" or "map"
     }
 
+    photo_count_label: ui.label | None = None
+
     def update_photo(step: int):
         state["index"] = (state["index"] + step) % len(media_urls)
+        if photo_count_label:
+            photo_count_label.set_text(
+                f"Photo {state['index'] + 1} of {len(media_urls)}"
+            )
         if state["view"] == "photo":
             refresh_canvas()
 
@@ -67,9 +73,9 @@ def render_photo_viewer(
         ):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("photo_library", color="primary", size="sm")
-                ui.label(f"Photo {state['index'] + 1} of {len(media_urls)}").classes(
-                    "text-xs font-semibold text-gray-200"
-                )
+                photo_count_label = ui.label(
+                    f"Photo {state['index'] + 1} of {len(media_urls)}"
+                ).classes("text-xs font-semibold text-gray-200")
 
             with ui.row().classes("gap-2 items-center"):
                 photo_tab_btn = (
@@ -444,6 +450,10 @@ def render_taxonomic_hierarchy_feedback(
     target_row,
     validation_result,
     lang: str = "da",
+    revealed_order: str | None = None,
+    revealed_family: str | None = None,
+    revealed_genus: str | None = None,
+    is_solved: bool = False,
 ) -> ui.card:
     """Render multi-level taxonomic correctness feedback display (Order, Family, Genus, Species).
 
@@ -452,11 +462,19 @@ def render_taxonomic_hierarchy_feedback(
         target_row: Target observation record from taxa table.
         validation_result: ValidationResult object from validator.py.
         lang: Language preference ("da", "en", etc.).
+        revealed_order: Optional order_name revealed by hint or guess.
+        revealed_family: Optional family revealed by hint or guess.
+        revealed_genus: Optional genus revealed by hint or guess.
+        is_solved: Flag indicating if the observation species has been solved/revealed.
 
     Returns:
         ui.card: Card component rendering colored level correctness badges.
     """
-    if validation_result is None:
+    if (
+        validation_result is None
+        and not (revealed_order or revealed_family or revealed_genus)
+        and not is_solved
+    ):
         return
 
     from src.engine.validator import get_display_name
@@ -517,56 +535,142 @@ def render_taxonomic_hierarchy_feedback(
         is_corr = validation_result.is_correct if validation_result else False
 
         # Rank correctness logic
-        order_ok = (is_corr and m_rank in ("ORDER", "FAMILY", "GENUS", "SPECIES")) or (
-            guessed_row
-            and guessed_row["order_name"]
-            and target_order
-            and guessed_row["order_name"].lower() == target_order.lower()
+        order_ok = (
+            (is_corr and m_rank in ("ORDER", "FAMILY", "GENUS", "SPECIES"))
+            or (
+                guessed_row
+                and guessed_row["order_name"]
+                and target_order
+                and guessed_row["order_name"].lower() == target_order.lower()
+            )
+            or bool(
+                revealed_order
+                and target_order
+                and revealed_order.lower() == target_order.lower()
+            )
         )
-        family_ok = (is_corr and m_rank in ("FAMILY", "GENUS", "SPECIES")) or (
-            guessed_row
-            and guessed_row["family"]
-            and target_family
-            and guessed_row["family"].lower() == target_family.lower()
+        family_ok = (
+            (is_corr and m_rank in ("FAMILY", "GENUS", "SPECIES"))
+            or (
+                guessed_row
+                and guessed_row["family"]
+                and target_family
+                and guessed_row["family"].lower() == target_family.lower()
+            )
+            or bool(
+                revealed_family
+                and target_family
+                and revealed_family.lower() == target_family.lower()
+            )
         )
-        genus_ok = (is_corr and m_rank in ("GENUS", "SPECIES")) or (
-            guessed_row
-            and guessed_row["genus"]
-            and target_genus
-            and guessed_row["genus"].lower() == target_genus.lower()
+        genus_ok = (
+            (is_corr and m_rank in ("GENUS", "SPECIES"))
+            or (
+                guessed_row
+                and guessed_row["genus"]
+                and target_genus
+                and guessed_row["genus"].lower() == target_genus.lower()
+            )
+            or bool(
+                revealed_genus
+                and target_genus
+                and revealed_genus.lower() == target_genus.lower()
+            )
         )
-        species_ok = bool(is_corr and m_rank == "SPECIES")
+        species_ok = bool((is_corr and m_rank == "SPECIES") or is_solved)
 
-        # Determine which ranks should be hidden ("???") to avoid spoiling the answer.
-        # If the user correctly guessed at a higher rank, lower ranks are unrevealed.
-        rank_hierarchy = ["ORDER", "FAMILY", "GENUS", "SPECIES"]
-        matched_idx = (
-            rank_hierarchy.index(m_rank)
-            if (is_corr and m_rank in rank_hierarchy)
-            else len(rank_hierarchy)
-        )
-        # Also hide if the guess was incorrect but didn't resolve species yet (not solved)
-        solved = bool(is_corr and m_rank == "SPECIES")
+        # Determine which ranks should be hidden ("???").
+        # If an incorrect guess was made (validation_result exists and is not correct),
+        # all ranks are revealed as red incorrect boxes showing the true target ranks.
+        is_incorrect_guess = bool(validation_result and not validation_result.is_correct)
 
-        order_hidden = not solved and matched_idx < rank_hierarchy.index("ORDER")
-        family_hidden = not solved and matched_idx < rank_hierarchy.index("FAMILY")
-        genus_hidden = not solved and matched_idx < rank_hierarchy.index("GENUS")
-        species_hidden = not solved and matched_idx < rank_hierarchy.index("SPECIES")
+        order_hidden = not order_ok and not is_solved and not is_incorrect_guess
+        family_hidden = not family_ok and not is_solved and not is_incorrect_guess
+        genus_hidden = not genus_ok and not is_solved and not is_incorrect_guess
+        species_hidden = not species_ok and not is_solved and not is_incorrect_guess
 
-        # ranks_data: (label, display_name, is_correct, is_hidden)
+        # Cache for GBIF keys
+        if not hasattr(render_taxonomic_hierarchy_feedback, "_gbif_cache"):
+            render_taxonomic_hierarchy_feedback._gbif_cache = {}
+        gbif_cache = render_taxonomic_hierarchy_feedback._gbif_cache
+
+        # Helper to resolve GBIF taxon key for a given rank & name
+        def resolve_gbif_key(rank_lvl: str, raw_name: str) -> str | None:
+            if not raw_name or raw_name.startswith("Unknown") or raw_name == "???":
+                return None
+
+            if rank_lvl == "Species":
+                if target_row and "taxon_key" in target_row and target_row["taxon_key"]:
+                    return str(target_row["taxon_key"])
+                if (
+                    guessed_row
+                    and "taxon_key" in guessed_row
+                    and guessed_row["taxon_key"]
+                ):
+                    return str(guessed_row["taxon_key"])
+
+            if raw_name in gbif_cache:
+                return gbif_cache[raw_name]
+
+            # 1. Look up exact canonical_name and rank in taxa
+            r = app_conn.execute(
+                "SELECT taxon_key FROM taxa WHERE LOWER(canonical_name) = LOWER(?) AND LOWER(rank) = LOWER(?) AND taxon_key IS NOT NULL LIMIT 1",
+                (raw_name, rank_lvl),
+            ).fetchone()
+            if r and r["taxon_key"]:
+                key = str(r["taxon_key"])
+                gbif_cache[raw_name] = key
+                return key
+
+            # 2. Query GBIF match API for exact rank key
+            import json
+            import urllib.parse
+            import urllib.request
+
+            try:
+                url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(raw_name)}"
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": "taxo-trainer/1.0"}
+                )
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    rank_key_map = {
+                        "ORDER": data.get("orderKey"),
+                        "FAMILY": data.get("familyKey"),
+                        "GENUS": data.get("genusKey"),
+                        "SPECIES": data.get("speciesKey") or data.get("usageKey"),
+                    }
+                    key = rank_key_map.get(rank_lvl.upper()) or data.get("usageKey")
+                    if key:
+                        gbif_cache[raw_name] = str(key)
+                        return str(key)
+            except Exception:
+                pass
+
+            return None
+
+        # ranks_data: (label, display_name, is_correct, is_hidden, raw_name)
         ranks_data = [
-            ("Order", target_order or "Unknown Order", order_ok, order_hidden),
+            (
+                "Order",
+                target_order or "Unknown Order",
+                order_ok,
+                order_hidden,
+                target_order,
+            ),
             (
                 "Family",
                 family_disp or target_family or "Unknown Family",
                 family_ok,
                 family_hidden,
+                target_family,
             ),
             (
                 "Genus",
                 genus_disp or target_genus or "Unknown Genus",
                 genus_ok,
                 genus_hidden,
+                target_genus,
             ),
             (
                 "Species",
@@ -575,14 +679,15 @@ def render_taxonomic_hierarchy_feedback(
                 else target_sci,
                 species_ok,
                 species_hidden,
+                target_sci,
             ),
         ]
 
-        for rank_lvl, disp_name, is_ok, is_hidden in ranks_data:
+        for rank_lvl, disp_name, is_ok, is_hidden, raw_name in ranks_data:
             if not disp_name:
                 continue
             if is_hidden:
-                # Yellow "???" unrevealed row
+                # Yellow "???" unrevealed row (not a link)
                 with ui.row().classes(
                     "w-full justify-between items-center text-xs p-1.5 rounded font-medium bg-yellow-950 text-yellow-300 border border-yellow-700"
                 ):
@@ -595,14 +700,31 @@ def render_taxonomic_hierarchy_feedback(
                         "text-[10px] font-mono px-1 py-0.5 rounded bg-yellow-900 text-yellow-200"
                     )
             else:
-                with ui.row().classes(
-                    "w-full justify-between items-center text-xs p-1.5 rounded font-medium "
+                gbif_key = resolve_gbif_key(rank_lvl, raw_name)
+                if gbif_key:
+                    if str(gbif_key).isdigit():
+                        gbif_url = f"https://www.gbif.org/species/{gbif_key}"
+                    else:
+                        gbif_url = f"https://www.gbif.org/taxon/{gbif_key}"
+                else:
+                    gbif_url = None
+
+                box_cls = (
+                    "w-full flex flex-row items-center justify-between text-xs p-1.5 rounded font-medium no-underline transition-all "
                     + (
-                        "bg-green-950 text-green-300 border border-green-700"
+                        "bg-green-950 text-green-300 border border-green-700 hover:bg-green-900 hover:border-green-500"
                         if is_ok
-                        else "bg-red-950 text-red-300 border border-red-800"
+                        else "bg-red-950 text-red-300 border border-red-800 hover:bg-red-900 hover:border-red-600"
                     )
-                ):
+                )
+
+                container = (
+                    ui.link(target=gbif_url, new_tab=True).classes(box_cls)
+                    if gbif_url
+                    else ui.row().classes(box_cls)
+                )
+
+                with container:
                     with ui.row().classes("items-center gap-1 overflow-hidden"):
                         icon_str = "check_circle" if is_ok else "cancel"
                         icon_color = "positive" if is_ok else "negative"
@@ -610,6 +732,10 @@ def render_taxonomic_hierarchy_feedback(
                         ui.label(f"[{rank_lvl}] {disp_name}").classes(
                             "truncate font-bold text-[11px]"
                         )
+                        if gbif_url:
+                            ui.icon("open_in_new", size="xs").classes(
+                                "text-[10px] opacity-70 ml-0.5"
+                            )
                     ui.label("✓ Correct" if is_ok else "✕ Incorrect").classes(
                         "text-[10px] font-mono px-1 py-0.5 rounded "
                         + (

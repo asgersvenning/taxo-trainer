@@ -8,7 +8,13 @@ import random
 
 from nicegui import ui
 
-from src.db import APP_DB_PATH, USER_DB_PATH, get_db_connection
+from src.db import (
+    APP_DB_PATH,
+    USER_DB_PATH,
+    get_db_connection,
+    get_user_streak,
+    set_user_streak,
+)
 from src.engine.analytics import log_attempt
 from src.engine.sampling import SamplingFilter, TargetObservation, sample_next_question
 from src.engine.validator import (
@@ -41,6 +47,10 @@ class QuizViewState:
         self.matched_genus: str | None = None
         self.matched_family: str | None = None
         self.matched_order: str | None = None
+        self.current_streak: int = 0
+        self.best_streak: int = 0
+        self.streak_initialized: bool = False
+        self.is_incorrect: bool = False
 
 
 def render_quiz_view(state: QuizViewState) -> None:
@@ -58,8 +68,19 @@ def render_quiz_view(state: QuizViewState) -> None:
 
     main_container = ui.column().classes("w-full h-full flex-1 min-h-0 p-1 space-y-2 overflow-hidden")
 
+    if not state.streak_initialized:
+        curr, best = get_user_streak(user_conn)
+        state.current_streak = curr
+        state.best_streak = best
+        state.streak_initialized = True
+
     def load_new_question() -> None:
         """Sample next target observation question and refresh UI."""
+        if state.is_incorrect and not state.solved:
+            state.current_streak = 0
+            set_user_streak(0, state.best_streak, user_conn)
+
+        state.is_incorrect = False
         state.used_hint = False
         state.solved = False
         state.last_feedback = None
@@ -88,7 +109,14 @@ def render_quiz_view(state: QuizViewState) -> None:
         state.last_validation_result = res
 
         if res.is_correct and res.matched_rank == "SPECIES":
-            state.solved = True
+            if not state.solved:
+                state.solved = True
+                state.is_incorrect = False
+                state.current_streak += 1
+                if state.current_streak > state.best_streak:
+                    state.best_streak = state.current_streak
+                set_user_streak(state.current_streak, state.best_streak, user_conn)
+
             state.matched_genus = state.current_question.genus
             state.matched_family = state.current_question.family
             log_attempt(
@@ -105,23 +133,31 @@ def render_quiz_view(state: QuizViewState) -> None:
             }
         elif res.is_correct:
             # Correct Family or Genus rank (allow user to refine to Species)
+            target_row = app_conn.execute(
+                "SELECT order_name FROM taxa WHERE taxon_key = ?",
+                (state.current_question.taxon_key,),
+            ).fetchone()
+            target_order_val = target_row["order_name"] if target_row and "order_name" in target_row.keys() and target_row["order_name"] else None
+
             if res.matched_rank == "GENUS":
                 state.matched_genus = state.current_question.genus
+                state.matched_family = state.current_question.family
+                if target_order_val:
+                    state.matched_order = target_order_val
             elif res.matched_rank == "FAMILY":
                 state.matched_family = state.current_question.family
+                if target_order_val:
+                    state.matched_order = target_order_val
             elif res.matched_rank == "ORDER":
-                target_row = app_conn.execute(
-                    "SELECT order_name FROM taxa WHERE taxon_key = ?",
-                    (state.current_question.taxon_key,),
-                ).fetchone()
-                if target_row and "order_name" in target_row and target_row["order_name"]:
-                    state.matched_order = target_row["order_name"]
+                if target_order_val:
+                    state.matched_order = target_order_val
 
             state.last_feedback = {
                 "type": "info",
                 "message": res.feedback_message,
             }
         else:
+            state.is_incorrect = True
             if res.matched_taxon_key is not None:
                 # Incorrect guess against a real species -> Log attempt and show diagnostic photo
                 log_attempt(
@@ -185,13 +221,62 @@ def render_quiz_view(state: QuizViewState) -> None:
         refresh_quiz_ui()
 
     def handle_higher_order_hint() -> None:
-        """Trigger higher order taxonomic rank hint."""
+        """Trigger higher order taxonomic rank hint.
+
+        Reveals the highest unrevealed taxonomic rank (Order -> Family -> Genus -> Species),
+        updates the taxonomic breakdown, restricts autocomplete interpolation, and flags hint usage
+        without logging a user guess.
+        """
         if not state.current_question:
             return
+
         state.used_hint = True
+
+        target_row = app_conn.execute(
+            "SELECT * FROM taxa WHERE taxon_key = ?",
+            (state.current_question.taxon_key,),
+        ).fetchone()
+
+        target_order = (
+            target_row["order_name"]
+            if target_row and "order_name" in target_row.keys() and target_row["order_name"]
+            else None
+        )
+        target_family = state.current_question.family
+        target_genus = state.current_question.genus
+
+        revealed_desc = None
+
+        if not state.matched_order and target_order:
+            state.matched_order = target_order
+            revealed_desc = f"Order '{target_order}'"
+        elif not state.matched_family and target_family:
+            state.matched_family = target_family
+            if target_order:
+                state.matched_order = target_order
+            revealed_desc = f"Family '{target_family}'"
+        elif not state.matched_genus and target_genus:
+            state.matched_genus = target_genus
+            state.matched_family = target_family
+            if target_order:
+                state.matched_order = target_order
+            revealed_desc = f"Genus '{target_genus}'"
+        elif not state.solved:
+            state.solved = True
+            state.matched_genus = target_genus
+            state.matched_family = target_family
+            if target_order:
+                state.matched_order = target_order
+            revealed_desc = f"Species '{state.current_question.canonical_name}'"
+
+        if revealed_desc:
+            msg = f"Taxonomic Hint: Revealed {revealed_desc}"
+        else:
+            msg = "All taxonomic ranks for this observation have already been revealed!"
+
         state.last_feedback = {
             "type": "warning",
-            "message": f"Taxonomic Hint: Family '{state.current_question.family}', Genus '{state.current_question.genus}'",
+            "message": msg,
         }
         refresh_quiz_ui()
 
@@ -336,13 +421,22 @@ def render_quiz_view(state: QuizViewState) -> None:
                         render_phenology_badge(state.current_question.month, state.current_question.event_date)
                         ui.label(f"Rank: {state.filters.rank}").classes("text-xs text-gray-300 font-bold")
 
-                    # 2. Next Observation / Skip Action Buttons
-                    with ui.row().classes("w-full justify-between items-center gap-1"):
-                        ui.button(
-                            "Next Observation ▶  [ n ]",
-                            color="positive" if (state.solved or state.last_feedback) else "primary",
-                            on_click=load_new_question,
-                        ).classes("w-full font-bold text-xs py-1 shadow")
+                    # 2. Next Observation & Streak Controls
+                    with ui.column().classes("w-full gap-1.5"):
+                        with ui.row().classes("w-full justify-between items-center bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-md shadow-sm"):
+                            with ui.row().classes("items-center gap-1.5"):
+                                ui.icon("whatshot", color="amber-500").classes("text-sm")
+                                ui.label(f"Streak: {state.current_streak}").classes("text-xs font-bold text-amber-400")
+                            with ui.row().classes("items-center gap-1.5"):
+                                ui.icon("emoji_events", color="yellow-400").classes("text-sm")
+                                ui.label(f"Record: {state.best_streak}").classes("text-xs font-bold text-yellow-300")
+
+                        with ui.row().classes("w-full justify-between items-center gap-1"):
+                            ui.button(
+                                "Next Observation ▶  [ n ]",
+                                color="positive" if (state.solved or state.last_feedback) else "primary",
+                                on_click=load_new_question,
+                            ).classes("w-full font-bold text-xs py-1 shadow")
 
                     # Taxa Whitelist / Blacklist Filter Drawer
                     with ui.expansion("Taxa Scope (Whitelist / Blacklist)", icon="filter_alt").classes("w-full bg-gray-800 text-xs text-yellow-300 rounded-md border border-gray-700 p-0"):
@@ -372,7 +466,6 @@ def render_quiz_view(state: QuizViewState) -> None:
 
                         def on_blur() -> None:
                             is_input_focused[0] = False
-                            ui.timer(0.25, lambda: suggestions_container.classes(add="hidden"), once=True)
 
                         input_field.on("focus", on_focus)
                         input_field.on("blur", on_blur)
@@ -470,6 +563,10 @@ def render_quiz_view(state: QuizViewState) -> None:
                                 target_row_query,
                                 state.last_validation_result,
                                 lang=state.filters.language,
+                                revealed_order=state.matched_order,
+                                revealed_family=state.matched_family,
+                                revealed_genus=state.matched_genus,
+                                is_solved=state.solved,
                             )
 
                     # 6. Diagnostic Reference Photo (on wrong guess)
