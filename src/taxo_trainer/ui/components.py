@@ -34,7 +34,7 @@ def render_photo_viewer(
         ui.column: Column container holding image/map canvas and controls.
     """
     container = ui.column().classes(
-        "w-full h-full bg-black text-white rounded-lg p-2 flex flex-col justify-between relative shadow-2xl border border-gray-800"
+        "w-full h-full bg-white text-black dark:!bg-black dark:!text-white rounded-lg p-2 flex flex-col justify-between relative shadow-2xl border border-gray-800"
     )
 
     if not media_urls:
@@ -69,7 +69,7 @@ def render_photo_viewer(
     with container:
         # Top toolbar over image
         with ui.row().classes(
-            "w-full justify-between items-center bg-gray-900/80 backdrop-blur-md p-2 rounded-t-md z-10 border-b border-gray-800"
+            "w-full justify-between items-center dark:!bg-gray-900/80 dark:!bg-gray-900/5 backdrop-blur-md p-2 rounded-t-md z-10 border-b border-gray-800"
         ):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("photo_library", color="primary", size="sm")
@@ -91,7 +91,7 @@ def render_photo_viewer(
 
         # Main viewport canvas
         canvas = ui.column().classes(
-            "w-full flex-1 relative overflow-hidden items-center justify-center p-1 bg-black"
+            "w-full flex-1 relative overflow-hidden items-center justify-center p-1"
         )
 
         def refresh_canvas() -> None:
@@ -140,7 +140,7 @@ def render_photo_viewer(
 
         # Bottom carousel navigation bar with photo credit & observation source link
         with ui.row().classes(
-            "w-full justify-between items-center bg-gray-900/90 p-2 rounded-b-md z-10 border-t border-gray-800 flex-wrap gap-2"
+            "w-full justify-between items-center p-2 rounded-b-md z-10 flex-wrap gap-2"
         ):
             if len(media_urls) > 1:
                 prev_btn = (
@@ -574,7 +574,9 @@ def render_taxonomic_hierarchy_feedback(
         # Determine which ranks should be hidden ("???").
         # If an incorrect guess was made (validation_result exists and is not correct),
         # all ranks are revealed as red incorrect boxes showing the true target ranks.
-        is_incorrect_guess = bool(validation_result and not validation_result.is_correct)
+        is_incorrect_guess = bool(
+            validation_result and not validation_result.is_correct
+        )
 
         order_hidden = not order_ok and not is_solved and not is_incorrect_guess
         family_hidden = not family_ok and not is_solved and not is_incorrect_guess

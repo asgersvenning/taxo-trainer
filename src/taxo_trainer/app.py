@@ -226,7 +226,7 @@ body.body--light .q-table--dark tbody tr:hover {
             with ui.row().classes("items-center gap-3"):
                 ui.icon("nature_people", size="md").classes("text-green-400")
                 ui.label("Taxo-Trainer").classes(
-                    "text-xl font-bold tracking-wide text-white"
+                    "text-xl font-bold tracking-wide text-black dark:!bg-gray-900/80 dark:!text-white"
                 )
 
             with ui.tabs().classes("text-white").props("inline-label") as tabs:
@@ -241,7 +241,7 @@ body.body--light .q-table--dark tbody tr:hover {
             with ui.tab_panel(quiz_tab).classes(
                 "w-full h-full p-0 flex flex-col overflow-hidden flex-1 min-h-0"
             ):
-                render_quiz_view(quiz_state)
+                render_quiz_view(state=quiz_state)
 
             with ui.tab_panel(dash_tab).classes("w-full h-full p-4 overflow-y-auto"):
                 render_dashboard_view()
@@ -250,7 +250,7 @@ body.body--light .q-table--dark tbody tr:hover {
                 "w-full h-full p-4 overflow-y-auto"
             ):
                 render_settings_view(
-                    quiz_state.filters,
+                    active_filters=quiz_state.filters,
                     on_filters_changed=lambda: None,
                     dark_mode=dark_mode,
                 )

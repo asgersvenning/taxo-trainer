@@ -70,7 +70,9 @@ def render_quiz_view(state: QuizViewState) -> None:
     app_conn = get_db_connection(APP_DB_PATH)
     user_conn = get_db_connection(USER_DB_PATH)
 
-    main_container = ui.column().classes("w-full h-full flex-1 min-h-0 p-1 space-y-2 overflow-hidden")
+    main_container = ui.column().classes(
+        "w-full h-full flex-1 min-h-0 p-1 space-y-2 overflow-hidden"
+    )
 
     if not state.streak_initialized:
         curr, best = get_user_streak(user_conn)
@@ -140,7 +142,13 @@ def render_quiz_view(state: QuizViewState) -> None:
                 "SELECT order_name FROM taxa WHERE taxon_key = ?",
                 (state.current_question.taxon_key,),
             ).fetchone()
-            target_order_val = target_row["order_name"] if target_row and "order_name" in target_row and target_row["order_name"] else None
+            target_order_val = (
+                target_row["order_name"]
+                if target_row
+                and "order_name" in target_row
+                and target_row["order_name"]
+                else None
+            )
 
             if res.matched_rank == "GENUS":
                 state.matched_genus = state.current_question.genus
@@ -179,11 +187,18 @@ def render_quiz_view(state: QuizViewState) -> None:
                 if res.matched_rank in ("GENUS", "FAMILY"):
                     state.diagnostic_guessed_name = res.matched_name
                 else:
-                    guessed_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (res.matched_taxon_key,)).fetchone()
+                    guessed_row = app_conn.execute(
+                        "SELECT * FROM taxa WHERE taxon_key = ?",
+                        (res.matched_taxon_key,),
+                    ).fetchone()
                     if guessed_row:
-                        g_disp = get_display_name(guessed_row, lang=state.filters.language)
+                        g_disp = get_display_name(
+                            guessed_row, lang=state.filters.language
+                        )
                         g_sci = guessed_row["canonical_name"]
-                        state.diagnostic_guessed_name = f"{g_disp} ({g_sci})" if g_disp != g_sci else g_sci
+                        state.diagnostic_guessed_name = (
+                            f"{g_disp} ({g_sci})" if g_disp != g_sci else g_sci
+                        )
                     else:
                         state.diagnostic_guessed_name = res.matched_name or guess_text
 
@@ -193,7 +208,9 @@ def render_quiz_view(state: QuizViewState) -> None:
                 )
                 diag_row = diag_cursor.fetchone()
                 if diag_row and diag_row["media_urls"]:
-                    state.diagnostic_photo_url = diag_row["media_urls"].split("|")[0].strip()
+                    state.diagnostic_photo_url = (
+                        diag_row["media_urls"].split("|")[0].strip()
+                    )
             else:
                 # Unrecognized taxon name (e.g. typing error) -> Warning message, do NOT log attempt
                 state.last_feedback = {
@@ -202,7 +219,6 @@ def render_quiz_view(state: QuizViewState) -> None:
                 }
 
         refresh_quiz_ui()
-
 
     def handle_report_bad_observation() -> None:
         """Flag current observation as misidentified, omit from user statistics, and mark as seen."""
@@ -213,7 +229,9 @@ def render_quiz_view(state: QuizViewState) -> None:
         state.seen_set.add(occ_id)
 
         # Delete any logged attempts for this occurrence_id from user_progress DB
-        user_conn.execute("DELETE FROM user_progress WHERE occurrence_id = ?", (occ_id,))
+        user_conn.execute(
+            "DELETE FROM user_progress WHERE occurrence_id = ?", (occ_id,)
+        )
         user_conn.commit()
 
         state.solved = True
@@ -322,7 +340,10 @@ def render_quiz_view(state: QuizViewState) -> None:
             else state.current_question.canonical_name
         )
 
-        seen_names = {target_disp.lower(), state.current_question.canonical_name.lower()}
+        seen_names = {
+            target_disp.lower(),
+            state.current_question.canonical_name.lower(),
+        }
         distractor_choices = []
 
         random.shuffle(possible_rows)
@@ -380,7 +401,9 @@ def render_quiz_view(state: QuizViewState) -> None:
 
         # 2. Focus shortcuts when input is NOT focused: '/', 'F2', or 'Ctrl+K'
         key_str = str(e.key).lower()
-        if (key_str in ("/", "f2") or (ctrl and key_str == "k")) and not is_input_focused[0]:
+        if (
+            key_str in ("/", "f2") or (ctrl and key_str == "k")
+        ) and not is_input_focused[0]:
             if inp:
                 inp.run_method("focus")
             return
@@ -389,11 +412,18 @@ def render_quiz_view(state: QuizViewState) -> None:
         if not is_input_focused[0]:
             if (ctrl and e.key == "ArrowRight") or e.key in ("n", "N"):
                 load_new_question()
-            elif (e.key == "ArrowRight" or e.key in ("d", "D") or (alt and e.key == "ArrowRight")) and nav_callbacks.get("next"):
+            elif (
+                e.key == "ArrowRight"
+                or e.key in ("d", "D")
+                or (alt and e.key == "ArrowRight")
+            ) and nav_callbacks.get("next"):
                 nav_callbacks["next"]()
-            elif (e.key == "ArrowLeft" or e.key in ("a", "A") or (alt and e.key == "ArrowLeft")) and nav_callbacks.get("prev"):
+            elif (
+                e.key == "ArrowLeft"
+                or e.key in ("a", "A")
+                or (alt and e.key == "ArrowLeft")
+            ) and nav_callbacks.get("prev"):
                 nav_callbacks["prev"]()
-
 
     ui.keyboard(on_key=handle_key_event)
 
@@ -403,8 +433,12 @@ def render_quiz_view(state: QuizViewState) -> None:
         main_container.clear()
         with main_container:
             if not state.current_question:
-                ui.label("No observations available matching active dataset/filters.").classes("text-xl text-yellow-400 text-center py-12")
-                ui.button("Load Observation", on_click=load_new_question, color="primary").classes("mx-auto")
+                ui.label(
+                    "No observations available matching active dataset/filters."
+                ).classes("text-xl text-yellow-400 text-center py-12")
+                ui.button(
+                    "Load Observation", on_click=load_new_question, color="primary"
+                ).classes("mx-auto")
                 return
 
             # Main split container: 75% Image Display (I) | 25% User Interface (U)
@@ -412,7 +446,9 @@ def render_quiz_view(state: QuizViewState) -> None:
                 # =========================================================
                 # LEFT COLUMN (I): 75% Width Reserved for Whole Image Display
                 # =========================================================
-                with ui.column().classes("w-[75%] h-full flex flex-col flex-grow justify-between"):
+                with ui.column().classes(
+                    "w-[75%] h-full flex flex-col flex-grow justify-between"
+                ):
                     render_photo_viewer(
                         state.current_question.media_urls,
                         latitude=state.current_question.latitude,
@@ -423,56 +459,60 @@ def render_quiz_view(state: QuizViewState) -> None:
                         references=state.current_question.references,
                     )
 
-
-
                 # =========================================================
                 # RIGHT COLUMN (U): 25% Width User Interface Controls Sidebar
                 # =========================================================
-                with ui.column().classes("w-[25%] min-w-[280px] h-full bg-gray-900 rounded-lg p-3 space-y-3 overflow-y-auto shadow-xl border border-gray-800"):
-                    # 1. Phenology & Context Info
-                    with ui.row().classes("w-full justify-between items-center bg-gray-800 p-2 rounded-md"):
-                        render_phenology_badge(state.current_question.month, state.current_question.event_date)
-                        ui.label(f"Rank: {state.filters.rank}").classes("text-xs text-gray-300 font-bold")
-
-                    # 2. Next Observation & Streak Controls
-                    with ui.column().classes("w-full gap-1.5"):
-                        with ui.row().classes("w-full justify-between items-center bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-md shadow-sm"):
-                            with ui.row().classes("items-center gap-1.5"):
-                                ui.icon("whatshot", color="amber-500").classes("text-sm")
-                                ui.label(f"Streak: {state.current_streak}").classes("text-xs font-bold text-amber-400")
-                            with ui.row().classes("items-center gap-1.5"):
-                                ui.icon("emoji_events", color="yellow-400").classes("text-sm")
-                                ui.label(f"Record: {state.best_streak}").classes("text-xs font-bold text-yellow-300")
-
-                        with ui.row().classes("w-full justify-between items-center gap-1"):
-                            ui.button(
-                                "Next Observation ▶  [ n ]",
-                                color="positive" if (state.solved or state.last_feedback) else "primary",
-                                on_click=load_new_question,
-                            ).classes("w-full font-bold text-xs py-1 shadow")
-
-                    # Taxa Whitelist / Blacklist Filter Drawer
-                    with ui.expansion("Taxa Scope (Whitelist / Blacklist)", icon="filter_alt").classes("w-full bg-gray-800 text-xs text-yellow-300 rounded-md border border-gray-700 p-0"):
-                        render_taxa_filter_controls(
-                            app_conn,
-                            state.filters,
-                            on_changed=load_new_question,
+                with ui.column().classes(
+                    "w-[25%] min-w-[280px] h-full bg-gray-900 rounded-lg p-3 space-y-3 overflow-y-auto shadow-xl border border-gray-800"
+                ):
+                    # Phenology & Context Info
+                    with ui.row().classes(
+                        "w-full justify-between items-center bg-gray-800 p-2 rounded-md"
+                    ):
+                        render_phenology_badge(
+                            state.current_question.month,
+                            state.current_question.event_date,
+                        )
+                        ui.label(f"Rank: {state.filters.rank}").classes(
+                            "text-xs text-gray-300 font-bold"
                         )
 
-                    # 3. Input & Guess Submission Box
-                    with ui.card().classes("w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700 space-y-2"):
-                        with ui.row().classes("w-full justify-between items-center"):
-                            ui.label("Identify Taxon:").classes("font-bold text-xs text-gray-200")
-                            ui.label("Focus: / or Esc | Blur: Esc").classes("text-[10px] text-yellow-400 font-mono")
+                    # Next Observation
+                    with ui.row().classes("w-full justify-between items-center gap-1"):
+                        ui.button(
+                            "Next Observation ▶  [ n ]",
+                            color="positive"
+                            if (state.solved or state.last_feedback)
+                            else "primary",
+                            on_click=load_new_question,
+                        ).classes("w-full font-bold text-xs py-1 shadow")
 
-                        input_field = ui.input(
-                            placeholder="Type species, genus, family... (/ to focus, Esc to blur)",
-                        ).classes("w-full text-xs text-white").props("outlined dark dense clearable")
+                    # Input & Guess Submission Box
+                    with ui.card().classes(
+                        "w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700 space-y-2"
+                    ):
+                        with ui.row().classes("w-full justify-between items-center"):
+                            ui.label("Identify Taxon:").classes(
+                                "font-bold text-xs text-gray-200"
+                            )
+                            ui.label("Focus: / or Esc | Blur: Esc").classes(
+                                "text-[10px] text-yellow-400 font-mono"
+                            )
+
+                        input_field = (
+                            ui.input(
+                                placeholder="Type species, genus, family... (/ to focus, Esc to blur)",
+                            )
+                            .classes("w-full text-xs text-white")
+                            .props("outlined dark dense clearable")
+                        )
 
                         active_input[0] = input_field
 
                         # Dynamic Autocomplete Suggestion Chips
-                        suggestions_container = ui.column().classes("w-full gap-1 hidden max-h-36 overflow-y-auto")
+                        suggestions_container = ui.column().classes(
+                            "w-full gap-1 hidden max-h-36 overflow-y-auto"
+                        )
 
                         def on_focus() -> None:
                             is_input_focused[0] = True
@@ -482,7 +522,9 @@ def render_quiz_view(state: QuizViewState) -> None:
 
                         input_field.on("focus", on_focus)
                         input_field.on("blur", on_blur)
-                        input_field.on("keydown.escape", lambda: input_field.run_method("blur"))
+                        input_field.on(
+                            "keydown.escape", lambda: input_field.run_method("blur")
+                        )
 
                         def update_suggestions(e) -> None:
                             text = e.value
@@ -507,8 +549,12 @@ def render_quiz_view(state: QuizViewState) -> None:
                                         val_txt = m["value"]
                                         ui.button(
                                             label_txt,
-                                            on_click=lambda v=val_txt: handle_submit_guess(v),
-                                        ).props("outline dense color=accent").classes("text-[10px] w-full text-left truncate")
+                                            on_click=lambda v=val_txt: (
+                                                handle_submit_guess(v)
+                                            ),
+                                        ).props("outline dense color=accent").classes(
+                                            "text-[10px] w-full text-left truncate"
+                                        )
 
                         input_field.on_value_change(update_suggestions)
 
@@ -533,43 +579,108 @@ def render_quiz_view(state: QuizViewState) -> None:
 
                         input_field.on("keydown.enter", handle_enter_submission)
 
-                        with ui.row().classes("w-full justify-between items-center gap-1 mt-1"):
-                            ui.button("Submit", color="primary", on_click=handle_enter_submission).classes("w-full font-bold text-xs")
+                        with ui.row().classes(
+                            "w-full justify-between items-center gap-1 mt-1"
+                        ):
+                            ui.button(
+                                "Submit",
+                                color="primary",
+                                on_click=handle_enter_submission,
+                            ).classes("w-full font-bold text-xs")
 
-                    # 4. Hints Controls Card & Misidentification Flag
-                    with ui.card().classes("w-full p-2 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700"):
-                        ui.label("Hints & Feedback").classes("text-xs font-bold text-gray-400 mb-1")
+                        # Streak Info
+                        with ui.row().classes(
+                            "w-full justify-between items-center bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-md shadow-sm"
+                        ):
+                            with ui.row().classes("items-center gap-1.5"):
+                                ui.icon("whatshot", color="amber-500").classes(
+                                    "text-sm"
+                                )
+                                ui.label(f"Streak: {state.current_streak}").classes(
+                                    "text-xs font-bold text-amber-400"
+                                )
+                            with ui.row().classes("items-center gap-1.5"):
+                                ui.icon("emoji_events", color="yellow-400").classes(
+                                    "text-sm"
+                                )
+                                ui.label(f"Record: {state.best_streak}").classes(
+                                    "text-xs font-bold text-yellow-300"
+                                )
+
+                    # Hints Controls Card & Misidentification Flag
+                    with ui.card().classes(
+                        "w-full p-2 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700"
+                    ):
+                        ui.label("Hints & Feedback").classes(
+                            "text-xs font-bold text-gray-400 mb-1"
+                        )
                         with ui.row().classes("w-full justify-between gap-1"):
-                            ui.button("Higher-Order Rank", on_click=handle_higher_order_hint, color="warning").props("flat dense").classes("text-[11px]")
-                            ui.button("1/5 Choice", on_click=handle_multiple_choice_hint, color="warning").props("flat dense").classes("text-[11px]")
-                        
+                            ui.button(
+                                "Higher-Order Rank",
+                                on_click=handle_higher_order_hint,
+                                color="warning",
+                            ).props("flat dense").classes("text-[11px]")
+                            ui.button(
+                                "1/5 Choice",
+                                on_click=handle_multiple_choice_hint,
+                                color="warning",
+                            ).props("flat dense").classes("text-[11px]")
+
                         ui.button(
                             "Report Misidentified Obs",
                             on_click=handle_report_bad_observation,
                             color="negative",
                             icon="report_problem",
-                        ).props("flat dense").classes("text-[10px] w-full text-red-400 hover:text-red-200 mt-1")
+                        ).props("flat dense").classes(
+                            "text-[10px] w-full text-red-400 hover:text-red-200 mt-1"
+                        )
 
-                    # 5. Feedback Message Banner & Multi-Rank Hierarchy Breakdown
+                    # Feedback Message Banner & Multi-Rank Hierarchy Breakdown
                     if state.last_feedback:
                         fb_type = state.last_feedback.get("type", "info")
-                        bg_cls = "bg-green-900 text-white" if fb_type == "success" else ("bg-red-900 text-white" if fb_type == "error" else ("bg-blue-900 text-white" if fb_type == "info" else "bg-yellow-900 text-white"))
+                        bg_cls = (
+                            "bg-green-900 text-white"
+                            if fb_type == "success"
+                            else (
+                                "bg-red-900 text-white"
+                                if fb_type == "error"
+                                else (
+                                    "bg-blue-900 text-white"
+                                    if fb_type == "info"
+                                    else "bg-yellow-900 text-white"
+                                )
+                            )
+                        )
 
-                        with ui.card().classes(f"w-full p-3 text-center rounded-md shadow-md {bg_cls}"):
-                            ui.label(state.last_feedback["message"]).classes("text-xs font-bold")
+                        with ui.card().classes(
+                            f"w-full p-3 text-center rounded-md shadow-md {bg_cls}"
+                        ):
+                            ui.label(state.last_feedback["message"]).classes(
+                                "text-xs font-bold"
+                            )
 
                             # Render Multiple Choice (1/5) Buttons if active
-                            if fb_type == "choices" and "choices" in state.last_feedback:
+                            if (
+                                fb_type == "choices"
+                                and "choices" in state.last_feedback
+                            ):
                                 with ui.column().classes("w-full gap-1 mt-2"):
                                     for choice_label in state.last_feedback["choices"]:
                                         ui.button(
                                             choice_label,
-                                            on_click=lambda l=choice_label: handle_submit_guess(l),
+                                            on_click=lambda l=choice_label: (
+                                                handle_submit_guess(l)
+                                            ),
                                             color="secondary",
-                                        ).props("outline dense").classes("bg-gray-800 text-white font-medium text-xs w-full")
+                                        ).props("outline dense").classes(
+                                            "bg-gray-800 text-white font-medium text-xs w-full"
+                                        )
 
                         # Multi-Level Taxonomic Hierarchy Feedback (Order, Family, Genus, Species)
-                        target_row_query = app_conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (state.current_question.taxon_key,)).fetchone()
+                        target_row_query = app_conn.execute(
+                            "SELECT * FROM taxa WHERE taxon_key = ?",
+                            (state.current_question.taxon_key,),
+                        ).fetchone()
                         if target_row_query:
                             render_taxonomic_hierarchy_feedback(
                                 app_conn,
@@ -582,22 +693,44 @@ def render_quiz_view(state: QuizViewState) -> None:
                                 is_solved=state.solved,
                             )
 
-                    # 6. Diagnostic Reference Photo (on wrong guess)
+                    # Diagnostic Reference Photo (on wrong guess)
                     if state.diagnostic_photo_url:
-                        with ui.card().classes("w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700"):
-                            diag_label = f"Diagnostic Reference (Guessed '{state.diagnostic_guessed_name}'):" if state.diagnostic_guessed_name else "Diagnostic Reference (Guessed Species):"
-                            ui.label(diag_label).classes("font-bold text-[11px] text-yellow-300 mb-1")
+                        with ui.card().classes(
+                            "w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700"
+                        ):
+                            diag_label = (
+                                f"Diagnostic Reference (Guessed '{state.diagnostic_guessed_name}'):"
+                                if state.diagnostic_guessed_name
+                                else "Diagnostic Reference (Guessed Species):"
+                            )
+                            ui.label(diag_label).classes(
+                                "font-bold text-[11px] text-yellow-300 mb-1"
+                            )
 
-                            ui.element("img").props(f'src="{state.diagnostic_photo_url}"').style(
+                            ui.element("img").props(
+                                f'src="{state.diagnostic_photo_url}"'
+                            ).style(
                                 "max-width: 100%; max-height: 128px; object-fit: scale-down; display: block; margin: auto; border-radius: 4px;"
                             )
 
-                    # 7. Compact Location Satellite Map Card
+                    # Compact Location Satellite Map Card
                     render_satellite_map(
                         state.current_question.latitude,
                         state.current_question.longitude,
                         state.current_question.locality,
                     )
+
+                    # Taxa Whitelist / Blacklist Filter Drawer
+                    with ui.expansion(
+                        "Taxa Scope (Whitelist / Blacklist)", icon="filter_alt"
+                    ).classes(
+                        "w-full bg-gray-800 text-xs text-yellow-300 rounded-md border border-gray-700 p-0"
+                    ):
+                        render_taxa_filter_controls(
+                            app_conn,
+                            state.filters,
+                            on_changed=load_new_question,
+                        )
 
     # Initial render load
     if not state.current_question:

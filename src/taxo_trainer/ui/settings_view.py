@@ -69,14 +69,13 @@ def get_path_suggestions(input_str: str, limit: int = 8) -> list[tuple[str, str,
 def render_settings_view(
     active_filters: SamplingFilter,
     on_filters_changed: Callable[[], None],
-    dark_mode: ui.dark_mode | None = None,
+    dark_mode: ui.dark_mode,
 ) -> None:
     """Render application settings, sampling controls, and dataset ingestion view.
 
     Args:
         active_filters: Active SamplingFilter configuration instance.
         on_filters_changed: Callback to notify quiz view when filters change.
-        dark_mode: NiceGUI dark_mode instance for theme toggling.
     """
     app_conn = get_db_connection(APP_DB_PATH)
 
@@ -121,7 +120,7 @@ def render_settings_view(
                 ).classes("text-xs text-green-400 font-semibold")
 
             ui.label(f"📁 {active_path}").classes(
-                "text-sm font-mono text-white break-all mb-3 bg-gray-800 p-2 rounded border border-gray-700"
+                "text-sm font-mono !text-black dark:!text-white break-all mb-3 bg-gray-800 p-2 rounded border border-gray-700"
             )
 
             with ui.row().classes(
@@ -397,107 +396,113 @@ def render_settings_view(
             ).classes("px-6")
 
         # 4. Advanced Features Dropdown (Hidden by default at bottom of page)
-        exp = ui.expansion("Advanced Features", icon="settings_suggest", value=False).classes(
+        exp = ui.expansion(
+            "Advanced Features", icon="settings_suggest", value=False
+        ).classes(
             "w-full bg-gray-800 rounded-lg shadow-md border border-gray-700 text-yellow-300 font-bold mb-6"
         )
         with exp, ui.column().classes("w-full p-4 space-y-6 text-white"):
             # Stage 1 Sampling Mode & Cutoffs Card
-                with ui.card().classes("w-full bg-gray-900 p-6 rounded-lg border border-gray-700"):
-                    ui.label("Stage 1 Sampling & Probability Weights").classes(
-                        "text-lg font-bold text-yellow-300 mb-2"
-                    )
+            with ui.card().classes(
+                "w-full bg-gray-900 p-6 rounded-lg border border-gray-700"
+            ):
+                ui.label("Stage 1 Sampling & Probability Weights").classes(
+                    "text-lg font-bold text-yellow-300 mb-2"
+                )
 
-                    ui.label("Control how species are selected during quiz questions.").classes(
-                        "text-xs text-gray-400 mb-4"
-                    )
+                ui.label(
+                    "Control how species are selected during quiz questions."
+                ).classes("text-xs text-gray-400 mb-4")
 
-                    with ui.row().classes("w-full gap-6 flex-wrap items-center"):
-                        mode_radio = (
-                            ui.radio(
-                                options={
-                                    "flat": "Flat (Equal 1.0 probability)",
-                                    "natural": "Natural (Raw occurrence count)",
-                                    "log": "Log Transformed (log(1 + count)) [Recommended]",
-                                    "sqrt": "Square-Root Transformed (sqrt(count))",
-                                },
-                                value=active_filters.mode,
-                            )
-                            .props("dark")
-                            .classes("text-white")
+                with ui.row().classes("w-full gap-6 flex-wrap items-center"):
+                    mode_radio = (
+                        ui.radio(
+                            options={
+                                "flat": "Flat (Equal 1.0 probability)",
+                                "natural": "Natural (Raw occurrence count)",
+                                "log": "Log Transformed (log(1 + count)) [Recommended]",
+                                "sqrt": "Square-Root Transformed (sqrt(count))",
+                            },
+                            value=active_filters.mode,
                         )
+                        .props("dark")
+                        .classes("text-white")
+                    )
 
-                        def update_mode(val: str) -> None:
-                            active_filters.mode = val
+                    def update_mode(val: str) -> None:
+                        active_filters.mode = val
+                        on_filters_changed()
+                        ui.notify(f"Sampling mode set to '{val}'", type="positive")
+
+                    mode_radio.on_value_change(lambda e: update_mode(e.value))
+
+                with ui.row().classes("w-full gap-6 mt-4 items-center"):
+                    cutoff_input = (
+                        ui.number(
+                            label="Minimum Occurrence Cutoff (C_min)",
+                            value=active_filters.min_count,
+                            min=1,
+                            step=1,
+                        )
+                        .classes("w-64 text-white")
+                        .props("outlined dark")
+                    )
+
+                    def update_cutoff(val: int) -> None:
+                        if val is not None and val >= 1:
+                            active_filters.min_count = int(val)
                             on_filters_changed()
-                            ui.notify(f"Sampling mode set to '{val}'", type="positive")
+                            ui.notify(f"Minimum cutoff set to {val}", type="positive")
 
-                        mode_radio.on_value_change(lambda e: update_mode(e.value))
+                    cutoff_input.on_value_change(lambda e: update_cutoff(e.value))
 
-                    with ui.row().classes("w-full gap-6 mt-4 items-center"):
-                        cutoff_input = (
-                            ui.number(
-                                label="Minimum Occurrence Cutoff (C_min)",
-                                value=active_filters.min_count,
-                                min=1,
-                                step=1,
-                            )
-                            .classes("w-64 text-white")
-                            .props("outlined dark")
+            # Taxonomic Scope & Filters Card
+            with ui.card().classes(
+                "w-full bg-gray-900 p-6 rounded-lg border border-gray-700"
+            ):
+                ui.label("Taxonomic Scope & Practice Filters").classes(
+                    "text-lg font-bold text-yellow-300 mb-2"
+                )
+
+                with ui.row().classes("w-full gap-4 items-center flex-wrap"):
+                    family_select = (
+                        ui.select(
+                            options=families,
+                            value=active_filters.family or "All Families",
+                            label="Filter by Family",
                         )
-
-                        def update_cutoff(val: int) -> None:
-                            if val is not None and val >= 1:
-                                active_filters.min_count = int(val)
-                                on_filters_changed()
-                                ui.notify(f"Minimum cutoff set to {val}", type="positive")
-
-                        cutoff_input.on_value_change(lambda e: update_cutoff(e.value))
-
-                # Taxonomic Scope & Filters Card
-                with ui.card().classes("w-full bg-gray-900 p-6 rounded-lg border border-gray-700"):
-                    ui.label("Taxonomic Scope & Practice Filters").classes(
-                        "text-lg font-bold text-yellow-300 mb-2"
+                        .classes("w-64 text-white")
+                        .props("outlined dark")
                     )
 
-                    with ui.row().classes("w-full gap-4 items-center flex-wrap"):
-                        family_select = (
-                            ui.select(
-                                options=families,
-                                value=active_filters.family or "All Families",
-                                label="Filter by Family",
-                            )
-                            .classes("w-64 text-white")
-                            .props("outlined dark")
+                    def update_family(val: str) -> None:
+                        active_filters.family = None if val == "All Families" else val
+                        on_filters_changed()
+                        ui.notify(f"Family filter updated: {val}", type="info")
+
+                    family_select.on_value_change(lambda e: update_family(e.value))
+
+                    misidentified_toggle = ui.switch(
+                        "Practice Misidentified Photos Only",
+                        value=active_filters.misidentified_only,
+                    ).classes("text-white font-medium ml-4")
+
+                    def update_misidentified(val: bool) -> None:
+                        active_filters.misidentified_only = val
+                        on_filters_changed()
+                        ui.notify(
+                            f"Misidentified practice mode: {'ON' if val else 'OFF'}",
+                            type="info",
                         )
 
-                        def update_family(val: str) -> None:
-                            active_filters.family = None if val == "All Families" else val
-                            on_filters_changed()
-                            ui.notify(f"Family filter updated: {val}", type="info")
-
-                        family_select.on_value_change(lambda e: update_family(e.value))
-
-                        misidentified_toggle = ui.switch(
-                            "Practice Misidentified Photos Only",
-                            value=active_filters.misidentified_only,
-                        ).classes("text-white font-medium ml-4")
-
-                        def update_misidentified(val: bool) -> None:
-                            active_filters.misidentified_only = val
-                            on_filters_changed()
-                            ui.notify(
-                                f"Misidentified practice mode: {'ON' if val else 'OFF'}",
-                                type="info",
-                            )
-
-                        misidentified_toggle.on_value_change(
-                            lambda e: update_misidentified(e.value)
-                        )
-
-                    ui.separator().classes("bg-gray-700 my-4")
-
-                    render_taxa_filter_controls(
-                        app_conn,
-                        active_filters,
-                        on_changed=on_filters_changed,
+                    misidentified_toggle.on_value_change(
+                        lambda e: update_misidentified(e.value)
                     )
+
+                ui.separator().classes("bg-gray-700 my-4")
+
+                render_taxa_filter_controls(
+                    app_conn,
+                    active_filters,
+                    on_changed=on_filters_changed,
+                )
