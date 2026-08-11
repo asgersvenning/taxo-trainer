@@ -282,6 +282,7 @@ def render_settings_view(
                     if val is not None and int(val) >= 1:
                         c_val = int(val)
                         active_filters.min_count = c_val
+                        set_app_metadata("min_count", str(c_val), conn=app_conn)
                         refresh_cutoff_stats(c_val)
                         on_filters_changed()
                         ui.notify(

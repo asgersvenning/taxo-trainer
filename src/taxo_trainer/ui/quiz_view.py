@@ -11,6 +11,7 @@ from nicegui import ui
 from taxo_trainer.db import (
     APP_DB_PATH,
     USER_DB_PATH,
+    get_app_metadata,
     get_db_connection,
     get_user_streak,
     set_user_streak,
@@ -78,6 +79,20 @@ def render_quiz_view(state: QuizViewState) -> None:
         curr, best = get_user_streak(user_conn)
         state.current_streak = curr
         state.best_streak = best
+        state.streak_initialized = True
+
+        # Load persistent filters from database metadata
+        saved_min = get_app_metadata("min_count", "1", conn=app_conn)
+        try:
+            state.filters.min_count = max(1, int(saved_min))
+        except ValueError:
+            pass
+        saved_mode = get_app_metadata("sampling_mode", "log", conn=app_conn)
+        if saved_mode in ("flat", "natural", "log", "sqrt"):
+            state.filters.mode = saved_mode
+        saved_lang = get_app_metadata("language_preference", "da", conn=app_conn)
+        if saved_lang:
+            state.filters.language = saved_lang
         state.streak_initialized = True
 
     def load_new_question() -> None:

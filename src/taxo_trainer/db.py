@@ -228,8 +228,10 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
                 pass
 
 
-            conn.execute("""
+            conn.executescript("""
                 CREATE INDEX IF NOT EXISTS idx_occ_sampling ON occurrences(taxon_key, month);
+                CREATE INDEX IF NOT EXISTS idx_occ_taxon_key ON occurrences(taxon_key);
+                CREATE INDEX IF NOT EXISTS idx_taxa_occ_cnt ON taxa(occurrence_count);
             """)
     finally:
         if should_close:
