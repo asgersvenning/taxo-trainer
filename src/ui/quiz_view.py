@@ -280,58 +280,73 @@ def render_quiz_view(state: QuizViewState) -> None:
         refresh_quiz_ui()
 
     def handle_multiple_choice_hint() -> None:
-        """Trigger 1/5 distractor multiple choice hint."""
+        """Trigger 1/5 distractor multiple choice hint restricted by revealed taxonomic scope."""
         if not state.current_question:
             return
         state.used_hint = True
 
-        dist_cursor = app_conn.execute(
-            """
-            SELECT taxon_key, canonical_name, scientific_name, vernacular_da, vernacular_en
+        # Build SQL filter restricted to revealed taxonomic scope
+        where_clauses = ["rank = 'SPECIES'"]
+        params = []
+
+        if state.matched_genus:
+            where_clauses.append("LOWER(genus) = LOWER(?)")
+            params.append(state.matched_genus)
+        elif state.matched_family:
+            where_clauses.append("LOWER(family) = LOWER(?)")
+            params.append(state.matched_family)
+        elif state.matched_order:
+            where_clauses.append("LOWER(order_name) = LOWER(?)")
+            params.append(state.matched_order)
+
+        where_sql = " AND ".join(where_clauses)
+
+        cursor = app_conn.execute(
+            f"""
+            SELECT taxon_key, canonical_name, scientific_name, vernacular_da, vernacular_en, vernacular_json
             FROM taxa
-            WHERE taxon_key != ? AND (family = ? OR genus = ?)
-            ORDER BY RANDOM()
-            LIMIT 4;
+            WHERE {where_sql}
             """,
-            (
-                state.current_question.taxon_key,
-                state.current_question.family,
-                state.current_question.genus,
-            ),
+            params,
         )
-        distractors = list(dist_cursor.fetchall())
+        possible_rows = list(cursor.fetchall())
 
-        if len(distractors) < 4:
-            needed = 4 - len(distractors)
-            exclude_keys = [state.current_question.taxon_key] + [d["taxon_key"] for d in distractors]
-            placeholders = ",".join("?" for _ in exclude_keys)
-            fallback_cursor = app_conn.execute(
-                f"""
-                SELECT taxon_key, canonical_name, scientific_name, vernacular_da, vernacular_en
-                FROM taxa
-                WHERE taxon_key NOT IN ({placeholders})
-                ORDER BY RANDOM()
-                LIMIT ?;
-                """,
-                exclude_keys + [needed],
-            )
-            distractors.extend(fallback_cursor.fetchall())
+        target_key_str = str(state.current_question.taxon_key)
+        target_row = app_conn.execute(
+            "SELECT * FROM taxa WHERE taxon_key = ?",
+            (target_key_str,),
+        ).fetchone()
 
-        choices = [
-            get_display_name({
-                "vernacular_da": state.current_question.vernacular_da,
-                "vernacular_en": state.current_question.vernacular_en,
-                "canonical_name": state.current_question.canonical_name,
-                "scientific_name": state.current_question.scientific_name,
-            })
-        ]
-        for d in distractors:
-            choices.append(get_display_name(d))
+        target_disp = (
+            get_display_name(target_row, lang=state.filters.language)
+            if target_row
+            else state.current_question.canonical_name
+        )
 
+        seen_names = {target_disp.lower(), state.current_question.canonical_name.lower()}
+        distractor_choices = []
+
+        random.shuffle(possible_rows)
+
+        for row in possible_rows:
+            if str(row["taxon_key"]) == target_key_str:
+                continue
+            disp = get_display_name(row, lang=state.filters.language)
+            c_name = row["canonical_name"].lower()
+            if disp.lower() not in seen_names and c_name not in seen_names:
+                seen_names.add(disp.lower())
+                seen_names.add(c_name)
+                distractor_choices.append(disp)
+                if len(distractor_choices) >= 4:
+                    break
+
+        choices = [target_disp] + distractor_choices
         random.shuffle(choices)
+
+        count_label = f"1/{len(choices)}"
         state.last_feedback = {
             "type": "choices",
-            "message": "Multiple Choice Options (1/5):",
+            "message": f"Multiple Choice Options ({count_label}):",
             "choices": choices,
         }
         refresh_quiz_ui()

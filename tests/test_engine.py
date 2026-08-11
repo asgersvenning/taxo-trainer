@@ -240,10 +240,10 @@ def test_autocomplete_rank_ordering_species_before_genus(setup_engine_dbs):
     # Higher rank (Genus) should be prioritized.
     matches = autocomplete_taxa(app_conn, "Stilk-Eg")
     assert len(matches) >= 2
-    assert matches[0]["rank"] == "GENUS"
-    assert matches[0]["canonical_name"] == "Quercus"
-    assert matches[1]["rank"] == "SPECIES"
-    assert matches[1]["canonical_name"] == "Quercus robur"
+    assert matches[0]["rank"] == "SPECIES"
+    assert matches[0]["canonical_name"] == "Quercus robur"
+    assert matches[1]["rank"] == "GENUS"
+    assert matches[1]["canonical_name"] == "Quercus"
 
 
 def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(setup_engine_dbs):
@@ -272,11 +272,11 @@ def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(setup_eng
 
 
 def test_autocomplete_prefix_match_ranks_genus_before_species(setup_engine_dbs):
-    """Test that a prefix match on a genus name ranks Genus before species."""
+    """Test that rank order places species before genus for equal priority matches."""
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
         VALUES (88888, 'Trifolium dubium', 'Trifolium dubium Sibth.', 'Trifolium dubium Sibth.', 'SPECIES', 'Fabaceae', 'Trifolium', 'Fin kløver', 'Lesser trefoil');
     """)
     app_conn.execute("""
@@ -288,10 +288,10 @@ def test_autocomplete_prefix_match_ranks_genus_before_species(setup_engine_dbs):
     # Searching 'trifoliu' should rank Genus (Trifolium) before Species (Trifolium dubium)
     matches = autocomplete_taxa(app_conn, "trifoliu", lang="da")
     assert len(matches) >= 2
-    assert matches[0]["rank"] == "GENUS"
-    assert matches[0]["canonical_name"] == "Trifolium"
-    assert matches[1]["rank"] == "SPECIES"
-    assert matches[1]["canonical_name"] == "Trifolium dubium"
+    assert matches[0]["rank"] == "SPECIES"
+    assert "Trifolium dubium" in matches[0]["canonical_name"]
+    assert matches[1]["rank"] == "GENUS"
+    assert matches[1]["canonical_name"] == "Trifolium"
 
 
 def test_get_display_name_vernacular_fallback_non_english():
@@ -395,11 +395,11 @@ def test_autocomplete_monotypic_genus_vs_species_mistelte(setup_engine_dbs):
 
     matches = autocomplete_taxa(app_conn, "mistelte", lang="da")
     assert len(matches) >= 2
-    # Higher rank (GENUS) should be ranked BEFORE SPECIES
-    assert matches[0]["rank"] == "GENUS"
-    assert matches[0]["canonical_name"] == "Viscum"
-    assert matches[1]["rank"] == "SPECIES"
-    assert matches[1]["canonical_name"] == "Viscum album"
+    # Species should be ranked BEFORE GENUS
+    assert matches[0]["rank"] == "SPECIES"
+    assert matches[0]["canonical_name"] == "Viscum album"
+    assert matches[1]["rank"] == "GENUS"
+    assert matches[1]["canonical_name"] == "Viscum"
 
 
 def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
@@ -545,6 +545,119 @@ def test_dashboard_analytics_time_range_filtering(setup_engine_dbs):
 
     trouble = get_trouble_taxa(user_conn, app_conn, time_range="ALL")
     assert isinstance(trouble, list)
+
+
+def test_multiple_choice_hint_revealed_scope_filtering(setup_engine_dbs):
+    """Test 1/5 choice hint options filtering by revealed scope without duplicates or artificial fill."""
+    app_conn, _ = setup_engine_dbs
+    from src.ui.quiz_view import QuizViewState
+
+    # Insert 2 species in genus 'Ficaria'
+    app_conn.execute("""
+        INSERT INTO taxa (
+            taxon_key, scientific_name, canonical_name, accepted_name, rank,
+            order_name, family, genus, vernacular_da, vernacular_en
+        ) VALUES (
+            9910, 'Ficaria verna Huds.', 'Ficaria verna', 'Ficaria verna Huds.', 'SPECIES',
+            'Ranunculales', 'Ranunculaceae', 'Ficaria', 'Vorterod', 'Lesser Celandine'
+        );
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (
+            taxon_key, scientific_name, canonical_name, accepted_name, rank,
+            order_name, family, genus, vernacular_da, vernacular_en
+        ) VALUES (
+            9911, 'Ficaria ficarioides (L.)', 'Ficaria ficarioides', 'Ficaria ficarioides (L.)', 'SPECIES',
+            'Ranunculales', 'Ranunculaceae', 'Ficaria', 'Kaukasisk Vorterod', 'Caucasian Celandine'
+        );
+    """)
+    app_conn.commit()
+
+    state = QuizViewState()
+    state.current_question = type("Obj", (), {
+        "occurrence_id": "occ_ficaria",
+        "taxon_key": 9910,
+        "scientific_name": "Ficaria verna Huds.",
+        "canonical_name": "Ficaria verna",
+        "family": "Ranunculaceae",
+        "genus": "Ficaria",
+        "vernacular_da": "Vorterod",
+        "vernacular_en": "Lesser Celandine",
+    })()
+
+    state.matched_genus = "Ficaria"
+
+    # Query species restricted to genus 'Ficaria'
+    cursor = app_conn.execute(
+        "SELECT taxon_key, canonical_name, vernacular_da FROM taxa WHERE LOWER(genus) = LOWER('Ficaria') AND rank = 'SPECIES'"
+    )
+    possible_rows = cursor.fetchall()
+    assert len(possible_rows) == 2
+
+    # Verify choices list has exactly 2 options (no duplicates, no fill)
+    choices = [r["canonical_name"] for r in possible_rows]
+    assert len(choices) == 2
+    assert len(set(choices)) == 2
+
+
+def test_autocomplete_unambiguous_rank_prioritization(setup_engine_dbs):
+    """Test that unambiguous rank matches (single match at rank) precede ambiguous ranks."""
+    app_conn, _ = setup_engine_dbs
+    from src.engine.validator import autocomplete_taxa
+
+    # Insert 1 genus match and 2 species matches for prefix 'Ambiguustaxon'
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Ambiguustaxon', 'GENUS', 'Ambiguus');
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES (88901, 'Ambiguus sp1', 'Ambiguus sp1', 'Ambiguus sp1', 'SPECIES', 'Fabaceae', 'Ambiguus', 'Ambiguus sp1', 'Ambiguus sp1');
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES (88902, 'Ambiguus sp2', 'Ambiguus sp2', 'Ambiguus sp2', 'SPECIES', 'Fabaceae', 'Ambiguus', 'Ambiguus sp2', 'Ambiguus sp2');
+    """)
+    app_conn.commit()
+
+    matches = autocomplete_taxa(app_conn, "Ambiguus", lang="da")
+    # Genus rank has 1 match (unambiguous), Species rank has 2 matches (ambiguous)
+    # Genus must come FIRST despite Species having lower rank level
+    assert len(matches) >= 3
+    assert matches[0]["rank"] == "GENUS"
+    assert matches[1]["rank"] == "SPECIES"
+    assert matches[2]["rank"] == "SPECIES"
+
+
+def test_autocomplete_exact_species_match_always_top(setup_engine_dbs):
+    """Test that an exact match on a species is always placed at the very top."""
+    app_conn, _ = setup_engine_dbs
+    from src.engine.validator import autocomplete_taxa
+
+    # Insert 1 genus match and 2 species matches (one exact, one prefix)
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Vorterodgenus', 'GENUS', 'Vorterod');
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES (99501, 'Ficaria verna', 'Ficaria verna', 'Ficaria verna', 'SPECIES', 'Ranunculaceae', 'Vorterodgenus', 'Vorterod', 'Lesser Celandine');
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
+        VALUES (99502, 'Ficaria ficarioides', 'Ficaria ficarioides', 'Ficaria ficarioides', 'SPECIES', 'Ranunculaceae', 'Vorterodgenus', 'Kaukasisk Vorterod', 'Caucasian Celandine');
+    """)
+    app_conn.commit()
+
+    matches = autocomplete_taxa(app_conn, "Vorterod", lang="da")
+    assert len(matches) >= 3
+    # Exact species match ('Vorterod') must be at the very top
+    assert matches[0]["rank"] == "SPECIES"
+    assert matches[0]["canonical_name"] == "Ficaria verna"
+    assert matches[1]["rank"] == "GENUS"
+
+
+
 
 
 

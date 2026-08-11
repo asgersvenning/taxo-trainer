@@ -203,7 +203,11 @@ def autocomplete_taxa(
         secondary_names: list[str | None],
     ) -> tuple[int, int]:
         r = (rank_str or "").upper()
-        rw = 1 if r == "GENUS" else (2 if r == "FAMILY" else (3 if r in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM") else 4))
+        rw = (
+            1
+            if r in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM")
+            else (2 if r == "GENUS" else (3 if r == "FAMILY" else 4))
+        )
 
         def is_word_prefix(name: str | None, target: str, target_clean: str) -> bool:
             if not name:
@@ -223,7 +227,7 @@ def autocomplete_taxa(
                     return True
             return False
 
-        # 1. Exact match on canonical_name or primary vernacular
+        # 1. Exact match on canonical_name or primary vernacular (including base-words without -slægten/-familien)
         for n in [canon] + primary_vernaculars:
             if not n:
                 continue
@@ -232,6 +236,12 @@ def autocomplete_taxa(
                 p_c = normalize_name(p)
                 if p_l == q_strip or p_c == q_clean:
                     return 0, rw
+                for suf in ("-slægten", " slægten", "-familien", " familien", "-ordenen", " ordenen"):
+                    if p_l.endswith(suf):
+                        base_l = p_l[:-len(suf)].strip()
+                        base_c = normalize_name(base_l)
+                        if base_l == q_strip or base_c == q_clean:
+                            return 0, rw
 
         # 2. Exact match on secondary names
         for n in secondary_names:
@@ -460,15 +470,33 @@ def autocomplete_taxa(
                     }
                 )
 
-    # Sort by (match priority, rank_order [species before genus], length of display_name, display_name)
-    candidates.sort(
-        key=lambda c: (
+    # Count match occurrences per rank for strong matches (priority <= 2) to determine rank ambiguity
+    rank_counts: dict[str, int] = {}
+    for c in candidates:
+        if c["priority"] <= 2:
+            r_str = (c["rank"] or "").upper()
+            rank_counts[r_str] = rank_counts.get(r_str, 0) + 1
+
+    def get_sort_key(c: dict[str, Any]) -> tuple:
+        r_upper = (c["rank"] or "").upper()
+        # 1. Exact species match always at the top
+        is_exact_species = (
+            0
+            if (c["priority"] == 0 and r_upper in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM"))
+            else 1
+        )
+        # 2. Unambiguous rank matches first (rank count == 1)
+        is_unambiguous = 0 if rank_counts.get(r_upper, 0) == 1 else 1
+        return (
+            is_exact_species,
+            is_unambiguous,
             c["priority"],
             c["rank_order"],
             len(c["display_name"]),
             c["display_name"],
         )
-    )
+
+    candidates.sort(key=get_sort_key)
 
     results: list[dict[str, Any]] = []
     for c in candidates[:limit]:
