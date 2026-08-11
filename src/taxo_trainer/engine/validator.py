@@ -317,14 +317,24 @@ def autocomplete_taxa(
            OR LOWER(vernacular_en) LIKE :sub
            OR LOWER(scientific_name) LIKE :sub
            OR json_extract(vernacular_json, '$.' || :lang_code) LIKE :sub
-           OR family LIKE :sub
-           OR genus LIKE :sub
            OR REPLACE(REPLACE(LOWER(canonical_name), '-', ''), ' ', '') LIKE :clean_sub
            OR REPLACE(REPLACE(LOWER(vernacular_da), '-', ''), ' ', '') LIKE :clean_sub
            OR REPLACE(REPLACE(LOWER(vernacular_en), '-', ''), ' ', '') LIKE :clean_sub
            OR REPLACE(REPLACE(LOWER(scientific_name), '-', ''), ' ', '') LIKE :clean_sub){sp_where_extra}
     """
     for row in conn.execute(sp_sql, params).fetchall():
+        r_str = (row["rank"] or "SPECIES").upper()
+        if r_str in (
+            "FAMILY",
+            "GENUS",
+            "ORDER",
+            "CLASS",
+            "PHYLUM",
+            "KINGDOM",
+            "UNRANKED",
+            "HIGHER",
+        ):
+            continue
         canon = row["canonical_name"]
         if canon not in seen_values:
             seen_values.add(canon)
@@ -345,7 +355,6 @@ def autocomplete_taxa(
                 secondary_v.append(row["vernacular_en"])
             elif lang != "da" and row["vernacular_da"]:
                 secondary_v.append(row["vernacular_da"])
-            r_str = row["rank"] or "SPECIES"
             prio, rw = calc_priority_and_rank_weight(canon, r_str, primary_v, secondary_v)
             if prio >= 8:
                 continue
@@ -484,6 +493,21 @@ def autocomplete_taxa(
                         "rank_order": rw,
                     }
                 )
+
+    # Filter out pseudo-species candidates whose canonical/scientific name represents a higher rank
+    higher_canonical = {
+        normalize_name(c["canonical_name"]) for c in candidates if (c["rank"] or "").upper() in ("GENUS", "FAMILY")
+    }
+
+    filtered_candidates = []
+    for c in candidates:
+        r_up = (c["rank"] or "").upper()
+        if r_up in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM"):
+            norm_c = normalize_name(c["canonical_name"])
+            if norm_c in higher_canonical:
+                continue
+        filtered_candidates.append(c)
+    candidates = filtered_candidates
 
     # Count distinct concept/display names per rank group for strong matches (priority <= 4) to determine rank ambiguity
     rank_distinct_names: dict[str, set[str]] = {}
