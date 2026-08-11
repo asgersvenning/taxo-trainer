@@ -8,21 +8,25 @@ import random
 
 from nicegui import ui
 
-from src.db import (
+from taxo_trainer.db import (
     APP_DB_PATH,
     USER_DB_PATH,
     get_db_connection,
     get_user_streak,
     set_user_streak,
 )
-from src.engine.analytics import log_attempt
-from src.engine.sampling import SamplingFilter, TargetObservation, sample_next_question
-from src.engine.validator import (
+from taxo_trainer.engine.analytics import log_attempt
+from taxo_trainer.engine.sampling import (
+    SamplingFilter,
+    TargetObservation,
+    sample_next_question,
+)
+from taxo_trainer.engine.validator import (
     autocomplete_taxa,
     get_display_name,
     validate_user_guess,
 )
-from src.ui.components import (
+from taxo_trainer.ui.components import (
     render_phenology_badge,
     render_photo_viewer,
     render_satellite_map,

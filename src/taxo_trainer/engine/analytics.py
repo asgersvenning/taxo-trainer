@@ -1,8 +1,8 @@
 import sqlite3
 from dataclasses import dataclass
 
-from src.db import get_user_streak, init_user_db
-from src.engine.validator import get_display_name
+from taxo_trainer.db import get_user_streak, init_user_db
+from taxo_trainer.engine.validator import get_display_name
 
 
 @dataclass

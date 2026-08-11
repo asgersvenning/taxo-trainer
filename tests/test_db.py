@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from src.db import init_app_db, init_user_db
+from taxo_trainer.db import init_app_db, init_user_db
 
 
 def test_init_app_db_in_memory():
@@ -54,7 +54,7 @@ def test_prune_gbif_cache():
     """Test 7-day expiration and LRU size pruning in gbif_cache.db."""
     import time
 
-    from src.db import prune_gbif_cache
+    from taxo_trainer.db import prune_gbif_cache
 
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row

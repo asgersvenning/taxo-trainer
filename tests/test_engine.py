@@ -5,15 +5,19 @@ import sqlite3
 import numpy as np
 import pytest
 
-from src.db import init_app_db, init_user_db
-from src.engine.analytics import get_confusion_matrix, get_global_stats, log_attempt
-from src.engine.sampling import (
+from taxo_trainer.db import init_app_db, init_user_db
+from taxo_trainer.engine.analytics import (
+    get_confusion_matrix,
+    get_global_stats,
+    log_attempt,
+)
+from taxo_trainer.engine.sampling import (
     SamplingFilter,
     compute_weights,
     sample_stage1_taxon,
     sample_stage2_observation,
 )
-from src.engine.validator import (
+from taxo_trainer.engine.validator import (
     autocomplete_taxa,
     get_display_name,
     validate_user_guess,
@@ -353,8 +357,8 @@ def test_autocomplete_sennep_ordering_and_vernacular(setup_engine_dbs):
 
 def test_render_taxonomic_hierarchy_gbif_links(setup_engine_dbs):
     """Test that render_taxonomic_hierarchy_feedback renders GBIF links for revealed ranks."""
-    from src.engine.validator import ValidationResult
-    from src.ui.components import render_taxonomic_hierarchy_feedback
+    from taxo_trainer.engine.validator import ValidationResult
+    from taxo_trainer.ui.components import render_taxonomic_hierarchy_feedback
 
     app_conn, _ = setup_engine_dbs
 
@@ -405,7 +409,7 @@ def test_autocomplete_monotypic_genus_vs_species_mistelte(setup_engine_dbs):
 def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
     """Test higher order hint sequential rank revelation and autocomplete scope restriction."""
     app_conn, user_conn = setup_engine_dbs
-    from src.ui.quiz_view import QuizViewState
+    from taxo_trainer.ui.quiz_view import QuizViewState
 
     app_conn.execute("""
         INSERT INTO taxa (
@@ -477,7 +481,7 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
 def test_user_streak_persistence(setup_engine_dbs):
     """Test user streak DB persistence and streak breaking rules."""
     _, user_conn = setup_engine_dbs
-    from src.db import get_user_streak, set_user_streak
+    from taxo_trainer.db import get_user_streak, set_user_streak
 
     # 1. Initial streak is 0, 0
     curr, best = get_user_streak(user_conn)
@@ -507,7 +511,7 @@ def test_user_streak_persistence(setup_engine_dbs):
 def test_dashboard_analytics_time_range_filtering(setup_engine_dbs):
     """Test dashboard analytics queries with time_range filtering."""
     app_conn, user_conn = setup_engine_dbs
-    from src.engine.analytics import (
+    from taxo_trainer.engine.analytics import (
         get_dataset_coverage,
         get_family_mastery_stats,
         get_global_stats,
@@ -550,7 +554,7 @@ def test_dashboard_analytics_time_range_filtering(setup_engine_dbs):
 def test_multiple_choice_hint_revealed_scope_filtering(setup_engine_dbs):
     """Test 1/5 choice hint options filtering by revealed scope without duplicates or artificial fill."""
     app_conn, _ = setup_engine_dbs
-    from src.ui.quiz_view import QuizViewState
+    from taxo_trainer.ui.quiz_view import QuizViewState
 
     # Insert 2 species in genus 'Ficaria'
     app_conn.execute("""
@@ -603,7 +607,7 @@ def test_multiple_choice_hint_revealed_scope_filtering(setup_engine_dbs):
 def test_autocomplete_unambiguous_rank_prioritization(setup_engine_dbs):
     """Test that unambiguous rank matches (single match at rank) precede ambiguous ranks."""
     app_conn, _ = setup_engine_dbs
-    from src.engine.validator import autocomplete_taxa
+    from taxo_trainer.engine.validator import autocomplete_taxa
 
     # Insert 1 genus match and 2 species matches for prefix 'Ambiguustaxon'
     app_conn.execute("""
@@ -632,7 +636,7 @@ def test_autocomplete_unambiguous_rank_prioritization(setup_engine_dbs):
 def test_autocomplete_exact_species_match_always_top(setup_engine_dbs):
     """Test that an exact match on a species is always placed at the very top."""
     app_conn, _ = setup_engine_dbs
-    from src.engine.validator import autocomplete_taxa
+    from taxo_trainer.engine.validator import autocomplete_taxa
 
     # Insert 1 genus match and 2 species matches (one exact, one prefix)
     app_conn.execute("""

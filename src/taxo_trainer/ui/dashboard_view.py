@@ -5,8 +5,8 @@ Renders user accuracy metrics, time-windowed stats, mastery breakdown, trouble t
 
 from nicegui import ui
 
-from src.db import APP_DB_PATH, USER_DB_PATH, get_db_connection
-from src.engine.analytics import (
+from taxo_trainer.db import APP_DB_PATH, USER_DB_PATH, get_db_connection
+from taxo_trainer.engine.analytics import (
     get_confusion_matrix,
     get_dataset_coverage,
     get_family_mastery_stats,

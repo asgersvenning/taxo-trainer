@@ -9,7 +9,7 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
-from src.db import (
+from taxo_trainer.db import (
     APP_DB_PATH,
     get_db_connection,
     get_gbif_cache_connection,

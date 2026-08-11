@@ -10,14 +10,14 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from src.db import APP_DB_PATH, DATA_DIR, get_app_metadata, get_db_connection
-from src.engine.sampling import SamplingFilter
-from src.ingestion.dwc_parser import ingest_dwc_file
-from src.ingestion.taxonomy_builder import (
+from taxo_trainer.db import APP_DB_PATH, DATA_DIR, get_app_metadata, get_db_connection
+from taxo_trainer.engine.sampling import SamplingFilter
+from taxo_trainer.ingestion.dwc_parser import ingest_dwc_file
+from taxo_trainer.ingestion.taxonomy_builder import (
     enrich_vernacular_names_from_gbif,
     rebuild_indices,
 )
-from src.ui.components import render_taxa_filter_controls
+from taxo_trainer.ui.components import render_taxa_filter_controls
 
 
 def get_path_suggestions(input_str: str, limit: int = 8) -> list[tuple[str, str, bool]]:

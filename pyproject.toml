@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-taxo-trainer = "src.app:main"
+taxo-trainer = "taxo_trainer.app:main"
 
 [dependency-groups]
 dev = [
@@ -27,7 +27,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/taxo_trainer"]
 
 [tool.uv]
 package = true

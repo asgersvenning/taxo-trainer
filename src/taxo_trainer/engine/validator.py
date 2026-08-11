@@ -24,7 +24,7 @@ class ValidationResult:
     feedback_message: str
 
 
-from src.db import row_to_dict
+from taxo_trainer.db import row_to_dict
 
 
 def get_display_name(taxon_row: sqlite3.Row | dict | None, lang: str = "da") -> str:

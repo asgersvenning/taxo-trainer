@@ -275,7 +275,7 @@ def render_taxa_filter_controls(
     Returns:
         ui.card: Container holding interactive whitelist & blacklist filtering controls.
     """
-    from src.engine.validator import autocomplete_taxa
+    from taxo_trainer.engine.validator import autocomplete_taxa
 
     card = ui.card().classes(
         "w-full bg-gray-900/90 p-3 rounded-lg border border-gray-700 space-y-3 shadow-md"
@@ -477,7 +477,7 @@ def render_taxonomic_hierarchy_feedback(
     ):
         return
 
-    from src.engine.validator import get_display_name
+    from taxo_trainer.engine.validator import get_display_name
 
     card = ui.card().classes(
         "w-full p-3 bg-gray-900 text-white rounded-md shadow-md border border-gray-700 space-y-1.5"

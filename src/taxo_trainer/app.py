@@ -1,15 +1,15 @@
 """Main entry point for Modernized Taxonomic Recognition & Training Engine (taxo-trainer).
 
 Launches local NiceGUI desktop application with reactive tabbed navigation.
-Run via: uv run python -m src.app
+Run via: uv run python -m taxo_trainer.app
 """
 
 from nicegui import ui
 
-from src.db import init_databases
-from src.ui.dashboard_view import render_dashboard_view
-from src.ui.quiz_view import QuizViewState, render_quiz_view
-from src.ui.settings_view import render_settings_view
+from taxo_trainer.db import init_databases
+from taxo_trainer.ui.dashboard_view import render_dashboard_view
+from taxo_trainer.ui.quiz_view import QuizViewState, render_quiz_view
+from taxo_trainer.ui.settings_view import render_settings_view
 
 
 @ui.page("/")

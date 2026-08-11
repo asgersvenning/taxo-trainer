@@ -2,12 +2,12 @@
 
 import sqlite3
 
-from src.db import init_user_db
-from src.engine.analytics import get_global_stats, log_attempt
-from src.engine.sampling import SamplingFilter, sample_next_question
-from src.engine.validator import validate_user_guess
-from src.ingestion.dwc_parser import ingest_dwc_file
-from src.ui.quiz_view import QuizViewState
+from taxo_trainer.db import init_user_db
+from taxo_trainer.engine.analytics import get_global_stats, log_attempt
+from taxo_trainer.engine.sampling import SamplingFilter, sample_next_question
+from taxo_trainer.engine.validator import validate_user_guess
+from taxo_trainer.ingestion.dwc_parser import ingest_dwc_file
+from taxo_trainer.ui.quiz_view import QuizViewState
 
 
 def test_full_pipeline_integration(tmp_path):

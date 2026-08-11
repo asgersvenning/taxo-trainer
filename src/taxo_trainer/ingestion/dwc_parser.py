@@ -16,7 +16,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from src.db import APP_DB_PATH, get_db_connection, init_app_db, set_app_metadata
+from taxo_trainer.db import (
+    APP_DB_PATH,
+    get_db_connection,
+    init_app_db,
+    set_app_metadata,
+)
 
 
 def extract_canonical_name(scientific_name: str) -> str:

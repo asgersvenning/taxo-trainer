@@ -2,12 +2,12 @@
 
 import sqlite3
 
-from src.ingestion.dwc_parser import (
+from taxo_trainer.ingestion.dwc_parser import (
     extract_canonical_name,
     ingest_dwc_file,
     parse_month,
 )
-from src.ingestion.taxonomy_builder import load_custom_vernacular_json
+from taxo_trainer.ingestion.taxonomy_builder import load_custom_vernacular_json
 
 
 def test_extract_canonical_name():
