@@ -159,6 +159,11 @@ LANG_MAP = {
     "fra": "fr", "fre": "fr", "fr": "fr", "french": "fr",
     "spa": "es", "es": "es", "spanish": "es",
     "nld": "nl", "dut": "nl", "nl": "nl", "dutch": "nl",
+    "pol": "pl", "pl": "pl", "polish": "pl",
+    "ces": "cs", "cze": "cs", "cs": "cs", "czech": "cs",
+    "fin": "fi", "fi": "fi", "finnish": "fi",
+    "ita": "it", "it": "it", "italian": "it",
+    "por": "pt", "pt": "pt", "portuguese": "pt",
 }
 
 LANG_COUNTRY_MAP = {
@@ -170,6 +175,11 @@ LANG_COUNTRY_MAP = {
     "fr": "FR",
     "es": "ES",
     "en": "GB",
+    "pl": "PL",
+    "cs": "CZ",
+    "fi": "FI",
+    "it": "IT",
+    "pt": "PT",
 }
 
 

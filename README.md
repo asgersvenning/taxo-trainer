@@ -16,7 +16,7 @@ Taxo-Trainer is a desktop web application for practicing plant and wildlife iden
   - `Enter`: Submit selected autocomplete suggestion or typed guess
 
 ### Autocomplete & Name Validation
-- **Multi-Rank Autocomplete**: Searches scientific names (binomials, genera, families) and vernacular names across 8 languages (Danish, English, German, French, Dutch, Swedish, Norwegian, etc.).
+- **Multi-Rank Autocomplete**: Searches scientific names (binomials, genera, families) and vernacular names across 13+ languages (Danish, English, German, Swedish, Norwegian, Finnish, Polish, Czech, French, Spanish, Italian, Portuguese, Dutch, etc.).
 - **Context-Aware Rank Prioritization**: Sorts search candidates by match quality, giving top priority to exact species matches, unambiguous rank matches, and hierarchical order (Species $\rightarrow$ Genus $\rightarrow$ Family).
 - **Taxonomic Scope Interpolation**: Guessing or revealing a higher rank (e.g. Family or Genus) automatically constrains autocomplete suggestions to that specific rank scope.
 

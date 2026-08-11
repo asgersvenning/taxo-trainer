@@ -170,8 +170,13 @@ def render_settings_view(
                 "de": "🇩🇪 German (Deutsch)",
                 "sv": "🇸🇪 Swedish (Svenska)",
                 "no": "🇳🇴 Norwegian (Norsk)",
+                "fi": "🇫🇮 Finnish (Suomi)",
+                "pl": "🇵🇱 Polish (Polski)",
+                "cs": "🇨🇿 Czech (Čeština)",
                 "fr": "🇫🇷 French (Français)",
                 "es": "🇪🇸 Spanish (Español)",
+                "it": "🇮🇹 Italian (Italiano)",
+                "pt": "🇵🇹 Portuguese (Português)",
                 "nl": "🇳🇱 Dutch (Nederlands)",
                 "la": "🏛️ Scientific Binomial (Latin)",
             }
@@ -197,109 +202,8 @@ def render_settings_view(
 
             lang_select.on_value_change(lambda e: update_language(e.value))
 
-        # 2. Sampling Mode & Cutoffs Card
+        # 2. DarwinCore Ingestion Engine Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
-            ui.label("Stage 1 Sampling & Probability Weights").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
-            )
-
-            ui.label("Control how species are selected during quiz questions.").classes(
-                "text-xs text-gray-400 mb-4"
-            )
-
-            with ui.row().classes("w-full gap-6 flex-wrap items-center"):
-                mode_radio = (
-                    ui.radio(
-                        options={
-                            "flat": "Flat (Equal 1.0 probability)",
-                            "natural": "Natural (Raw occurrence count)",
-                            "log": "Log Transformed (log(1 + count)) [Recommended]",
-                            "sqrt": "Square-Root Transformed (sqrt(count))",
-                        },
-                        value=active_filters.mode,
-                    )
-                    .props("dark")
-                    .classes("text-white")
-                )
-
-                def update_mode(val: str) -> None:
-                    active_filters.mode = val
-                    on_filters_changed()
-                    ui.notify(f"Sampling mode set to '{val}'", type="positive")
-
-                mode_radio.on_value_change(lambda e: update_mode(e.value))
-
-            with ui.row().classes("w-full gap-6 mt-4 items-center"):
-                cutoff_input = (
-                    ui.number(
-                        label="Minimum Occurrence Cutoff (C_min)",
-                        value=active_filters.min_count,
-                        min=1,
-                        step=1,
-                    )
-                    .classes("w-64 text-white")
-                    .props("outlined dark")
-                )
-
-                def update_cutoff(val: int) -> None:
-                    if val is not None and val >= 1:
-                        active_filters.min_count = int(val)
-                        on_filters_changed()
-                        ui.notify(f"Minimum cutoff set to {val}", type="positive")
-
-                cutoff_input.on_value_change(lambda e: update_cutoff(e.value))
-
-        # 2. Taxonomic Scope & Filters Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
-            ui.label("Taxonomic Scope & Practice Filters").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
-            )
-
-            with ui.row().classes("w-full gap-4 items-center flex-wrap"):
-                family_select = (
-                    ui.select(
-                        options=families,
-                        value=active_filters.family or "All Families",
-                        label="Filter by Family",
-                    )
-                    .classes("w-64 text-white")
-                    .props("outlined dark")
-                )
-
-                def update_family(val: str) -> None:
-                    active_filters.family = None if val == "All Families" else val
-                    on_filters_changed()
-                    ui.notify(f"Family filter updated: {val}", type="info")
-
-                family_select.on_value_change(lambda e: update_family(e.value))
-
-                misidentified_toggle = ui.switch(
-                    "Practice Misidentified Photos Only",
-                    value=active_filters.misidentified_only,
-                ).classes("text-white font-medium ml-4")
-
-                def update_misidentified(val: bool) -> None:
-                    active_filters.misidentified_only = val
-                    on_filters_changed()
-                    ui.notify(
-                        f"Misidentified practice mode: {'ON' if val else 'OFF'}",
-                        type="info",
-                    )
-
-                misidentified_toggle.on_value_change(
-                    lambda e: update_misidentified(e.value)
-                )
-
-            ui.separator().classes("bg-gray-700 my-4")
-
-            render_taxa_filter_controls(
-                app_conn,
-                active_filters,
-                on_changed=on_filters_changed,
-            )
-
-        # 3. DarwinCore Ingestion Engine Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md"):
             ui.label("DarwinCore (DwC) Occurrence Ingestion").classes(
                 "text-lg font-bold text-yellow-300 mb-2"
             )
@@ -384,8 +288,8 @@ def render_settings_view(
                 "Start Ingestion", color="primary", on_click=run_ingestion
             ).classes("px-6")
 
-        # 4. Vernacular Name Enrichment Engine Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mt-6"):
+        # 3. Vernacular Name Enrichment Engine Card
+        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
             ui.label("GBIF Vernacular Name Enrichment").classes(
                 "text-lg font-bold text-yellow-300 mb-2"
             )
@@ -441,3 +345,109 @@ def render_settings_view(
                 color="secondary",
                 on_click=run_enrichment,
             ).classes("px-6")
+
+        # 4. Advanced Features Dropdown (Hidden by default at bottom of page)
+        exp = ui.expansion("Advanced Features", icon="settings_suggest", value=False).classes(
+            "w-full bg-gray-800 rounded-lg shadow-md border border-gray-700 text-yellow-300 font-bold mb-6"
+        )
+        with exp, ui.column().classes("w-full p-4 space-y-6 text-white"):
+            # Stage 1 Sampling Mode & Cutoffs Card
+                with ui.card().classes("w-full bg-gray-900 p-6 rounded-lg border border-gray-700"):
+                    ui.label("Stage 1 Sampling & Probability Weights").classes(
+                        "text-lg font-bold text-yellow-300 mb-2"
+                    )
+
+                    ui.label("Control how species are selected during quiz questions.").classes(
+                        "text-xs text-gray-400 mb-4"
+                    )
+
+                    with ui.row().classes("w-full gap-6 flex-wrap items-center"):
+                        mode_radio = (
+                            ui.radio(
+                                options={
+                                    "flat": "Flat (Equal 1.0 probability)",
+                                    "natural": "Natural (Raw occurrence count)",
+                                    "log": "Log Transformed (log(1 + count)) [Recommended]",
+                                    "sqrt": "Square-Root Transformed (sqrt(count))",
+                                },
+                                value=active_filters.mode,
+                            )
+                            .props("dark")
+                            .classes("text-white")
+                        )
+
+                        def update_mode(val: str) -> None:
+                            active_filters.mode = val
+                            on_filters_changed()
+                            ui.notify(f"Sampling mode set to '{val}'", type="positive")
+
+                        mode_radio.on_value_change(lambda e: update_mode(e.value))
+
+                    with ui.row().classes("w-full gap-6 mt-4 items-center"):
+                        cutoff_input = (
+                            ui.number(
+                                label="Minimum Occurrence Cutoff (C_min)",
+                                value=active_filters.min_count,
+                                min=1,
+                                step=1,
+                            )
+                            .classes("w-64 text-white")
+                            .props("outlined dark")
+                        )
+
+                        def update_cutoff(val: int) -> None:
+                            if val is not None and val >= 1:
+                                active_filters.min_count = int(val)
+                                on_filters_changed()
+                                ui.notify(f"Minimum cutoff set to {val}", type="positive")
+
+                        cutoff_input.on_value_change(lambda e: update_cutoff(e.value))
+
+                # Taxonomic Scope & Filters Card
+                with ui.card().classes("w-full bg-gray-900 p-6 rounded-lg border border-gray-700"):
+                    ui.label("Taxonomic Scope & Practice Filters").classes(
+                        "text-lg font-bold text-yellow-300 mb-2"
+                    )
+
+                    with ui.row().classes("w-full gap-4 items-center flex-wrap"):
+                        family_select = (
+                            ui.select(
+                                options=families,
+                                value=active_filters.family or "All Families",
+                                label="Filter by Family",
+                            )
+                            .classes("w-64 text-white")
+                            .props("outlined dark")
+                        )
+
+                        def update_family(val: str) -> None:
+                            active_filters.family = None if val == "All Families" else val
+                            on_filters_changed()
+                            ui.notify(f"Family filter updated: {val}", type="info")
+
+                        family_select.on_value_change(lambda e: update_family(e.value))
+
+                        misidentified_toggle = ui.switch(
+                            "Practice Misidentified Photos Only",
+                            value=active_filters.misidentified_only,
+                        ).classes("text-white font-medium ml-4")
+
+                        def update_misidentified(val: bool) -> None:
+                            active_filters.misidentified_only = val
+                            on_filters_changed()
+                            ui.notify(
+                                f"Misidentified practice mode: {'ON' if val else 'OFF'}",
+                                type="info",
+                            )
+
+                        misidentified_toggle.on_value_change(
+                            lambda e: update_misidentified(e.value)
+                        )
+
+                    ui.separator().classes("bg-gray-700 my-4")
+
+                    render_taxa_filter_controls(
+                        app_conn,
+                        active_filters,
+                        on_changed=on_filters_changed,
+                    )
