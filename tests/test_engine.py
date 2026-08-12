@@ -302,6 +302,34 @@ def test_autocomplete_prefix_match_ranks_genus_before_species(setup_engine_dbs):
     assert matches[1]["canonical_name"] == "Trifolium"
 
 
+def test_multiword_per_word_prefix_autocomplete_and_validation(setup_engine_dbs):
+    """Test multiword per-word prefix matching (e.g. 'alm fred' matching 'Almindelig Fredløs')."""
+    app_conn, _ = setup_engine_dbs
+
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, occurrence_count)
+        VALUES (77777, 'Lysimachia vulgaris', 'Lysimachia vulgaris L.', 'Lysimachia vulgaris L.', 'SPECIES', 'Primulaceae', 'Lysimachia', 'Almindelig Fredløs', 'Yellow loosestrife', 10);
+    """)
+    app_conn.commit()
+
+    # 1. Autocomplete query 'alm fred' should match Almindelig Fredløs (Lysimachia vulgaris)
+    matches = autocomplete_taxa(app_conn, "alm fred", lang="da")
+    assert len(matches) >= 1
+    assert matches[0]["canonical_name"] == "Lysimachia vulgaris"
+    assert "Almindelig Fredløs" in matches[0]["label"]
+
+    # 2. Autocomplete query 'lys vul' should match Lysimachia vulgaris
+    matches_sci = autocomplete_taxa(app_conn, "lys vul", lang="da")
+    assert len(matches_sci) >= 1
+    assert matches_sci[0]["canonical_name"] == "Lysimachia vulgaris"
+
+    # 3. Validation of user guess 'alm fred' directly against taxon_key 77777 should return is_correct=True
+    val_res = validate_user_guess(app_conn, "alm fred", 77777, lang="da")
+    assert val_res.is_correct is True
+    assert val_res.matched_rank == "SPECIES"
+
+
+
 def test_get_display_name_vernacular_fallback_non_english():
     """Test that get_display_name does not fall back to English when language is Danish."""
     row = {

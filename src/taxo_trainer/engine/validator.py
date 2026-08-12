@@ -103,6 +103,51 @@ def normalize_name(s: str) -> str:
     return s.strip().lower().replace("-", "").replace(" ", "")
 
 
+def is_multiword_prefix(name: str | None, q_words: list[str]) -> bool:
+    """Check if all tokens in q_words match distinct words in target name as prefixes.
+
+    For example, q_words=['alm', 'fred'] matches name='Almindelig Fredløs'.
+    """
+    if not name or not q_words:
+        return False
+    for part in str(name).split("|"):
+        p_l = part.strip().lower()
+        if not p_l:
+            continue
+        for suf in (
+            "-slægten",
+            " slægten",
+            "-familien",
+            " familien",
+            "-ordenen",
+            " ordenen",
+        ):
+            if p_l.endswith(suf):
+                p_l = p_l[: -len(suf)].strip()
+
+        target_words = [
+            w for w in p_l.replace("-", " ").replace("/", " ").split() if w
+        ]
+        if not target_words:
+            continue
+
+        used_indices = set()
+        matched_all = True
+        for qw in q_words:
+            found = False
+            for idx, tw in enumerate(target_words):
+                if idx not in used_indices and tw.startswith(qw):
+                    used_indices.add(idx)
+                    found = True
+                    break
+            if not found:
+                matched_all = False
+                break
+        if matched_all:
+            return True
+    return False
+
+
 def autocomplete_taxa(
     conn: sqlite3.Connection,
     query: str,
@@ -116,8 +161,8 @@ def autocomplete_taxa(
     """Autocomplete taxa query returning matching canonical, vernacular, genus, and family names.
 
     Prioritizes exact matches first (Priority 0), followed by Genus/Family matches,
-    prefix matches, and symmetric substring matches. If parent rank constraints are passed,
-    suggestions are strictly scoped to valid sub-taxa.
+    prefix matches, multi-word per-word prefix matches, and symmetric substring matches.
+    If parent rank constraints are passed, suggestions are strictly scoped to valid sub-taxa.
 
     Args:
         conn: SQLite connection to app_data.db.
@@ -137,6 +182,7 @@ def autocomplete_taxa(
 
     q_strip = query.strip().lower()
     q_clean = normalize_name(query)
+    q_words = [w for w in q_strip.replace("-", " ").replace("/", " ").split() if w]
 
     sub_pat = f"%{q_strip}%"
     clean_sub_pat = f"%{q_clean}%"
@@ -257,14 +303,18 @@ def autocomplete_taxa(
                 if p_l == q_strip or p_c == q_clean:
                     return 1, rw
 
-        # 3. Title/Full-name prefix match on canonical or primary vernaculars
+        # 3. Title/Full-name prefix match or Multi-word per-word prefix match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
             if is_title_prefix(n, q_strip, q_clean):
                 return 2, rw
+            if len(q_words) > 1 and is_multiword_prefix(n, q_words):
+                return 2, rw
 
-        # 4. Title/Full-name prefix match on secondary names
+        # 4. Title/Full-name prefix match or Multi-word per-word prefix match on secondary names
         for n in secondary_names:
             if is_title_prefix(n, q_strip, q_clean):
+                return 3, rw
+            if len(q_words) > 1 and is_multiword_prefix(n, q_words):
                 return 3, rw
 
         # 5. Subword prefix match on canonical or primary vernaculars
@@ -299,7 +349,7 @@ def autocomplete_taxa(
 
         return 8, 4
 
-    # 1. Species matches
+    # Build SQL queries (handling multi-word AND conditions when len(q_words) > 1)
     sp_where_extra = ""
     if p_gen:
         sp_where_extra = " AND LOWER(genus) = :p_gen"
@@ -308,21 +358,104 @@ def autocomplete_taxa(
     elif p_ord:
         sp_where_extra = " AND LOWER(order_name) = :p_ord"
 
-    sp_sql = f"""
-        SELECT taxon_key, canonical_name, scientific_name, rank, family, genus, vernacular_da, vernacular_en, vernacular_json
-        FROM taxa
-        WHERE occurrence_count >= :min_count
-          AND (LOWER(canonical_name) LIKE :sub
-           OR LOWER(vernacular_da) LIKE :sub
-           OR LOWER(vernacular_en) LIKE :sub
-           OR LOWER(scientific_name) LIKE :sub
-           OR json_extract(vernacular_json, '$.' || :lang_code) LIKE :sub
-           OR REPLACE(REPLACE(LOWER(canonical_name), '-', ''), ' ', '') LIKE :clean_sub
-           OR REPLACE(REPLACE(LOWER(vernacular_da), '-', ''), ' ', '') LIKE :clean_sub
-           OR REPLACE(REPLACE(LOWER(vernacular_en), '-', ''), ' ', '') LIKE :clean_sub
-           OR REPLACE(REPLACE(LOWER(scientific_name), '-', ''), ' ', '') LIKE :clean_sub){sp_where_extra}
-    """
-    for row in conn.execute(sp_sql, params).fetchall():
+    g_where_extra = ""
+    if p_fam:
+        g_where_extra = " AND LOWER(t.family) = :p_fam"
+    elif p_ord:
+        g_where_extra = " AND LOWER(t.order_name) = :p_ord"
+
+    f_where_extra = ""
+    if p_ord:
+        f_where_extra = " AND LOWER(t.order_name) = :p_ord"
+
+    if len(q_words) > 1:
+        sp_conds = []
+        g_conds = []
+        f_conds = []
+        multi_params = {
+            "min_count": params["min_count"],
+            "lang_code": lang,
+            "p_gen": p_gen or "",
+            "p_fam": p_fam or "",
+            "p_ord": p_ord or "",
+        }
+        for idx, w in enumerate(q_words):
+            wk = f"w_{idx}"
+            multi_params[wk] = f"%{w}%"
+            sp_conds.append(
+                f"(LOWER(canonical_name) LIKE :{wk} OR LOWER(vernacular_da) LIKE :{wk} OR LOWER(vernacular_en) LIKE :{wk} OR LOWER(scientific_name) LIKE :{wk})"
+            )
+            g_conds.append(
+                f"(LOWER(t.genus) LIKE :{wk} OR LOWER(h.vernacular_da) LIKE :{wk} OR LOWER(h.vernacular_en) LIKE :{wk})"
+            )
+            f_conds.append(
+                f"(LOWER(t.family) LIKE :{wk} OR LOWER(h.vernacular_da) LIKE :{wk} OR LOWER(h.vernacular_en) LIKE :{wk})"
+            )
+
+        sp_sql = f"""
+            SELECT taxon_key, canonical_name, scientific_name, rank, family, genus, vernacular_da, vernacular_en, vernacular_json
+            FROM taxa
+            WHERE occurrence_count >= :min_count
+              AND ({" AND ".join(sp_conds)}){sp_where_extra}
+        """
+        g_sql = f"""
+            SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            FROM taxa t
+            LEFT JOIN higher_ranks h ON h.rank_name = t.genus
+            WHERE t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
+              AND ({" AND ".join(g_conds)})
+        """
+        f_sql = f"""
+            SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            FROM taxa t
+            LEFT JOIN higher_ranks h ON h.rank_name = t.family
+            WHERE t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
+              AND ({" AND ".join(f_conds)})
+        """
+        exec_params = multi_params
+    else:
+        sp_sql = f"""
+            SELECT taxon_key, canonical_name, scientific_name, rank, family, genus, vernacular_da, vernacular_en, vernacular_json
+            FROM taxa
+            WHERE occurrence_count >= :min_count
+              AND (LOWER(canonical_name) LIKE :sub
+               OR LOWER(vernacular_da) LIKE :sub
+               OR LOWER(vernacular_en) LIKE :sub
+               OR LOWER(scientific_name) LIKE :sub
+               OR json_extract(vernacular_json, '$.' || :lang_code) LIKE :sub
+               OR REPLACE(REPLACE(LOWER(canonical_name), '-', ''), ' ', '') LIKE :clean_sub
+               OR REPLACE(REPLACE(LOWER(vernacular_da), '-', ''), ' ', '') LIKE :clean_sub
+               OR REPLACE(REPLACE(LOWER(vernacular_en), '-', ''), ' ', '') LIKE :clean_sub
+               OR REPLACE(REPLACE(LOWER(scientific_name), '-', ''), ' ', '') LIKE :clean_sub){sp_where_extra}
+        """
+        g_sql = f"""
+            SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            FROM taxa t
+            LEFT JOIN higher_ranks h ON h.rank_name = t.genus
+            WHERE t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
+              AND (LOWER(t.genus) LIKE :sub 
+                OR LOWER(h.vernacular_da) LIKE :sub 
+                OR LOWER(h.vernacular_en) LIKE :sub
+                OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
+                OR REPLACE(REPLACE(LOWER(t.genus), '-', ''), ' ', '') LIKE :clean_sub
+                OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
+        """
+        f_sql = f"""
+            SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            FROM taxa t
+            LEFT JOIN higher_ranks h ON h.rank_name = t.family
+            WHERE t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
+              AND (LOWER(t.family) LIKE :sub 
+                OR LOWER(h.vernacular_da) LIKE :sub 
+                OR LOWER(h.vernacular_en) LIKE :sub
+                OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
+                OR REPLACE(REPLACE(LOWER(t.family), '-', ''), ' ', '') LIKE :clean_sub
+                OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
+        """
+        exec_params = params
+
+    # 1. Species matches
+    for row in conn.execute(sp_sql, exec_params).fetchall():
         r_str = (row["rank"] or "SPECIES").upper()
         if r_str in (
             "FAMILY",
@@ -374,25 +507,7 @@ def autocomplete_taxa(
 
     # 2. Genus matches (only if genus has not already been guessed)
     if not p_gen:
-        g_where_extra = ""
-        if p_fam:
-            g_where_extra = " AND LOWER(t.family) = :p_fam"
-        elif p_ord:
-            g_where_extra = " AND LOWER(t.order_name) = :p_ord"
-
-        g_sql = f"""
-            SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
-            FROM taxa t
-            LEFT JOIN higher_ranks h ON h.rank_name = t.genus
-            WHERE t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
-              AND (LOWER(t.genus) LIKE :sub 
-                OR LOWER(h.vernacular_da) LIKE :sub 
-                OR LOWER(h.vernacular_en) LIKE :sub
-                OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
-                OR REPLACE(REPLACE(LOWER(t.genus), '-', ''), ' ', '') LIKE :clean_sub
-                OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
-        """
-        for row in conn.execute(g_sql, params).fetchall():
+        for row in conn.execute(g_sql, exec_params).fetchall():
             g_name = row["genus"]
             if g_name and g_name not in seen_values:
                 seen_values.add(g_name)
@@ -436,23 +551,7 @@ def autocomplete_taxa(
 
     # 3. Family matches (only if family or genus has not already been guessed)
     if not p_gen and not p_fam:
-        f_where_extra = ""
-        if p_ord:
-            f_where_extra = " AND LOWER(t.order_name) = :p_ord"
-
-        f_sql = f"""
-            SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
-            FROM taxa t
-            LEFT JOIN higher_ranks h ON h.rank_name = t.family
-            WHERE t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
-              AND (LOWER(t.family) LIKE :sub 
-                OR LOWER(h.vernacular_da) LIKE :sub 
-                OR LOWER(h.vernacular_en) LIKE :sub
-                OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
-                OR REPLACE(REPLACE(LOWER(t.family), '-', ''), ' ', '') LIKE :clean_sub
-                OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
-        """
-        for row in conn.execute(f_sql, params).fetchall():
+        for row in conn.execute(f_sql, exec_params).fetchall():
             f_name = row["family"]
             if f_name and f_name not in seen_values:
                 seen_values.add(f_name)
@@ -473,6 +572,27 @@ def autocomplete_taxa(
                 secondary_v = [
                     row["vernacular_en"] if lang == "da" else row["vernacular_da"]
                 ]
+                prio, rw = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
+                if prio >= 6:
+                    continue
+                f_label = (
+                    f"🏛️ Family: {f_disp} ({f_name})"
+                    if f_disp and f_disp != f_name and f_disp != "Unknown Species"
+                    else f"🏛️ Family: {f_name}"
+                )
+                candidates.append(
+                    {
+                        "label": f_label,
+                        "value": f_name,
+                        "display_name": f_disp,
+                        "canonical_name": f_name,
+                        "rank": "FAMILY",
+                        "taxon_key": None,
+                        "priority": prio,
+                        "rank_order": rw,
+                    }
+                )
+
                 prio, rw = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
                 if prio >= 6:
                     continue
@@ -807,7 +927,28 @@ def validate_user_guess(
             [p.strip() for p in target_en.split("|") if p.strip()]
         )
 
+    # Check multi-word per-word prefix match (e.g. "alm fred" -> "Almindelig Fredløs")
+    q_input_words = [
+        w for w in input_lower.replace("-", " ").replace("/", " ").split() if w
+    ]
+    if len(q_input_words) > 1:
+        for name in all_target_variants:
+            if not name:
+                continue
+            if is_multiword_prefix(name, q_input_words):
+                return ValidationResult(
+                    user_input=user_input,
+                    is_correct=True,
+                    matched_rank="SPECIES",
+                    matched_taxon_key=target_taxon_key,
+                    matched_name=get_display_name(target_row, lang=lang),
+                    similarity_score=1.0,
+                    is_soft_typo=False,
+                    feedback_message="Correct species identification!",
+                )
+
     for name in all_target_variants:
+
         if not name:
             continue
         sim = check_string_similarity(input_clean, name)
