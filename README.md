@@ -2,6 +2,8 @@
 
 `Taxo-Trainer` is a desktop web application for practicing plant and wildlife identification using GBIF DarwinCore occurrence datasets. It features interactive photo quiz workflows, multi-rank taxonomic validation, structured hints, dataset filtering, and detailed analytics.
 
+_**Note**: `taxo-trainer` is built around a "bring-your-own" data model, so if you deploy the app or use it for other than personal use, you are responsible for complying with the relevant licenses, including the GBIF Data License (CC BY 4.0)._
+
 ---
 
 ## Features
@@ -113,3 +115,4 @@ Development items that help would be appreciated for include (in no particular o
   * More consistent state management across sessions.
   * Documentation and guides.
   * More themes and styling options.
+* Packaging and license
