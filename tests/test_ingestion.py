@@ -198,13 +198,51 @@ def test_fetch_gbif_raw_api_cache(tmp_path, monkeypatch):
     assert "Quercus robur" in row["response_json"]
 
     # 2. Second fetch with failing HTTP mock — should read directly from disk cache
-    def failing_urlopen(req, timeout=5):
-        raise RuntimeError("HTTP network down!")
-
-    monkeypatch.setattr("urllib.request.urlopen", failing_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=5: Exception("Network Down"))
     res2 = fetch_gbif_raw_api(target_url, cache_conn)
     assert res2 is not None
     assert res2["usageKey"] == 2435140
+
     cache_conn.close()
 
 
+def test_resolve_dwc_source_path_remote_url(tmp_path, monkeypatch):
+    """Test downloading and caching remote DarwinCore ZIP archive URLs."""
+    from taxo_trainer.ingestion.dwc_parser import is_url, resolve_dwc_source_path
+
+    # Verify is_url helper
+    assert is_url("https://api.gbif.org/v1/occurrence/download/request/0010181-260806074905277.zip") is True
+    assert is_url("http://example.com/dataset.zip") is True
+    assert is_url("src/data/datasets/danske_planter_2026.zip") is False
+
+    # Mock urllib.request.urlopen to simulate streaming zip download
+    target_url = "https://api.gbif.org/v1/occurrence/download/request/0010181-260806074905277.zip"
+
+    class MockHTTPResponse:
+        def __init__(self):
+            self.headers = {"Content-Length": "100"}
+            self.read_count = 0
+
+
+        def read(self, chunk_size):
+            if self.read_count == 0:
+                self.read_count += 1
+                return b"PK\x03\x04MockZipData"
+            return b""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=30: MockHTTPResponse())
+    monkeypatch.setattr("taxo_trainer.db.DATA_DIR", tmp_path)
+
+    progress_msgs = []
+    resolved = resolve_dwc_source_path(target_url, progress_callback=progress_msgs.append)
+
+    assert resolved.exists()
+    assert resolved.name == "0010181-260806074905277.zip"
+    assert len(progress_msgs) >= 1
+    assert "Downloading" in progress_msgs[-1] or "Connecting" in progress_msgs[0]

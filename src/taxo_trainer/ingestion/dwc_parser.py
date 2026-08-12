@@ -207,36 +207,126 @@ def load_multimedia_index(source: Path) -> dict[str, list[str]]:
     return media_map
 
 
+def is_url(s: str) -> bool:
+    """Check if string is an HTTP or HTTPS URL."""
+    s_clean = str(s).strip().lower()
+    return s_clean.startswith(("http://", "https://"))
+
+
+
+def resolve_dwc_source_path(
+    source_str: str,
+    progress_callback: Callable[[str], None] | None = None,
+) -> Path:
+    """Resolve local path or download remote URL to local datasets directory.
+
+    Args:
+        source_str: Local file path string or HTTP(S) URL.
+        progress_callback: Optional callback receiving status message strings.
+
+    Returns:
+        Path: Resolved local file path to the DarwinCore zip/txt archive.
+    """
+    import urllib.parse
+    import urllib.request
+
+    s_clean = source_str.strip()
+    if not is_url(s_clean):
+        return Path(s_clean)
+
+    parsed = urllib.parse.urlparse(s_clean)
+    filename = Path(parsed.path).name
+    if not filename or filename.startswith("."):
+        filename = "remote_dwc_dataset.zip"
+    elif not filename.lower().endswith((".zip", ".tsv", ".txt", ".csv")):
+        filename = f"{filename}.zip"
+
+    from taxo_trainer.db import DATA_DIR
+
+    datasets_dir = DATA_DIR / "datasets"
+    datasets_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = datasets_dir / filename
+
+    if dest_path.exists() and dest_path.stat().st_size > 0:
+        if progress_callback:
+            progress_callback(f"Using cached local dataset for URL: {filename}...")
+        return dest_path
+
+    if progress_callback:
+        progress_callback(f"Connecting to remote URL: {filename}...")
+
+    req = urllib.request.Request(s_clean, headers={"User-Agent": "taxo-trainer/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        total_bytes = int(resp.headers.get("Content-Length", 0))
+        downloaded = 0
+        chunk_size = 64 * 1024
+
+        with open(dest_path, "wb") as f_out:
+            while True:
+                chunk = resp.read(chunk_size)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    dl_mb = downloaded / (1024 * 1024)
+                    if total_bytes > 0:
+                        tot_mb = total_bytes / (1024 * 1024)
+                        pct = int((downloaded / total_bytes) * 100)
+                        progress_callback(
+                            f"Downloading {filename}... {dl_mb:.1f} MB / {tot_mb:.1f} MB ({pct}%)"
+                        )
+                    else:
+                        progress_callback(f"Downloading {filename}... {dl_mb:.1f} MB")
+
+    return dest_path
+
+
 def ingest_dwc_file(
-    file_path: Path,
+    file_path: Path | str,
     db_path: Path = APP_DB_PATH,
     batch_size: int = 10000,
     max_occurrences_per_taxon: int | None = 1000,
-    progress_callback: Callable[[int], None] | None = None,
+    progress_callback: Callable[[int | str], None] | None = None,
 ) -> tuple[int, int]:
-    """Ingest a GBIF DarwinCore occurrence.txt TSV into SQLite app_data.db.
+    """Ingest a GBIF DarwinCore occurrence.txt TSV or ZIP archive into SQLite app_data.db.
 
-    Extracts both occurrence records and taxonomy metadata in a single fast stream,
-    writing in explicit transaction batches. Merges multimedia.txt records if present.
+    Supports local file paths or direct HTTP(S) download URLs. Extracts both occurrence
+    records and taxonomy metadata in a single fast stream, writing in explicit transaction batches.
 
     Args:
-        file_path: Path to DarwinCore TSV file (occurrence.txt).
+        file_path: Path to DarwinCore TSV file / ZIP archive, or remote HTTP(S) URL.
         db_path: Target SQLite database file path.
         batch_size: Number of records per SQLite transaction batch.
         max_occurrences_per_taxon: Optional max occurrence cap per taxon (default: 1000).
-        progress_callback: Optional callback receiving count of ingested rows.
+        progress_callback: Optional callback receiving count of ingested rows or status message.
 
     Returns:
         Tuple[int, int]: Total occurrences inserted, total unique taxa inserted/updated.
     """
+    raw_source_str = str(file_path).strip()
+
+    def status_reporter(msg: str) -> None:
+        if progress_callback:
+            progress_callback(msg)
+
+    resolved_path = resolve_dwc_source_path(
+        raw_source_str, progress_callback=status_reporter
+    )
+
     conn = get_db_connection(db_path)
     init_app_db(conn)
 
-    # Record active ingestion file path metadata
-    set_app_metadata("active_dwc_path", str(file_path.resolve()), conn)
+    # Record active ingestion file path or URL metadata
+    active_meta_val = (
+        raw_source_str
+        if is_url(raw_source_str)
+        else str(resolved_path.resolve())
+    )
+    set_app_metadata("active_dwc_path", active_meta_val, conn)
 
-    # Pre-index multimedia.txt if available in the same directory
-    multimedia_index = load_multimedia_index(file_path)
+    # Pre-index multimedia.txt if available in the same directory/ZIP
+    multimedia_index = load_multimedia_index(resolved_path)
 
     occurrence_batch: list[tuple] = []
     taxa_accumulator: dict[str, dict[str, Any]] = {}
@@ -245,9 +335,10 @@ def ingest_dwc_file(
     inserted_occurrences = 0
 
     try:
-        for row in stream_occurrence_tsv(file_path):
+        for row in stream_occurrence_tsv(resolved_path):
             occ_id = row.get("gbifID") or row.get("occurrenceID") or row.get("id")
             taxon_key_raw = (
+
                 row.get("speciesKey")
                 or row.get("acceptedTaxonKey")
                 or row.get("taxonKey")

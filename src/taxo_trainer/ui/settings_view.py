@@ -417,8 +417,9 @@ def render_settings_view(
 
             dwc_path_input = (
                 ui.input(
-                    label="Path to DarwinCore .zip or occurrence.txt",
+                    label="Path or URL to DarwinCore dataset (.zip / occurrence.txt)",
                     value=ingest_input_path,
+                    placeholder="e.g. src/data/datasets/danske_planter_2026.zip or https://api.gbif.org/v1/...",
                 )
                 .classes("w-full text-white mb-1")
                 .props("outlined dark dense clearable")
@@ -432,6 +433,9 @@ def render_settings_view(
 
             def update_path_autocomplete(e) -> None:
                 txt = e.value or ""
+                if txt.strip().lower().startswith(("http://", "https://")):
+                    path_suggestions_box.classes(add="hidden")
+                    return
                 suggs = get_path_suggestions(txt)
                 path_suggestions_box.clear()
                 if suggs:
@@ -467,28 +471,39 @@ def render_settings_view(
                 status_label = ui.label(init_ingest_text).classes(init_ingest_class)
 
             async def run_ingestion() -> None:
-                target_file = Path(dwc_path_input.value.strip())
-                if not target_file.exists():
-                    status_label.set_text(f"File not found: {target_file}")
-                    ui.notify("DwC file not found!", type="negative")
+                raw_target = dwc_path_input.value.strip()
+                if not raw_target:
+                    status_label.set_text("Please enter a file path or URL.")
+                    ui.notify("Please enter a file path or URL!", type="negative")
                     return
+
+                is_remote = raw_target.lower().startswith(("http://", "https://"))
+                if not is_remote:
+                    target_file = Path(raw_target)
+                    if not target_file.exists():
+                        status_label.set_text(f"File not found: {target_file}")
+                        ui.notify("DwC file not found!", type="negative")
+                        return
 
                 ingest_btn.disable()
                 ingest_spinner.classes(remove="hidden")
                 status_label.set_text(
-                    "Ingesting DarwinCore TSV stream into app_data.db..."
+                    "Downloading dataset..." if is_remote else "Ingesting DarwinCore TSV stream..."
                 )
-                ui.notify("Started background ingestion batch process...", type="info")
+                ui.notify("Started dataset ingestion process...", type="info")
 
                 max_occ_val = int(max_occ_input.value) if max_occ_input.value is not None else 1000
 
-                def on_progress(count: int) -> None:
-                    status_label.set_text(f"Ingested {count:,} occurrences...")
+                def on_progress(info: int | str) -> None:
+                    if isinstance(info, str):
+                        status_label.set_text(info)
+                    else:
+                        status_label.set_text(f"Ingested {info:,} occurrences...")
 
                 try:
                     occ_cnt, taxa_cnt = await run.io_bound(
                         ingest_dwc_file,
-                        target_file,
+                        raw_target,
                         APP_DB_PATH,
                         10000,
                         max_occ_val,
@@ -513,6 +528,7 @@ def render_settings_view(
             ingest_btn = ui.button(
                 ingest_btn_label, color="primary", on_click=run_ingestion
             ).classes("px-6")
+
 
 
         # 3. Vernacular Name Enrichment Engine Card

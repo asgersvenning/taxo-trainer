@@ -1,6 +1,6 @@
-# Taxo-Trainer
+# `Taxo-Trainer`
 
-Taxo-Trainer is a desktop web application for practicing plant and wildlife identification using GBIF DarwinCore occurrence datasets. It features interactive photo quiz workflows, multi-rank taxonomic validation, structured hints, dataset filtering, and detailed analytics.
+`Taxo-Trainer` is a desktop web application for practicing plant and wildlife identification using GBIF DarwinCore occurrence datasets. It features interactive photo quiz workflows, multi-rank taxonomic validation, structured hints, dataset filtering, and detailed analytics.
 
 ---
 
@@ -72,9 +72,20 @@ uv run pytest
 
 ---
 
-## Technical Architecture
+## Custom datasets
 
-- **UI Framework**: [NiceGUI](https://nicegui.io/) (Quasar & TailwindCSS)
-- **Database**: SQLite (WAL mode)
-- **Taxonomy Standard**: GBIF DarwinCore (DwC) & Catalogue of Life Backbone
-- **Package Manager**: [uv](https://github.com/astral-sh/uv)
+The app is built around the `DarwinCore` archive format with the `Multimedia` extension and will *(should)* work with any dataset in this format.
+
+### Using GBIF to create custom datasets for `Taxo-Trainer`
+
+| step | action                                                                                                                                                                                                                                                                                         | example                                               |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 1    | Navigate to the desired dataset on the [GBIF website](https://www.gbif.org) and click `"Occurrences"` in the top menu.                                                                                                                                                                         | ![](./assets/dataset_guide/frontpage.png)             |
+| 2    | Select filters for the dataset, the highlighted filters are strongly recommended. Dataset size `<1,000,000` observations are recommended.                                                                                                                                                      | ![](./assets/dataset_guide/occ_search.png)            |
+| 3    | Go to the `"Download"` tab and select `"DarwinCore Archive"` and click `"Configure"`.                                                                                                                                                                                                          | ![](./assets/dataset_guide/occ_download_archive.png)  |
+| 4    | In the `"Format"` section scroll down until you see the `"Multimedia"` extension.                                                                                                                                                                                                              | ![](./assets/dataset_guide/occ_download_config_1.png) |
+| 5    | Select the `"Multimedia"` extension and click `"Continue to Terms"`.                                                                                                                                                                                                                           | ![](./assets/dataset_guide/occ_download_config_2.png) |
+| 6    | Acknowledge the terms and click `"Create Download"`.                                                                                                                                                                                                                                           | ![](./assets/dataset_guide/occ_download_terms.png)    |
+| 7    | Wait for the download to be ready, and right-click the `"Download archive"` button and select `"Copy link address"` to copy the download link.                                                                                                                                                 | ![](./assets/dataset_guide/occ_download_link.png)     |
+| 8    | In the `taxo-trainer` app, navigate to the `"Settings & Data"` tab and click `"Clear current data source"`.                                                                                                                                                                                    | ![](./assets/dataset_guide/source_clear.png)          |
+| 9    | In the `"DarwinCore (DwC) Occurrence Ingestion"` box, paste the link into the input field and click `"[Re-]Ingest dataset"`. When this step has finished, go to the `"GBIF Vernacular Name Enrichment"` box and click `"[Re-]Fetch [danish] names from GBIF API"` and wait for it to complete. | ![](./assets/dataset_guide/archive_import.png)        |
