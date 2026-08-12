@@ -127,3 +127,84 @@ def test_consolidate_synonyms_with_gbif(tmp_path, monkeypatch):
     assert syn_row is None
 
     conn.close()
+
+
+def test_max_occurrences_per_taxon_threshold(tmp_path):
+    """Test that max_occurrences_per_taxon caps occurrences ingested per taxon."""
+    tsv_file = tmp_path / "occ_cap.txt"
+    # Create TSV with 5 occurrences for taxon 101 and 2 occurrences for taxon 202
+    tsv_content = (
+        "gbifID\tacceptedTaxonKey\tscientificName\tcanonicalName\tdecimalLatitude\tdecimalLongitude\tlocality\teventDate\tmonth\tassociatedMedia\tfamily\tgenus\tvernacularName\n"
+        "1\t101\tSpecies One L.\tSpecies One\t55.67\t12.56\tLoc1\t2023-06-10\t6\thttp://example.com/1.jpg\tFam1\tGen1\tName1\n"
+        "2\t101\tSpecies One L.\tSpecies One\t55.67\t12.56\tLoc2\t2023-06-10\t6\thttp://example.com/2.jpg\tFam1\tGen1\tName1\n"
+        "3\t101\tSpecies One L.\tSpecies One\t55.67\t12.56\tLoc3\t2023-06-10\t6\thttp://example.com/3.jpg\tFam1\tGen1\tName1\n"
+        "4\t101\tSpecies One L.\tSpecies One\t55.67\t12.56\tLoc4\t2023-06-10\t6\thttp://example.com/4.jpg\tFam1\tGen1\tName1\n"
+        "5\t101\tSpecies One L.\tSpecies One\t55.67\t12.56\tLoc5\t2023-06-10\t6\thttp://example.com/5.jpg\tFam1\tGen1\tName1\n"
+        "6\t202\tSpecies Two L.\tSpecies Two\t56.00\t12.00\tLoc6\t2023-05-01\t5\thttp://example.com/6.jpg\tFam2\tGen2\tName2\n"
+        "7\t202\tSpecies Two L.\tSpecies Two\t56.00\t12.00\tLoc7\t2023-05-01\t5\thttp://example.com/7.jpg\tFam2\tGen2\tName2\n"
+    )
+    tsv_file.write_text(tsv_content, encoding="utf-8")
+
+    db_path = tmp_path / "app_cap.db"
+    # Cap at 2 occurrences per taxon
+    inserted_occ, inserted_taxa = ingest_dwc_file(
+        tsv_file, db_path=db_path, batch_size=10, max_occurrences_per_taxon=2
+    )
+
+    # Taxon 101 capped at 2, Taxon 202 has 2 -> Total 4 occurrences inserted
+    assert inserted_occ == 4
+    assert inserted_taxa == 2
+
+    conn = sqlite3.connect(str(db_path))
+    cnt_101 = conn.execute("SELECT COUNT(*) FROM occurrences WHERE taxon_key = '101'").fetchone()[0]
+    assert cnt_101 == 2
+    conn.close()
+
+
+def test_fetch_gbif_raw_api_cache(tmp_path, monkeypatch):
+    """Test raw API HTTP response caching in gbif_cache.db keyed by request URL."""
+    from taxo_trainer.db import get_gbif_cache_connection
+    from taxo_trainer.ingestion.taxonomy_builder import fetch_gbif_raw_api
+
+    cache_db = tmp_path / "gbif_cache_test.db"
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", cache_db)
+
+    cache_conn = get_gbif_cache_connection()
+    target_url = "https://api.gbif.org/v1/species/match?name=Quercus+robur"
+
+    # Mock urllib.request.urlopen to return raw JSON
+    class MockResp:
+        status = 200
+
+        def read(self):
+            return b'{"usageKey": 2435140, "species": "Quercus robur", "rank": "SPECIES"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=5: MockResp())
+
+    # 1. First fetch — triggers HTTP request and caches raw JSON string
+    res1 = fetch_gbif_raw_api(target_url, cache_conn)
+    assert res1 is not None
+    assert res1["usageKey"] == 2435140
+
+    # Verify raw response string stored in db under key = target_url
+    row = cache_conn.execute("SELECT response_json FROM gbif_api_cache WHERE url = ?", (target_url,)).fetchone()
+    assert row is not None
+    assert "Quercus robur" in row["response_json"]
+
+    # 2. Second fetch with failing HTTP mock — should read directly from disk cache
+    def failing_urlopen(req, timeout=5):
+        raise RuntimeError("HTTP network down!")
+
+    monkeypatch.setattr("urllib.request.urlopen", failing_urlopen)
+    res2 = fetch_gbif_raw_api(target_url, cache_conn)
+    assert res2 is not None
+    assert res2["usageKey"] == 2435140
+    cache_conn.close()
+
+

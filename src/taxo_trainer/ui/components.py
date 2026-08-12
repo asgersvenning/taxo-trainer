@@ -271,7 +271,14 @@ def render_taxa_filter_controls(
     Returns:
         ui.card: Container holding interactive whitelist & blacklist filtering controls.
     """
+    from taxo_trainer.db import get_active_data_source, set_app_metadata
     from taxo_trainer.engine.validator import autocomplete_taxa
+
+    def save_scope() -> None:
+        active_ds = get_active_data_source(app_conn)
+        set_app_metadata(f"whitelist_{active_ds}", "|".join(filters.include_taxa), conn=app_conn)
+        set_app_metadata(f"blacklist_{active_ds}", "|".join(filters.exclude_taxa), conn=app_conn)
+        on_changed()
 
     card = ui.card().classes(
         "w-full bg-gray-900/90 p-3 rounded-lg border border-gray-700 space-y-3 shadow-md"
@@ -331,7 +338,7 @@ def render_taxa_filter_controls(
                                     filters.include_taxa.append(val)
                                     inc_input.value = ""
                                     inc_suggestions.classes(add="hidden")
-                                    on_changed()
+                                    save_scope()
 
                             ui.button(f"+ {lbl_name}", on_click=add_inc).props(
                                 "flat dense color=positive"
@@ -351,7 +358,7 @@ def render_taxa_filter_controls(
                         def remove_inc(t=inc_t):
                             if t in filters.include_taxa:
                                 filters.include_taxa.remove(t)
-                                on_changed()
+                                save_scope()
 
                         ui.chip(
                             f"✓ {inc_t}", color="positive", on_click=remove_inc
@@ -359,7 +366,7 @@ def render_taxa_filter_controls(
 
                     def clear_inc():
                         filters.include_taxa.clear()
-                        on_changed()
+                        save_scope()
 
                     ui.button("Clear Whitelist", on_click=clear_inc).props(
                         "flat dense color=warning"
@@ -408,7 +415,7 @@ def render_taxa_filter_controls(
                                     filters.exclude_taxa.append(val)
                                     exc_input.value = ""
                                     exc_suggestions.classes(add="hidden")
-                                    on_changed()
+                                    save_scope()
 
                             ui.button(f"- {lbl_name}", on_click=add_exc).props(
                                 "flat dense color=negative"
@@ -428,7 +435,7 @@ def render_taxa_filter_controls(
                         def remove_exc(t=exc_t):
                             if t in filters.exclude_taxa:
                                 filters.exclude_taxa.remove(t)
-                                on_changed()
+                                save_scope()
 
                         ui.chip(
                             f"✕ {exc_t}", color="negative", on_click=remove_exc
@@ -436,13 +443,14 @@ def render_taxa_filter_controls(
 
                     def clear_exc():
                         filters.exclude_taxa.clear()
-                        on_changed()
+                        save_scope()
 
                     ui.button("Clear Blacklist", on_click=clear_exc).props(
                         "flat dense color=warning"
                     ).classes("text-[9px]")
 
     return card
+
 
 
 def render_taxonomic_hierarchy_feedback(

@@ -4,6 +4,7 @@ Provides user controls for Stage 1 weight transformation modes, cutoffs,
 taxonomic filters, and DwC occurrence.txt file ingestion.
 """
 
+import asyncio
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -86,14 +87,20 @@ def render_settings_view(
         if default_dataset_zip.exists()
         else str(DATA_DIR / "datasets" / "")
     )
-    active_path = get_app_metadata(
-        "active_dwc_path", default_path_str, conn=app_conn
-    )
     taxa_cnt = app_conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
     occ_cnt = app_conn.execute("SELECT COUNT(*) FROM occurrences;").fetchone()[0]
     da_cnt = app_conn.execute(
         "SELECT COUNT(*) FROM taxa WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
     ).fetchone()[0]
+
+    saved_dwc_path = get_app_metadata("active_dwc_path", "", conn=app_conn)
+    ingest_input_path = saved_dwc_path if saved_dwc_path else default_path_str
+
+    if taxa_cnt > 0:
+        active_path = saved_dwc_path if saved_dwc_path else default_path_str
+    else:
+        active_path = "None (No dataset ingested. Ingest a DarwinCore file below to get started)"
+
 
     # Query discarded vs active taxa based on active min_count cutoff
     min_cutoff = active_filters.min_count
@@ -161,18 +168,53 @@ def render_settings_view(
 
                 def clear_data_source() -> None:
                     try:
+                        # Preserve user preferences (theme, language, min_count, active_tab) across dataset clearing
+                        theme_pref = get_app_metadata("theme_preference", conn=app_conn)
+                        lang_pref = get_app_metadata("language_preference", conn=app_conn)
+                        min_pref = get_app_metadata("min_count", conn=app_conn)
+                        tab_pref = get_app_metadata("active_tab", conn=app_conn)
+
                         with app_conn:
                             app_conn.execute("DELETE FROM occurrences;")
                             app_conn.execute("DELETE FROM taxa;")
+                            try:
+                                app_conn.execute("DELETE FROM higher_ranks;")
+                            except sqlite3.OperationalError:
+                                pass
                             app_conn.execute("DELETE FROM app_metadata;")
+
+                            # Restore preserved user settings into app_metadata
+                            if theme_pref:
+                                app_conn.execute(
+                                    "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('theme_preference', ?);",
+                                    (theme_pref,),
+                                )
+                            if lang_pref:
+                                app_conn.execute(
+                                    "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('language_preference', ?);",
+                                    (lang_pref,),
+                                )
+                            if min_pref:
+                                app_conn.execute(
+                                    "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('min_count', ?);",
+                                    (min_pref,),
+                                )
+                            if tab_pref:
+                                app_conn.execute(
+                                    "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('active_tab', ?);",
+                                    (tab_pref,),
+                                )
+
                         rebuild_indices(app_conn)
                         ui.notify(
                             "Data source cleared successfully. Database reset.",
                             type="warning",
                         )
                         on_filters_changed()
+                        ui.navigate.reload()
                     except (sqlite3.Error, OSError) as ex:
                         ui.notify(f"Clear Error: {ex}", type="negative")
+
 
                 ui.button(
                     "Clear Current Data Source",
@@ -180,6 +222,7 @@ def render_settings_view(
                     icon="delete_forever",
                     on_click=clear_data_source,
                 ).props("outline dense").classes("text-xs")
+
 
         # 1. Preferred Vernacular Language Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
@@ -336,6 +379,7 @@ def render_settings_view(
                 )
 
             theme_select.on_value_change(lambda e: update_theme(e.value))
+        # 2. DarwinCore (DwC) Occurrence Ingestion Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
             ui.label("DarwinCore (DwC) Occurrence Ingestion").classes(
                 "text-lg font-bold text-yellow-300 mb-2"
@@ -344,14 +388,42 @@ def render_settings_view(
                 "Ingest DarwinCore .zip (ZIP-file) or occurrence.txt (TSV) file into SQLite database app_data.db."
             ).classes("text-xs text-gray-400 mb-4")
 
+            saved_max_occ = get_app_metadata("max_occurrences_per_taxon", "1000", conn=app_conn)
+            try:
+                init_max_occ = int(saved_max_occ)
+            except ValueError:
+                init_max_occ = 1000
+
+            with ui.row().classes("w-full gap-4 items-center flex-wrap mb-3"):
+                max_occ_input = (
+                    ui.number(
+                        label="Max Occurrences Per Taxon",
+                        value=init_max_occ,
+                        min=0,
+                        step=100,
+                    )
+                    .classes("w-72 text-white")
+                    .props("outlined dark dense")
+                )
+                ui.label(
+                    "Threshold cap per raw taxon during ingestion (default: 1000). Set to 0 for unlimited."
+                ).classes("text-xs text-gray-400 italic")
+
+            def save_max_occ(val: float | None) -> None:
+                if val is not None:
+                    set_app_metadata("max_occurrences_per_taxon", str(int(val)), conn=app_conn)
+
+            max_occ_input.on_value_change(lambda e: save_max_occ(e.value))
+
             dwc_path_input = (
                 ui.input(
                     label="Path to DarwinCore .zip or occurrence.txt",
-                    value=active_path,
+                    value=ingest_input_path,
                 )
                 .classes("w-full text-white mb-1")
                 .props("outlined dark dense clearable")
             )
+
 
             # Filesystem Prefix-Matching Autocomplete Suggestions Box
             path_suggestions_box = ui.row().classes(
@@ -381,45 +453,67 @@ def render_settings_view(
             path_input_element = dwc_path_input
             path_input_element.on_value_change(update_path_autocomplete)
 
-            status_label = ui.label("Ready for ingestion.").classes(
-                "text-sm text-gray-300 font-semibold mb-3"
-            )
+            if taxa_cnt > 0:
+                init_ingest_text = f"✓ Ingestion Active — {occ_cnt:,} occurrences loaded across {taxa_cnt:,} taxa."
+                init_ingest_class = "text-sm text-green-400 font-bold mb-3"
+                ingest_btn_label = "Re-Ingest Dataset"
+            else:
+                init_ingest_text = "Ready for DarwinCore ingestion."
+                init_ingest_class = "text-sm text-gray-300 font-semibold mb-3"
+                ingest_btn_label = "Start Ingestion"
 
-            def run_ingestion() -> None:
+            with ui.row().classes("items-center gap-2 mb-3"):
+                ingest_spinner = ui.spinner("dots", size="md", color="primary").classes("hidden")
+                status_label = ui.label(init_ingest_text).classes(init_ingest_class)
+
+            async def run_ingestion() -> None:
                 target_file = Path(dwc_path_input.value.strip())
                 if not target_file.exists():
                     status_label.set_text(f"File not found: {target_file}")
                     ui.notify("DwC file not found!", type="negative")
                     return
 
+                ingest_btn.disable()
+                ingest_spinner.classes(remove="hidden")
                 status_label.set_text(
                     "Ingesting DarwinCore TSV stream into app_data.db..."
                 )
-                ui.notify("Started ingestion batch process...", type="info")
+                ui.notify("Started background ingestion batch process...", type="info")
+
+                max_occ_val = int(max_occ_input.value) if max_occ_input.value is not None else 1000
+
+                def on_progress(count: int) -> None:
+                    status_label.set_text(f"Ingested {count:,} occurrences...")
 
                 try:
-                    occ_cnt, taxa_cnt = ingest_dwc_file(
+                    occ_cnt, taxa_cnt = await run.io_bound(
+                        ingest_dwc_file,
                         target_file,
-                        db_path=APP_DB_PATH,
-                        progress_callback=lambda count: status_label.set_text(
-                            f"Ingested {count} occurrences..."
-                        ),
+                        APP_DB_PATH,
+                        10000,
+                        max_occ_val,
+                        on_progress,
                     )
-                    rebuild_indices()
+                    await run.io_bound(rebuild_indices)
                     status_label.set_text(
-                        f"Complete! Ingested {occ_cnt} occurrences across {taxa_cnt} taxa."
+                        f"Complete! Ingested {occ_cnt:,} occurrences across {taxa_cnt:,} taxa."
                     )
                     ui.notify(
-                        f"Ingestion successful ({occ_cnt} records).", type="positive"
+                        f"Ingestion successful ({occ_cnt:,} records). Reloading UI...", type="positive"
                     )
                     on_filters_changed()
+                    ui.navigate.reload()
                 except (sqlite3.Error, OSError, ValueError, RuntimeError) as ex:
                     status_label.set_text(f"Ingestion Error: {ex}")
                     ui.notify(f"Ingestion failed: {ex}", type="negative")
+                finally:
+                    ingest_btn.enable()
+                    ingest_spinner.classes(add="hidden")
 
-            ui.button(
-                "Start Ingestion", color="primary", on_click=run_ingestion
+            ingest_btn = ui.button(
+                ingest_btn_label, color="primary", on_click=run_ingestion
             ).classes("px-6")
+
 
         # 3. Vernacular Name Enrichment Engine Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
@@ -427,48 +521,72 @@ def render_settings_view(
                 "text-lg font-bold text-yellow-300 mb-2"
             )
             ui.label(
-                "Query GBIF Species API (api.gbif.org) to auto-fill missing Danish & English vernacular names with 1-week persistent disk caching."
-                "\nOBS: Reload page after running this step."
+                "Query GBIF Species API (api.gbif.org) to auto-fill missing Danish & English vernacular names with 1-week persistent disk caching.\nOBS: Reload page after running this step."
             ).classes("text-xs text-gray-400 mb-4")
 
-            enrich_status = ui.label("Ready for GBIF API enrichment.").classes(
-                "text-sm text-gray-300 font-semibold mb-3"
-            )
+            saved_enrich_status = get_app_metadata("gbif_enrichment_status", "", conn=app_conn)
+
+            if saved_enrich_status:
+                init_enrich_text = f"✓ GBIF Vernacular Name Enrichment Active — {saved_enrich_status}"
+                init_enrich_class = "text-sm text-green-400 font-bold mb-3"
+                enrich_btn_label = "Re-Fetch Danish Names from GBIF API"
+            else:
+                init_enrich_text = "Ready for GBIF API enrichment."
+                init_enrich_class = "text-sm text-gray-300 font-semibold mb-3"
+                enrich_btn_label = "Fetch Danish Names from GBIF API"
+
+            enrich_status = ui.label(init_enrich_text).classes(init_enrich_class)
             progress_bar = (
                 ui.linear_progress(value=0.0, show_value=False)
                 .props("size=10px stripe rounded color=primary")
                 .classes("w-full mb-4 hidden")
             )
-            progress_state = {"curr": 0, "total": 0}
+            progress_state: dict = {"curr": 0, "total": 0, "status": init_enrich_text}
+
+            def safe_ui_update(fn: Callable[[], None]) -> None:
+                try:
+                    fn()
+                except RuntimeError:
+                    pass
 
             def tick_progress() -> None:
-                curr = progress_state["curr"]
-                tot = progress_state["total"]
-                if tot > 0:
-                    pct = min(curr / tot, 1.0)
-                    pct_str = f"{pct * 100:.1f}%"
-                    progress_bar.set_value(pct)
-                    enrich_status.set_text(f"Checked {curr}/{tot} taxa ({pct_str})...")
+                def _do_tick() -> None:
+                    curr = progress_state["curr"]
+                    tot = progress_state["total"]
+                    st = progress_state.get("status")
+                    if tot > 0:
+                        pct = min(curr / tot, 1.0)
+                        pct_str = f"{pct * 100:.1f}%"
+                        progress_bar.set_value(pct)
+                        if st:
+                            enrich_status.set_text(f"{st} ({pct_str})")
+                        else:
+                            enrich_status.set_text(f"Checked {curr}/{tot} taxa ({pct_str})...")
+                safe_ui_update(_do_tick)
 
             async def run_enrichment() -> None:
-                enrich_button.disable()
+                safe_ui_update(enrich_button.disable)
                 progress_state["curr"] = 0
                 progress_state["total"] = 0
-                progress_bar.set_value(0.0)
-                progress_bar.classes(remove="hidden")
-                enrich_status.set_text(
+                progress_state["status"] = "Fetching Danish vernacular names from GBIF API..."
+                safe_ui_update(lambda: progress_bar.set_value(0.0))
+                safe_ui_update(lambda: progress_bar.classes(remove="hidden"))
+                safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-gray-300 font-semibold mb-3"))
+                safe_ui_update(lambda: enrich_status.set_text(
                     "Fetching Danish vernacular names from GBIF Species API..."
-                )
-                ui.notify(
+                ))
+                safe_ui_update(lambda: ui.notify(
                     "Starting GBIF API enrichment in background thread...", type="info"
-                )
+                ))
 
                 timer = ui.timer(0.1, tick_progress)
 
                 def sync_worker() -> int:
-                    def update_progress(curr: int, tot: int) -> None:
+                    def update_progress(curr: int, tot: int, status_msg: str | None = None) -> None:
                         progress_state["curr"] = curr
                         progress_state["total"] = tot
+                        if status_msg:
+                            progress_state["status"] = status_msg
 
                     return enrich_vernacular_names_from_gbif(
                         progress_callback=update_progress
@@ -476,28 +594,47 @@ def render_settings_view(
 
                 try:
                     updated = await run.io_bound(sync_worker)
-                    timer.cancel()
-                    progress_bar.set_value(1.0)
-                    enrich_status.set_text(
-                        f"Enrichment Complete! Updated {updated} species with Danish/English vernacular names (100.0%)."
-                    )
-                    ui.notify(
-                        f"Enriched {updated} species names from GBIF!", type="positive"
-                    )
+                    t_cnt = app_conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
+                    d_cnt = app_conn.execute(
+                        "SELECT COUNT(*) FROM taxa WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
+                    ).fetchone()[0]
+                    c_pct = int(d_cnt / t_cnt * 100) if t_cnt else 0
+                    status_summary = f"{d_cnt:,}/{t_cnt:,} taxa populated with Danish vernacular names ({c_pct}%)."
+                    set_app_metadata("gbif_enrichment_status", status_summary, conn=app_conn)
+
+                    safe_ui_update(timer.cancel)
+                    safe_ui_update(lambda: progress_bar.set_value(1.0))
+                    safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-green-400 font-bold mb-3"))
+                    safe_ui_update(lambda: enrich_status.set_text(
+                        f"✓ GBIF Enrichment Complete! Updated {updated} species — {status_summary}"
+                    ))
+                    safe_ui_update(lambda: ui.notify(
+                        f"✓ GBIF API Enrichment Complete! Updated {updated} species names.",
+                        type="positive",
+                        timeout=5000,
+                    ))
                     on_filters_changed()
+                    await asyncio.sleep(1.0)
+                    safe_ui_update(ui.navigate.reload)
+
                 except (sqlite3.Error, OSError, RuntimeError, ValueError) as ex:
-                    timer.cancel()
-                    enrich_status.set_text(f"Enrichment Error: {ex}")
-                    ui.notify(f"Enrichment failed: {ex}", type="negative")
+
+                    safe_ui_update(timer.cancel)
+                    err_msg = str(ex)
+                    safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-red-400 font-bold mb-3"))
+                    safe_ui_update(lambda: enrich_status.set_text(f"Enrichment Error: {err_msg}"))
+                    safe_ui_update(lambda: ui.notify(f"Enrichment failed: {err_msg}", type="negative"))
                 finally:
-                    timer.cancel()
-                    enrich_button.enable()
+                    safe_ui_update(timer.cancel)
+                    safe_ui_update(enrich_button.enable)
 
             enrich_button = ui.button(
-                "Fetch Danish Names from GBIF API",
+                enrich_btn_label,
                 color="secondary",
                 on_click=run_enrichment,
             ).classes("px-6")
+
+
 
         # 4. Advanced Features Dropdown (Hidden by default at bottom of page)
         exp = ui.expansion(

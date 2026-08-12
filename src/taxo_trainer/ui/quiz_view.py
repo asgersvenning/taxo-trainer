@@ -95,7 +95,26 @@ def render_quiz_view(state: QuizViewState) -> None:
         saved_lang = get_app_metadata("language_preference", "da", conn=app_conn)
         if saved_lang:
             state.filters.language = saved_lang
+
+        # Load persistent Whitelist (include_taxa) and Blacklist (exclude_taxa) per data_source
+        saved_whitelist = get_app_metadata(f"whitelist_{active_ds}", "", conn=app_conn)
+        if saved_whitelist:
+            state.filters.include_taxa = [
+                t.strip() for t in saved_whitelist.split("|") if t.strip()
+            ]
+        else:
+            state.filters.include_taxa = []
+
+        saved_blacklist = get_app_metadata(f"blacklist_{active_ds}", "", conn=app_conn)
+        if saved_blacklist:
+            state.filters.exclude_taxa = [
+                t.strip() for t in saved_blacklist.split("|") if t.strip()
+            ]
+        else:
+            state.filters.exclude_taxa = []
+
         state.streak_initialized = True
+
 
     def load_new_question() -> None:
         """Sample next target observation question and refresh UI."""

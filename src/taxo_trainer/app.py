@@ -6,7 +6,12 @@ Run via: uv run python -m taxo_trainer.app
 
 from nicegui import ui
 
-from taxo_trainer.db import get_app_metadata, get_db_connection, init_databases
+from taxo_trainer.db import (
+    get_app_metadata,
+    get_db_connection,
+    init_databases,
+    set_app_metadata,
+)
 from taxo_trainer.ui.dashboard_view import render_dashboard_view
 from taxo_trainer.ui.quiz_view import QuizViewState, render_quiz_view
 from taxo_trainer.ui.settings_view import render_settings_view
@@ -213,8 +218,9 @@ body.body--light .q-table--dark tbody tr:hover {
 }
 </style>""")
     ui.query(".q-tab-panel").style(
-        "padding: 0 !important; overflow: hidden; height: 100%;"
+        "padding: 0 !important; height: 100%; overflow: auto;"
     )
+
 
     with ui.column().classes(
         "w-full h-screen overflow-hidden bg-gray-950 text-white p-0 space-y-0 no-wrap flex flex-col"
@@ -229,24 +235,34 @@ body.body--light .q-table--dark tbody tr:hover {
                     "text-xl font-bold tracking-wide text-black dark:!bg-gray-900/80 dark:!text-white"
                 )
 
-            with ui.tabs().classes("text-white").props("inline-label") as tabs:
-                quiz_tab = ui.tab("Quiz", icon="quiz")
-                dash_tab = ui.tab("Dashboard", icon="insights")
-                settings_tab = ui.tab("Settings & Data", icon="settings")
+            saved_tab = get_app_metadata("active_tab", "quiz", conn=app_conn)
+
+            with ui.tabs(value=saved_tab).classes("text-white").props("inline-label") as tabs:
+                ui.tab("quiz", label="Quiz", icon="quiz")
+                ui.tab("dashboard", label="Dashboard", icon="insights")
+                ui.tab("settings", label="Settings & Data", icon="settings")
+
+            def on_tab_change(e) -> None:
+                if e.value:
+                    conn = get_db_connection()
+                    set_app_metadata("active_tab", str(e.value), conn=conn)
+                    conn.close()
+
+            tabs.on_value_change(on_tab_change)
 
         # Tab panels filling remaining vertical height edge-to-edge
-        with ui.tab_panels(tabs, value=quiz_tab).classes(
+        with ui.tab_panels(tabs, value=saved_tab).classes(
             "w-full flex-1 min-h-0 bg-gray-950 text-white p-0 overflow-hidden flex flex-col"
         ):
-            with ui.tab_panel(quiz_tab).classes(
+            with ui.tab_panel("quiz").classes(
                 "w-full h-full p-0 flex flex-col overflow-hidden flex-1 min-h-0"
             ):
                 render_quiz_view(state=quiz_state)
 
-            with ui.tab_panel(dash_tab).classes("w-full h-full p-4 overflow-y-auto"):
+            with ui.tab_panel("dashboard").classes("w-full h-full p-4 overflow-y-auto"):
                 render_dashboard_view()
 
-            with ui.tab_panel(settings_tab).classes(
+            with ui.tab_panel("settings").classes(
                 "w-full h-full p-4 overflow-y-auto"
             ):
                 render_settings_view(
@@ -254,6 +270,7 @@ body.body--light .q-table--dark tbody tr:hover {
                     on_filters_changed=lambda: None,
                     dark_mode=dark_mode,
                 )
+
 
 
 def main() -> None:

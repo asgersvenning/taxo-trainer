@@ -42,12 +42,16 @@ def update_occurrence_counts(conn: sqlite3.Connection | None = None) -> int:
                 );
             """)
             updated_count = cursor.rowcount
-            # Remove any taxa with 0 occurrences
+            # Remove any taxa with 0 occurrences (deleting associated occurrences first)
+            conn.execute(
+                "DELETE FROM occurrences WHERE taxon_key IN (SELECT taxon_key FROM taxa WHERE occurrence_count = 0);"
+            )
             conn.execute("DELETE FROM taxa WHERE occurrence_count = 0;")
         return updated_count
     finally:
         if should_close:
             conn.close()
+
 
 
 def load_custom_vernacular_json(
@@ -249,6 +253,72 @@ def score_vernacular_item(item: dict, code: str) -> int:
     return score
 
 
+def fetch_gbif_raw_api(
+    url: str,
+    cache_conn: sqlite3.Connection,
+    max_age_days: int = 7,
+) -> dict | None:
+    """Fetch raw REST API response JSON from URL with 7-day raw HTTP response caching.
+
+    Args:
+        url: Full GBIF REST API endpoint URL string.
+        cache_conn: Dedicated connection to gbif_cache.db.
+        max_age_days: Cache TTL in days (default: 7).
+
+    Returns:
+        dict | None: Parsed JSON dict response if successful, otherwise None.
+    """
+    import json
+    import time
+    import urllib.error
+    import urllib.request
+
+    now_ts = int(time.time())
+    one_week_sec = max_age_days * 86400
+
+    # 1. Check raw API response cache by exact URL
+    try:
+        cursor = cache_conn.execute(
+            "SELECT response_json, cached_at FROM gbif_api_cache WHERE url = ?",
+            (url,),
+        )
+        row = cursor.fetchone()
+        if row:
+            cached_json, cached_at = row["response_json"], row["cached_at"]
+            if (now_ts - cached_at) < one_week_sec:
+                try:
+                    return json.loads(cached_json)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+    except sqlite3.Error:
+        pass
+
+    # 2. Fetch raw response over HTTP
+    req = urllib.request.Request(url, headers={"User-Agent": "taxo-trainer/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                raw_bytes = resp.read()
+                raw_str = raw_bytes.decode("utf-8")
+                parsed_json = json.loads(raw_str)
+
+                with cache_conn:
+                    cache_conn.execute(
+                        "INSERT OR REPLACE INTO gbif_api_cache (url, response_json, cached_at) VALUES (?, ?, ?)",
+                        (url, raw_str, now_ts),
+                    )
+                return parsed_json
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ):
+        pass
+
+    return None
+
+
 def enrich_vernacular_names_from_gbif(
     conn: sqlite3.Connection | None = None,
     limit: int | None = None,
@@ -270,11 +340,7 @@ def enrich_vernacular_names_from_gbif(
     Returns:
         int: Number of taxa updated with new vernacular names.
     """
-    import json
-    import time
-    import urllib.error
     import urllib.parse
-    import urllib.request
 
     should_close = False
     if conn is None:
@@ -294,11 +360,11 @@ def enrich_vernacular_names_from_gbif(
 
         total = len(rows)
         updated_count = 0
-        now_ts = int(time.time())
-        one_week_sec = 7 * 86400  # 1 week cache TTL
 
         import threading
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
 
         thread_local = threading.local()
 
@@ -312,166 +378,98 @@ def enrich_vernacular_names_from_gbif(
         ) -> tuple[str, str | None, str | None, str | None]:
             tkey = str(row_dict["taxon_key"])
             canonical = row_dict["canonical_name"].strip()
-            cache_key = canonical.lower()
-            data = None
-
             t_cache_conn = get_thread_cache_conn()
 
-            cache_cursor = t_cache_conn.execute(
-                "SELECT response_json, cached_at FROM gbif_api_cache WHERE taxon_key = ?",
-                (cache_key,),
-            )
-            cache_row = cache_cursor.fetchone()
+            all_vernacular_items = []
+            keys_to_fetch = set()
+            search_names = {canonical}
 
-            if cache_row:
-                cached_json, cached_at = (
-                    cache_row["response_json"],
-                    cache_row["cached_at"],
-                )
-                if (now_ts - cached_at) < one_week_sec:
-                    try:
-                        data = json.loads(cached_json)
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        data = None
+            # 1. Match target canonical name via GBIF Backbone Match API
+            match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canonical)}"
+            match_data = fetch_gbif_raw_api(match_url, t_cache_conn)
 
-            if data is None:
-                all_vernacular_items = []
-                keys_to_fetch = set()
-                search_names = {canonical}
-
-                # 1. Match target canonical name via GBIF Backbone Match API
-                match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canonical)}"
-                req = urllib.request.Request(
-                    match_url, headers={"User-Agent": "taxo-trainer/1.0"}
-                )
-
-                try:
-                    with urllib.request.urlopen(req, timeout=5) as resp:
-                        if resp.status == 200:
-                            match_data = json.loads(resp.read().decode("utf-8"))
-                            for k_field in (
-                                "usageKey",
-                                "speciesKey",
-                                "acceptedUsageKey",
-                                "nubKey",
-                            ):
-                                if match_data.get(k_field):
-                                    keys_to_fetch.add(match_data.get(k_field))
-
-                            if match_data.get("species"):
-                                search_names.add(match_data.get("species"))
-
-                            # If target name is a subspecies/variety or synonym, also match base species name
-                            parts = canonical.strip().split()
-                            if len(parts) >= 2:
-                                base_sp = f"{parts[0]} {parts[1]}"
-                                if base_sp != canonical:
-                                    search_names.add(base_sp)
-                except (
-                    urllib.error.URLError,
-                    urllib.error.HTTPError,
-                    TimeoutError,
-                    json.JSONDecodeError,
+            if match_data:
+                for k_field in (
+                    "usageKey",
+                    "speciesKey",
+                    "acceptedUsageKey",
+                    "nubKey",
                 ):
-                    pass
+                    if match_data.get(k_field):
+                        keys_to_fetch.add(match_data.get(k_field))
 
-                # 2. Resolve backbone keys for any parent species or base species names
-                for sname in search_names:
-                    if sname == canonical:
-                        continue
-                    p_match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(sname)}"
-                    req_p = urllib.request.Request(
-                        p_match_url, headers={"User-Agent": "taxo-trainer/1.0"}
-                    )
-                    try:
-                        with urllib.request.urlopen(req_p, timeout=5) as resp_p:
-                            if resp_p.status == 200:
-                                p_data = json.loads(resp_p.read().decode("utf-8"))
-                                for k_field in (
-                                    "usageKey",
-                                    "speciesKey",
-                                    "acceptedUsageKey",
-                                    "nubKey",
-                                ):
-                                    if p_data.get(k_field):
-                                        keys_to_fetch.add(p_data.get(k_field))
-                    except (
-                        urllib.error.URLError,
-                        urllib.error.HTTPError,
-                        TimeoutError,
-                        json.JSONDecodeError,
+                if match_data.get("species"):
+                    search_names.add(match_data.get("species"))
+
+                # If target name is a subspecies/variety or synonym, also match base species name
+                parts = canonical.strip().split()
+                if len(parts) >= 2:
+                    base_sp = f"{parts[0]} {parts[1]}"
+                    if base_sp != canonical:
+                        search_names.add(base_sp)
+
+            # 2. Resolve backbone keys for any parent species or base species names
+            for sname in search_names:
+                if sname == canonical:
+                    continue
+                p_match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(sname)}"
+                p_data = fetch_gbif_raw_api(p_match_url, t_cache_conn)
+                if p_data:
+                    for k_field in (
+                        "usageKey",
+                        "speciesKey",
+                        "acceptedUsageKey",
+                        "nubKey",
                     ):
-                        pass
+                        if p_data.get(k_field):
+                            keys_to_fetch.add(p_data.get(k_field))
 
-                # 3. Fetch vernacular names exclusively via GBIF taxon keys
-                for k in list(keys_to_fetch):
-                    v_url = f"https://api.gbif.org/v1/species/{k}/vernacularNames?limit=1000"
-                    req2 = urllib.request.Request(
-                        v_url, headers={"User-Agent": "taxo-trainer/1.0"}
-                    )
-                    try:
-                        with urllib.request.urlopen(req2, timeout=5) as v_resp:
-                            if v_resp.status == 200:
-                                m_json = json.loads(v_resp.read().decode("utf-8"))
-                                all_vernacular_items.extend(
-                                    m_json.get("results", [])
-                                )
-                    except (
-                        urllib.error.URLError,
-                        urllib.error.HTTPError,
-                        TimeoutError,
-                        json.JSONDecodeError,
-                    ):
-                        pass
+            # 3. Fetch vernacular names exclusively via GBIF taxon keys
+            for k in list(keys_to_fetch):
+                v_url = f"https://api.gbif.org/v1/species/{k}/vernacularNames?limit=1000"
+                v_data = fetch_gbif_raw_api(v_url, t_cache_conn)
+                if v_data and "results" in v_data:
+                    all_vernacular_items.extend(v_data.get("results", []))
 
-                data = {"results": all_vernacular_items}
-                raw_str = json.dumps(data, ensure_ascii=False)
-                with t_cache_conn:
-                    t_cache_conn.execute(
-                        "INSERT OR REPLACE INTO gbif_api_cache (taxon_key, response_json, cached_at) VALUES (?, ?, ?)",
-                        (cache_key, raw_str, now_ts),
-                    )
+            results = all_vernacular_items
 
-            if data and "results" in data:
-                results = data.get("results", [])
-                by_lang_scored: dict[str, dict[str, int]] = {}
+            by_lang_scored: dict[str, dict[str, int]] = {}
 
-                for item in results:
-                    raw_lang = (item.get("language") or "").lower()
-                    vname = item.get("vernacularName")
-                    if not vname or not vname.strip():
+            for item in results:
+                raw_lang = (item.get("language") or "").lower()
+                vname = item.get("vernacularName")
+                if not vname or not vname.strip():
+                    continue
+                vname = vname.strip()
+
+                code = LANG_MAP.get(raw_lang)
+                if code:
+                    sc = score_vernacular_item(item, code)
+                    if sc < 0:
                         continue
-                    vname = vname.strip()
-
-                    code = LANG_MAP.get(raw_lang)
-                    if code:
-                        sc = score_vernacular_item(item, code)
-                        if sc < 0:
-                            continue
-                        by_lang_scored.setdefault(code, {})
-                        by_lang_scored[code][vname] = max(
-                            by_lang_scored[code].get(vname, -999), sc
-                        )
-
-                vernacular_dict = {}
-                for code, name_scores in by_lang_scored.items():
-                    sorted_names = sorted(
-                        name_scores.keys(),
-                        key=lambda x, ns=name_scores: (-ns[x], len(x.split()), len(x)),
+                    by_lang_scored.setdefault(code, {})
+                    by_lang_scored[code][vname] = max(
+                        by_lang_scored[code].get(vname, -999), sc
                     )
-                    vernacular_dict[code] = "|".join(sorted_names)
 
-                new_da = vernacular_dict.get("da")
-                new_en = vernacular_dict.get("en")
-                v_json_str = (
-                    json.dumps(vernacular_dict, ensure_ascii=False)
-                    if vernacular_dict
-                    else None
+            vernacular_dict = {}
+            for code, name_scores in by_lang_scored.items():
+                sorted_names = sorted(
+                    name_scores.keys(),
+                    key=lambda x, ns=name_scores: (-ns[x], len(x.split()), len(x)),
                 )
+                vernacular_dict[code] = "|".join(sorted_names)
 
-                return tkey, new_da, new_en, v_json_str
+            new_da = vernacular_dict.get("da")
+            new_en = vernacular_dict.get("en")
+            v_json_str = (
+                json.dumps(vernacular_dict, ensure_ascii=False)
+                if vernacular_dict
+                else None
+            )
 
-            return tkey, None, None, None
+            return tkey, new_da, new_en, v_json_str
+
 
         processed_count = 0
         row_dicts = [dict(r) for r in rows]
@@ -499,19 +497,27 @@ def enrich_vernacular_names_from_gbif(
 
                 processed_count += 1
                 if progress_callback:
-                    progress_callback(processed_count, total)
+                    progress_callback(processed_count, total, f"Checked {processed_count}/{total} species...")
 
         # Consolidate synonym species into accepted species via GBIF
+        if progress_callback:
+            progress_callback(total, total, "Consolidating synonym species via GBIF API...")
         consolidate_synonyms_with_gbif(conn)
 
         # Enrich higher rank (Genus & Family) vernacular names
+        if progress_callback:
+            progress_callback(total, total, "Enriching Genus & Family vernacular names...")
         enrich_higher_ranks_vernacular_names(conn)
+
+        if progress_callback:
+            progress_callback(total, total, "Enrichment Complete!")
 
         return updated_count
     finally:
         cache_conn.close()
         if should_close:
             conn.close()
+
 
 
 def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None) -> int:
@@ -524,15 +530,16 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
         int: Total higher rank records updated.
     """
     import json
-    import urllib.error
+    import threading
     import urllib.parse
-    import urllib.request
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     should_close = False
     if conn is None:
         conn = get_db_connection(APP_DB_PATH)
         should_close = True
 
+    cache_conn = get_gbif_cache_connection()
     try:
         g_rows = conn.execute("SELECT DISTINCT genus FROM taxa WHERE genus IS NOT NULL AND genus != '';").fetchall()
         f_rows = conn.execute("SELECT DISTINCT family FROM taxa WHERE family IS NOT NULL AND family != '';").fetchall()
@@ -540,186 +547,206 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
         targets = [(r["genus"].strip(), "GENUS") for r in g_rows] + [(r["family"].strip(), "FAMILY") for r in f_rows]
         updated = 0
 
-        for r_name, r_level in targets:
-            existing = conn.execute("SELECT vernacular_da, vernacular_en FROM higher_ranks WHERE rank_name = ?", (r_name,)).fetchone()
-            if existing and existing["vernacular_da"]:
-                continue
+        thread_local = threading.local()
+
+        def get_thread_cache_conn() -> sqlite3.Connection:
+            if not hasattr(thread_local, "conn"):
+                thread_local.conn = get_gbif_cache_connection()
+            return thread_local.conn
+
+        def process_single_target(target: tuple[str, str]) -> tuple[str, str, str | None, str | None, str | None]:
+            r_name, r_level = target
+            t_cache = get_thread_cache_conn()
 
             match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(r_name)}"
-            req = urllib.request.Request(match_url, headers={"User-Agent": "taxo-trainer/1.0"})
+            mdata = fetch_gbif_raw_api(match_url, t_cache)
 
-            try:
-                with urllib.request.urlopen(req, timeout=4) as resp:
-                    if resp.status == 200:
-                        mdata = json.loads(resp.read().decode("utf-8"))
-                        gbif_key = None
-                        if r_level == "GENUS":
-                            gbif_key = mdata.get("genusKey") or mdata.get("usageKey")
-                        elif r_level == "FAMILY":
-                            gbif_key = mdata.get("familyKey") or mdata.get("usageKey")
-                        else:
-                            gbif_key = mdata.get("usageKey") or mdata.get("speciesKey")
-                        if gbif_key:
-                            v_url = f"https://api.gbif.org/v1/species/{gbif_key}/vernacularNames?limit=100"
-                            req2 = urllib.request.Request(v_url, headers={"User-Agent": "taxo-trainer/1.0"})
-                            with urllib.request.urlopen(req2, timeout=4) as v_resp:
-                                if v_resp.status == 200:
-                                    vdata = json.loads(v_resp.read().decode("utf-8"))
-                                    by_lang = {}
-                                    for item in vdata.get("results", []):
-                                        raw_lang = (item.get("language") or "").lower()
-                                        vname = item.get("vernacularName")
-                                        if not vname or not vname.strip():
-                                            continue
-                                        vname = vname.strip()
-                                        code = LANG_MAP.get(raw_lang)
-                                        if code:
-                                            by_lang.setdefault(code, [])
-                                            if vname not in by_lang[code]:
-                                                by_lang[code].append(vname)
+            if mdata:
+                gbif_key = None
+                if r_level == "GENUS":
+                    gbif_key = mdata.get("genusKey") or mdata.get("usageKey")
+                elif r_level == "FAMILY":
+                    gbif_key = mdata.get("familyKey") or mdata.get("usageKey")
+                else:
+                    gbif_key = mdata.get("usageKey") or mdata.get("speciesKey")
 
-                                    vernacular_dict = {}
-                                    for code, candidates in by_lang.items():
-                                        candidates.sort(key=lambda x: (len(x.split()), len(x)))
-                                        vernacular_dict[code] = "|".join(candidates)
+                if gbif_key:
+                    v_url = f"https://api.gbif.org/v1/species/{gbif_key}/vernacularNames?limit=100"
+                    vdata = fetch_gbif_raw_api(v_url, t_cache)
+                    if vdata:
+                        by_lang: dict[str, list[str]] = {}
+                        for item in vdata.get("results", []):
+                            raw_lang = (item.get("language") or "").lower()
+                            vname = item.get("vernacularName")
+                            if not vname or not vname.strip():
+                                continue
+                            vname = vname.strip()
+                            code = LANG_MAP.get(raw_lang)
+                            if code:
+                                by_lang.setdefault(code, [])
+                                if vname not in by_lang[code]:
+                                    by_lang[code].append(vname)
 
-                                    v_da = vernacular_dict.get("da")
-                                    v_en = vernacular_dict.get("en")
-                                    v_json_str = json.dumps(vernacular_dict, ensure_ascii=False) if vernacular_dict else None
+                        vernacular_dict = {}
+                        for code, candidates in by_lang.items():
+                            candidates.sort(key=lambda x: (len(x.split()), len(x)))
+                            vernacular_dict[code] = "|".join(candidates)
 
-                                    with conn:
-                                        conn.execute(
-                                            "INSERT OR REPLACE INTO higher_ranks (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json) VALUES (?, ?, ?, ?, ?)",
-                                            (r_name, r_level, v_da, v_en, v_json_str),
-                                        )
-                                    updated += 1
-            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, sqlite3.Error):
-                pass
+                        v_da = vernacular_dict.get("da")
+                        v_en = vernacular_dict.get("en")
+                        v_json_str = json.dumps(vernacular_dict, ensure_ascii=False) if vernacular_dict else None
+                        return r_name, r_level, v_da, v_en, v_json_str
+
+            return r_name, r_level, None, None, None
+
+        # Filter out targets already present in higher_ranks table with Danish names
+        existing_rows = conn.execute(
+            "SELECT rank_name FROM higher_ranks WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
+        ).fetchall()
+        existing_names = {r["rank_name"] for r in existing_rows}
+        pending_targets = [t for t in targets if t[0] not in existing_names]
+
+        with ThreadPoolExecutor(max_workers=30) as executor:
+            futures = [executor.submit(process_single_target, t) for t in pending_targets]
+            for fut in as_completed(futures):
+                try:
+                    r_name, r_level, v_da, v_en, v_json_str = fut.result()
+                    if v_da or v_en or v_json_str:
+                        with conn:
+                            conn.execute(
+                                "INSERT OR REPLACE INTO higher_ranks (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json) VALUES (?, ?, ?, ?, ?)",
+                                (r_name, r_level, v_da, v_en, v_json_str),
+                            )
+                        updated += 1
+                except (sqlite3.Error, KeyError, ValueError):
+                    pass
 
         return updated
     finally:
+        cache_conn.close()
         if should_close:
             conn.close()
 
 
-def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> int:
-    """Consolidate synonym species entries in taxa table into their accepted species concept using GBIF Match API.
 
-    For example, 'Persicaria bistorta' (synonym) -> 'Bistorta officinalis' (accepted species).
+
+def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> int:
+    """Query GBIF Backbone Match API to resolve synonym species and merge into accepted species.
 
     Args:
         conn: Optional SQLite connection.
 
     Returns:
-        int: Number of synonym taxa consolidated.
+        int: Number of synonym species merged or removed.
     """
-    import json
-    import urllib.error
     import urllib.parse
-    import urllib.request
 
     should_close = False
     if conn is None:
         conn = get_db_connection(APP_DB_PATH)
         should_close = True
 
+    cache_conn = get_gbif_cache_connection()
+
     try:
         cursor = conn.execute(
             "SELECT taxon_key, canonical_name, scientific_name FROM taxa WHERE rank = 'SPECIES'"
         )
-        taxa_rows = cursor.fetchall()
+        taxa_rows = [dict(r) for r in cursor.fetchall()]
 
-        gbif_cache: dict[str, dict | None] = {}
+        import threading
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        def match_gbif(name: str) -> dict | None:
-            if not name or name in gbif_cache:
-                return gbif_cache.get(name)
-            url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(name)}"
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "taxo-trainer/1.0"}
+        thread_local = threading.local()
+
+        def get_thread_cache_conn() -> sqlite3.Connection:
+            if not hasattr(thread_local, "conn"):
+                thread_local.conn = get_gbif_cache_connection()
+            return thread_local.conn
+
+        def check_synonym_single(r: dict) -> tuple[dict, dict | None]:
+            canon = r["canonical_name"]
+            url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canon)}"
+            t_cache = get_thread_cache_conn()
+            data = fetch_gbif_raw_api(url, t_cache)
+            if not data:
+                return r, None
+
+            sp_key = (
+                data.get("speciesKey")
+                or data.get("acceptedUsageKey")
+                or data.get("usageKey")
             )
-            try:
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    sp_key = (
-                        data.get("speciesKey")
-                        or data.get("acceptedUsageKey")
-                        or data.get("usageKey")
-                    )
-                    sp_name = (
-                        data.get("species")
-                        or data.get("canonicalName")
-                        or name
-                    )
-                    match_type = data.get("matchType")
-                    rank_str = (data.get("rank") or "").upper()
-                    res = {
-                        "species_key": str(sp_key) if sp_key else None,
-                        "species_name": sp_name,
-                        "is_synonym": data.get("status") == "SYNONYM"
-                        or data.get("synonym", False),
-                        "is_higher_rank": match_type == "HIGHERRANK"
-                        or rank_str in ("GENUS", "FAMILY", "ORDER", "CLASS", "PHYLUM", "KINGDOM"),
-                    }
-                    gbif_cache[name] = res
-                    return res
-            except (
-                urllib.error.URLError,
-                urllib.error.HTTPError,
-                TimeoutError,
-                json.JSONDecodeError,
-            ):
-                pass
-            return None
+            sp_name = (
+                data.get("species")
+                or data.get("canonicalName")
+                or canon
+            )
+            match_type = data.get("matchType")
+            rank_str = (data.get("rank") or "").upper()
+            res = {
+                "species_key": str(sp_key) if sp_key else None,
+                "species_name": sp_name,
+                "is_synonym": data.get("status") == "SYNONYM"
+                or data.get("synonym", False),
+                "is_higher_rank": match_type == "HIGHERRANK"
+                or rank_str in ("GENUS", "FAMILY", "ORDER", "CLASS", "PHYLUM", "KINGDOM"),
+            }
+            return r, res
 
         merged_count = 0
-        for r in taxa_rows:
-            tkey = str(r["taxon_key"])
-            canon = r["canonical_name"]
-            match = match_gbif(canon)
-            if not match:
-                continue
+        with ThreadPoolExecutor(max_workers=30) as executor:
+            futures = [executor.submit(check_synonym_single, r) for r in taxa_rows]
+            for fut in as_completed(futures):
+                try:
+                    r, match = fut.result()
+                    if not match:
+                        continue
 
-            if match.get("is_higher_rank"):
-                # Species resolved to a higher order taxon (e.g. ambiguous synonym like Ranunculus tuberosus -> Genus Ranunculus)
-                with conn:
-                    conn.execute("DELETE FROM taxa WHERE taxon_key = ?", (tkey,))
-                merged_count += 1
-                continue
+                    tkey = str(r["taxon_key"])
+                    canon = r["canonical_name"]
 
-            if (
-                match["is_synonym"]
-                and match["species_name"]
-                and match["species_name"] != canon
-            ):
-                accepted_canon = match["species_name"]
-                # Find accepted taxon row in taxa
-                acc_row = conn.execute(
-                    "SELECT taxon_key, scientific_name FROM taxa WHERE LOWER(canonical_name) = LOWER(?) LIMIT 1",
-                    (accepted_canon,),
-                ).fetchone()
-                if acc_row:
-                    acc_tkey = str(acc_row["taxon_key"])
-                    if acc_tkey != tkey:
-                        acc_sci = acc_row["scientific_name"] or accepted_canon
-                        if canon not in acc_sci:
-                            acc_sci = f"{acc_sci} ({canon})"
+                    if match.get("is_higher_rank"):
                         with conn:
-                            conn.execute(
-                                "UPDATE occurrences SET taxon_key = ? WHERE taxon_key = ?",
-                                (acc_tkey, tkey),
-                            )
-                            conn.execute(
-                                "UPDATE taxa SET scientific_name = ? WHERE taxon_key = ?",
-                                (acc_sci, acc_tkey),
-                            )
-                            conn.execute(
-                                "DELETE FROM taxa WHERE taxon_key = ?", (tkey,)
-                            )
+                            conn.execute("DELETE FROM occurrences WHERE taxon_key = ?", (tkey,))
+                            conn.execute("DELETE FROM taxa WHERE taxon_key = ?", (tkey,))
                         merged_count += 1
+                        continue
+
+                    if (
+                        match["is_synonym"]
+                        and match["species_name"]
+                        and match["species_name"] != canon
+                    ):
+                        accepted_canon = match["species_name"]
+                        acc_row = conn.execute(
+                            "SELECT taxon_key, scientific_name FROM taxa WHERE LOWER(canonical_name) = LOWER(?) LIMIT 1",
+                            (accepted_canon,),
+                        ).fetchone()
+                        if acc_row:
+                            acc_tkey = str(acc_row["taxon_key"])
+                            if acc_tkey != tkey:
+                                acc_sci = acc_row["scientific_name"] or accepted_canon
+                                if canon not in acc_sci:
+                                    acc_sci = f"{acc_sci} ({canon})"
+                                with conn:
+                                    conn.execute(
+                                        "UPDATE occurrences SET taxon_key = ? WHERE taxon_key = ?",
+                                        (acc_tkey, tkey),
+                                    )
+                                    conn.execute(
+                                        "UPDATE taxa SET scientific_name = ? WHERE taxon_key = ?",
+                                        (acc_sci, acc_tkey),
+                                    )
+                                    conn.execute(
+                                        "DELETE FROM taxa WHERE taxon_key = ?", (tkey,)
+                                    )
+                                merged_count += 1
+                except (sqlite3.Error, KeyError, ValueError):
+                    pass
 
         return merged_count
     finally:
+        cache_conn.close()
         if should_close:
             conn.close()
-

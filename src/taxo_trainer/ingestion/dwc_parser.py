@@ -211,6 +211,7 @@ def ingest_dwc_file(
     file_path: Path,
     db_path: Path = APP_DB_PATH,
     batch_size: int = 10000,
+    max_occurrences_per_taxon: int | None = 1000,
     progress_callback: Callable[[int], None] | None = None,
 ) -> tuple[int, int]:
     """Ingest a GBIF DarwinCore occurrence.txt TSV into SQLite app_data.db.
@@ -222,6 +223,7 @@ def ingest_dwc_file(
         file_path: Path to DarwinCore TSV file (occurrence.txt).
         db_path: Target SQLite database file path.
         batch_size: Number of records per SQLite transaction batch.
+        max_occurrences_per_taxon: Optional max occurrence cap per taxon (default: 1000).
         progress_callback: Optional callback receiving count of ingested rows.
 
     Returns:
@@ -238,6 +240,7 @@ def ingest_dwc_file(
 
     occurrence_batch: list[tuple] = []
     taxa_accumulator: dict[str, dict[str, Any]] = {}
+    taxon_occ_counts: dict[str, int] = defaultdict(int)
 
     inserted_occurrences = 0
 
@@ -256,6 +259,18 @@ def ingest_dwc_file(
                 continue
 
             taxon_key = str(taxon_key_raw).strip()
+
+            # Immediate threshold filtering for max occurrences per raw taxon
+            if (
+                max_occurrences_per_taxon
+                and max_occurrences_per_taxon > 0
+                and taxon_occ_counts[taxon_key] >= max_occurrences_per_taxon
+            ):
+                continue
+
+
+            taxon_occ_counts[taxon_key] += 1
+
 
             # Gather media URLs from multimedia index + row columns
             media_urls = list(multimedia_index.get(str(occ_id), []))

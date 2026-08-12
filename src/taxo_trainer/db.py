@@ -75,12 +75,19 @@ def get_gbif_cache_connection() -> sqlite3.Connection:
     with conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS gbif_api_cache (
-                taxon_key TEXT PRIMARY KEY,
+                url TEXT PRIMARY KEY,
                 response_json TEXT NOT NULL,
                 cached_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_gbif_cache_ts ON gbif_api_cache(cached_at);
         """)
+        cursor = conn.execute("PRAGMA table_info(gbif_api_cache);")
+        cols = [r["name"] for r in cursor.fetchall()]
+        if "taxon_key" in cols and "url" not in cols:
+            try:
+                conn.execute("ALTER TABLE gbif_api_cache RENAME COLUMN taxon_key TO url;")
+            except sqlite3.OperationalError:
+                pass
     return conn
 
 
@@ -128,8 +135,8 @@ def prune_gbif_cache(
                 with conn:
                     c_del = conn.execute("""
                         DELETE FROM gbif_api_cache
-                        WHERE taxon_key IN (
-                            SELECT taxon_key FROM gbif_api_cache
+                        WHERE rowid IN (
+                            SELECT rowid FROM gbif_api_cache
                             ORDER BY cached_at ASC
                             LIMIT 50
                         );
@@ -182,7 +189,8 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
 
                 CREATE TABLE IF NOT EXISTS occurrences (
                     occurrence_id TEXT PRIMARY KEY,
-                    taxon_key TEXT REFERENCES taxa(taxon_key),
+                    taxon_key TEXT REFERENCES taxa(taxon_key) ON DELETE CASCADE,
+
                     latitude REAL,
                     longitude REAL,
                     locality TEXT,
@@ -309,9 +317,21 @@ def get_active_data_source(conn: sqlite3.Connection | None = None) -> str:
         conn: Optional app_data.db connection.
 
     Returns:
-        str: Active data source path string or 'default'.
+        str: Active data source path string or 'none' if empty.
     """
-    return get_app_metadata("active_dwc_path", default="default", conn=conn)
+    should_close = False
+    if conn is None:
+        conn = get_db_connection(APP_DB_PATH)
+        should_close = True
+    try:
+        taxa_cnt = conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
+        if taxa_cnt == 0:
+            return "none"
+        return get_app_metadata("active_dwc_path", default="default", conn=conn)
+    finally:
+        if should_close:
+            conn.close()
+
 
 
 def init_user_db(conn: sqlite3.Connection | None = None) -> None:
