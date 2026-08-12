@@ -82,3 +82,34 @@ The app is built around the DarwinCore archive format with the Multimedia extens
 | **7** | Once ready, right-click the **Download archive** button and select **Copy link address** to copy the ZIP download URL.                                                                                                                               | ![](./assets/dataset_guide/occ_download_link.png)     |
 | **8** | In `Taxo-Trainer`, open the **Settings & Data** tab and click **Clear current data source** (optional if replacing dataset).                                                                                                                         | ![](./assets/dataset_guide/source_clear.png)          |
 | **9** | In the **DarwinCore (DwC) Occurrence Ingestion** box, paste the link or file path and click **Start Ingestion** (or **Re-Ingest Dataset**). When complete, go to **GBIF Vernacular Name Enrichment** and click **Fetch Danish Names from GBIF API**. | ![](./assets/dataset_guide/archive_import.png)        |
+
+## For developers
+
+### Introduction
+
+This app (`taxo-trainer`) is meant to be functional, fast and reliable, and is a spare-time project I built using AI to help me more easily and efficiently practice and learn identifying plants and insects primarily.
+
+The features are meant to be easy to use and intuitive for most people, without needing a lot of instructions, but it does require being able to run a few commands in the terminal to get started.
+`taxo-trainer` also contains some "gamification" features to make the learning process more engaging, and allow users to track their progress over time, but these are meant as quality of life features, and are not the primary focus of the app.
+
+To make it useful for more people `taxo-trainer` attempts to resolve ambiguities in taxonomy and integration of both scientific and vernacular names across different languages. This is a slightly complicated task to automate as the taxonomy is constantly being updated and vernacular names are not always well-maintained or standardized. To make this as simple as possible `taxo-trainer` relies on GBIF as a authority for both scientific and vernacular names, but sometimes local authorities have more accurate, complete, or simply different naming conventions than GBIF, or they haven't yet been incorporated into GBIF. `taxo-trainer` does not attempt to solve this problem, but relies on the hope that the community will naturally improve this over time.
+
+### Contributing
+
+Feel free to contribute to the `taxo-trainer` app, I won't set high standards and feel free to use any tools including AI, but try not to introduce new dependencies, make the app slower, or break existing functionality.
+
+Development items that help would be appreciated for include (in no particular order):
+
+* Taxonomic handling:
+  * Detection and resolution of taxonomic issues.
+  * Better resolution of vernacular names.
+* Performance and technical debt improvements:
+  * Cross-platform compatibility.
+  * Performance improvements.
+  * More test coverage.
+  * Consistency refactoring, especially around the UI, app state, and database structure.
+* Better UI/UX:
+  * Improved "gamification" features and metrics.
+  * More consistent state management across sessions.
+  * Documentation and guides.
+  * More themes and styling options.
