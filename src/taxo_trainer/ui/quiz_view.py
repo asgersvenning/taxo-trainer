@@ -11,6 +11,7 @@ from nicegui import ui
 from taxo_trainer.db import (
     APP_DB_PATH,
     USER_DB_PATH,
+    get_active_data_source,
     get_app_metadata,
     get_db_connection,
     get_user_streak,
@@ -70,13 +71,14 @@ def render_quiz_view(state: QuizViewState) -> None:
     """
     app_conn = get_db_connection(APP_DB_PATH)
     user_conn = get_db_connection(USER_DB_PATH)
+    active_ds = get_active_data_source(app_conn)
 
     main_container = ui.column().classes(
         "w-full h-full flex-1 min-h-0 p-1 space-y-2 overflow-hidden"
     )
 
     if not state.streak_initialized:
-        curr, best = get_user_streak(user_conn)
+        curr, best = get_user_streak(user_conn, data_source=active_ds)
         state.current_streak = curr
         state.best_streak = best
         state.streak_initialized = True
@@ -99,7 +101,7 @@ def render_quiz_view(state: QuizViewState) -> None:
         """Sample next target observation question and refresh UI."""
         if state.is_incorrect and not state.solved:
             state.current_streak = 0
-            set_user_streak(0, state.best_streak, user_conn)
+            set_user_streak(0, state.best_streak, user_conn, data_source=active_ds)
 
         state.is_incorrect = False
         state.used_hint = False
@@ -136,7 +138,9 @@ def render_quiz_view(state: QuizViewState) -> None:
                 state.is_incorrect = False
                 state.current_streak += 1
                 state.best_streak = max(state.best_streak, state.current_streak)
-                set_user_streak(state.current_streak, state.best_streak, user_conn)
+                set_user_streak(
+                    state.current_streak, state.best_streak, user_conn, data_source=active_ds
+                )
 
             state.matched_genus = state.current_question.genus
             state.matched_family = state.current_question.family
@@ -147,6 +151,7 @@ def render_quiz_view(state: QuizViewState) -> None:
                 res.matched_taxon_key or state.current_question.taxon_key,
                 is_correct=True,
                 used_hint=state.used_hint,
+                data_source=active_ds,
             )
             state.last_feedback = {
                 "type": "success",
@@ -190,6 +195,7 @@ def render_quiz_view(state: QuizViewState) -> None:
                     res.matched_taxon_key,
                     is_correct=False,
                     used_hint=state.used_hint,
+                    data_source=active_ds,
                 )
                 state.last_feedback = {
                     "type": "error",

@@ -302,6 +302,18 @@ def set_app_metadata(key: str, val: str, conn: sqlite3.Connection | None = None)
 
 
 
+def get_active_data_source(conn: sqlite3.Connection | None = None) -> str:
+    """Retrieve active data source path/identifier string from app_data.db.
+
+    Args:
+        conn: Optional app_data.db connection.
+
+    Returns:
+        str: Active data source path string or 'default'.
+    """
+    return get_app_metadata("active_dwc_path", default="default", conn=conn)
+
+
 def init_user_db(conn: sqlite3.Connection | None = None) -> None:
     """Initialize the schema and indices for user_data.db (user progress & history).
 
@@ -323,25 +335,59 @@ def init_user_db(conn: sqlite3.Connection | None = None) -> None:
                     guessed_taxon_key TEXT,
                     is_correct BOOLEAN NOT NULL,
                     used_hint BOOLEAN NOT NULL DEFAULT 0,
-                    attempt_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS user_streak (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    current_streak INTEGER NOT NULL DEFAULT 0,
-                    best_streak INTEGER NOT NULL DEFAULT 0
+                    attempt_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    data_source TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_user_progress ON user_progress(target_taxon_key, is_correct);
                 CREATE INDEX IF NOT EXISTS idx_user_progress_occ ON user_progress(occurrence_id, is_correct);
             """)
+
+            try:
+                conn.execute("ALTER TABLE user_progress ADD COLUMN data_source TEXT;")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_progress_ds ON user_progress(data_source);")
+
+
+            # Migrate legacy user_streak table if needed
+            cursor = conn.execute("PRAGMA table_info(user_streak);")
+            cols = [r["name"] for r in cursor.fetchall()]
+            if not cols:
+                conn.execute("""
+                    CREATE TABLE user_streak (
+                        data_source TEXT PRIMARY KEY,
+                        current_streak INTEGER NOT NULL DEFAULT 0,
+                        best_streak INTEGER NOT NULL DEFAULT 0
+                    );
+                """)
+            elif "data_source" not in cols:
+                conn.executescript("""
+                    CREATE TABLE user_streak_new (
+                        data_source TEXT PRIMARY KEY,
+                        current_streak INTEGER NOT NULL DEFAULT 0,
+                        best_streak INTEGER NOT NULL DEFAULT 0
+                    );
+                    INSERT INTO user_streak_new (data_source, current_streak, best_streak)
+                    SELECT 'default', current_streak, best_streak FROM user_streak WHERE id = 1;
+                    DROP TABLE user_streak;
+                    ALTER TABLE user_streak_new RENAME TO user_streak;
+                """)
     finally:
         if should_close:
             conn.close()
 
 
-def get_user_streak(conn: sqlite3.Connection | None = None) -> tuple[int, int]:
-    """Get (current_streak, best_streak) from user_data.db.
+def get_user_streak(
+    conn: sqlite3.Connection | None = None,
+    data_source: str = "default",
+) -> tuple[int, int]:
+    """Get (current_streak, best_streak) from user_data.db for a given data source.
+
+    Args:
+        conn: Optional SQLite connection.
+        data_source: Data source identifier string.
 
     Returns:
         tuple[int, int]: (current_streak, best_streak)
@@ -351,14 +397,11 @@ def get_user_streak(conn: sqlite3.Connection | None = None) -> tuple[int, int]:
         conn = get_db_connection(USER_DB_PATH)
         should_close = True
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_streak (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                current_streak INTEGER NOT NULL DEFAULT 0,
-                best_streak INTEGER NOT NULL DEFAULT 0
-            );
-        """)
-        row = conn.execute("SELECT current_streak, best_streak FROM user_streak WHERE id = 1").fetchone()
+        init_user_db(conn)
+        row = conn.execute(
+            "SELECT current_streak, best_streak FROM user_streak WHERE data_source = ?",
+            (data_source,),
+        ).fetchone()
         if row:
             return (int(row["current_streak"]), int(row["best_streak"]))
         return (0, 0)
@@ -367,30 +410,36 @@ def get_user_streak(conn: sqlite3.Connection | None = None) -> tuple[int, int]:
             conn.close()
 
 
-def set_user_streak(current_streak: int, best_streak: int, conn: sqlite3.Connection | None = None) -> None:
-    """Save (current_streak, best_streak) to user_data.db.
+def set_user_streak(
+    current_streak: int,
+    best_streak: int,
+    conn: sqlite3.Connection | None = None,
+    data_source: str = "default",
+) -> None:
+    """Save (current_streak, best_streak) to user_data.db for a given data source.
 
     Args:
         current_streak: Current active streak count.
         best_streak: User record best streak count.
         conn: Optional SQLite connection.
+        data_source: Data source identifier string.
     """
     should_close = False
     if conn is None:
         conn = get_db_connection(USER_DB_PATH)
         should_close = True
     try:
+        init_user_db(conn)
         with conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_streak (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    current_streak INTEGER NOT NULL DEFAULT 0,
-                    best_streak INTEGER NOT NULL DEFAULT 0
-                );
-            """)
             conn.execute(
-                "INSERT OR REPLACE INTO user_streak (id, current_streak, best_streak) VALUES (1, ?, ?)",
-                (current_streak, max(current_streak, best_streak)),
+                """
+                INSERT INTO user_streak (data_source, current_streak, best_streak)
+                VALUES (?, ?, ?)
+                ON CONFLICT(data_source) DO UPDATE SET
+                    current_streak = excluded.current_streak,
+                    best_streak = MAX(user_streak.best_streak, excluded.best_streak);
+                """,
+                (data_source, current_streak, max(current_streak, best_streak)),
             )
     finally:
         if should_close:
@@ -401,3 +450,4 @@ def init_databases() -> None:
     """Initialize both app_data.db and user_data.db schemas."""
     init_app_db()
     init_user_db()
+

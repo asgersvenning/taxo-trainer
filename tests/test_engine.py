@@ -735,3 +735,124 @@ def test_autocomplete_min_count_filtering(setup_engine_dbs) -> None:
     canonical_names_5 = [m["canonical_name"] for m in matches_5]
     assert "Rare species" not in canonical_names_5
     assert "Common species" in canonical_names_5
+
+
+def test_data_source_isolation_analytics(setup_engine_dbs) -> None:
+    """Verify that analytics metrics strictly respect active data_source filtering."""
+    app_conn, user_conn = setup_engine_dbs
+    from taxo_trainer.engine.analytics import (
+        get_confusion_matrix,
+        get_dataset_coverage,
+        get_global_stats,
+        log_attempt,
+    )
+
+    # Log attempts under "plants.zip"
+    log_attempt(user_conn, "occ_p1", 2435140, 2435140, is_correct=True, data_source="plants.zip")
+    log_attempt(user_conn, "occ_p2", 2435140, 2865545, is_correct=False, data_source="plants.zip")
+
+    # Log attempts under "butterflies.zip"
+    log_attempt(user_conn, "occ_b1", 999000, 999000, is_correct=True, data_source="butterflies.zip")
+    log_attempt(user_conn, "occ_b2", 999000, 999000, is_correct=True, data_source="butterflies.zip")
+    log_attempt(user_conn, "occ_b3", 999000, 999000, is_correct=True, data_source="butterflies.zip")
+
+    # Query plants.zip
+    stats_plants = get_global_stats(user_conn, app_conn, data_source="plants.zip")
+    assert stats_plants["total_attempts"] == 2
+    assert stats_plants["unassisted_correct"] == 1
+
+    # Query butterflies.zip
+    stats_butterflies = get_global_stats(user_conn, app_conn, data_source="butterflies.zip")
+    assert stats_butterflies["total_attempts"] == 3
+    assert stats_butterflies["unassisted_correct"] == 3
+
+    # Dataset coverage isolation
+    cov_p = get_dataset_coverage(user_conn, app_conn, data_source="plants.zip")
+    assert cov_p["encountered_species"] == 1
+
+    # Confusion matrix isolation
+    conf_p = get_confusion_matrix(user_conn, app_conn, data_source="plants.zip")
+    assert len(conf_p) == 1
+    conf_b = get_confusion_matrix(user_conn, app_conn, data_source="butterflies.zip")
+    assert len(conf_b) == 0
+
+
+def test_bayesian_accuracy_ranking(setup_engine_dbs) -> None:
+    """Verify that rank mastery orders by Bayesian accuracy score under 50% prior."""
+    app_conn, user_conn = setup_engine_dbs
+    from taxo_trainer.engine.analytics import get_rank_mastery_stats, log_attempt
+
+    # Add Family A (Pinaceae): 1 attempt, 1 correct (Raw 100%, Bayes (1+1)/(1+2) = 2/3 = 66.7%)
+    # Add Family B (Fagaceae): 10 attempts, 9 correct (Raw 90%, Bayes (9+1)/(10+2) = 10/12 = 83.3%)
+    app_conn.execute("""
+        INSERT OR REPLACE INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, occurrence_count)
+        VALUES (101, 'Pinus sylvestris', 'Pinus sylvestris', 'Pinus sylvestris', 'SPECIES', 'Pinaceae', 'Pinus', 50);
+    """)
+    app_conn.commit()
+
+    # Log 1 attempt for Pinaceae
+    log_attempt(user_conn, "occ_pin1", 101, 101, is_correct=True, data_source="trees")
+
+    # Log 10 attempts for Fagaceae (9 correct, 1 wrong)
+    for i in range(9):
+        log_attempt(user_conn, f"occ_fag_{i}", 2435140, 2435140, is_correct=True, data_source="trees")
+    log_attempt(user_conn, "occ_fag_9", 2435140, 2865545, is_correct=False, data_source="trees")
+
+    best, _worst = get_rank_mastery_stats(user_conn, app_conn, rank_level="FAMILY", data_source="trees")
+
+    # Fagaceae (83.3% Bayes) ranks HIGHER for Top Mastered than Pinaceae (66.7% Bayes)
+    assert best[0].taxon_name == "Fagaceae"
+    assert best[1].taxon_name == "Pinaceae"
+
+
+
+def test_multi_rank_mastery_stats(setup_engine_dbs) -> None:
+    """Verify mastery stats calculation at Order, Family, Genus, and Species levels."""
+    app_conn, user_conn = setup_engine_dbs
+    from taxo_trainer.engine.analytics import get_rank_mastery_stats, log_attempt
+
+    # Set order_name for test taxa
+    app_conn.execute("UPDATE taxa SET order_name = 'Fagales' WHERE family = 'Fagaceae';")
+    app_conn.commit()
+
+    log_attempt(user_conn, "occ_m1", 2435140, 2435140, is_correct=True, data_source="test_ds")
+    log_attempt(user_conn, "occ_m2", 2865545, 2865545, is_correct=True, data_source="test_ds")
+
+    best_orders, _ = get_rank_mastery_stats(user_conn, app_conn, rank_level="ORDER", data_source="test_ds")
+    assert len(best_orders) == 1
+    assert best_orders[0].taxon_name == "Fagales"
+
+    best_genera, _ = get_rank_mastery_stats(user_conn, app_conn, rank_level="GENUS", data_source="test_ds")
+    genus_names = {g.taxon_name for g in best_genera}
+    assert "Quercus" in genus_names
+    assert "Fagus" in genus_names
+
+    best_species, _ = get_rank_mastery_stats(user_conn, app_conn, rank_level="SPECIES", data_source="test_ds")
+    sp_names = {s.taxon_name for s in best_species}
+    assert "Quercus robur" in sp_names
+    assert "Fagus sylvatica" in sp_names
+
+
+def test_accuracy_over_time_ema(setup_engine_dbs) -> None:
+    """Verify EMA accuracy over time computation."""
+    app_conn, user_conn = setup_engine_dbs
+    from taxo_trainer.engine.analytics import get_accuracy_over_time, log_attempt
+
+    # Log 3 attempts: correct, incorrect, correct
+    log_attempt(user_conn, "o1", 2435140, 2435140, is_correct=True, data_source="ema_ds")
+    log_attempt(user_conn, "o2", 2435140, 2865545, is_correct=False, data_source="ema_ds")
+    log_attempt(user_conn, "o3", 2435140, 2435140, is_correct=True, data_source="ema_ds")
+
+    points = get_accuracy_over_time(user_conn, app_conn, data_source="ema_ds", window_size=15)
+    assert len(points) == 3
+    assert points[0].attempt_num == 1
+    assert points[0].raw_correct is True
+    # Alpha = 2 / 16 = 0.125
+    # Pt 1: EMA initialized at x_1 = 100.0
+    # Pt 2: EMA = 0.125 * 0 + 0.875 * 100.0 = 87.5
+    # Pt 3: EMA = 0.125 * 100 + 0.875 * 87.5 = 12.5 + 76.5625 = 89.1
+    assert points[0].ema_accuracy == 100.0
+    assert points[1].ema_accuracy == 87.5
+    assert points[2].ema_accuracy == 89.1
+
+

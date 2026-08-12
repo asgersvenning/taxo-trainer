@@ -40,14 +40,38 @@ def test_init_user_db_in_memory():
     tables = {row["name"] for row in cursor.fetchall()}
 
     assert "user_progress" in tables
+    assert "user_streak" in tables
 
     cursor.execute("PRAGMA table_info(user_progress);")
     columns = {row["name"] for row in cursor.fetchall()}
     expected_cols = {
         "attempt_id", "occurrence_id", "target_taxon_key",
-        "guessed_taxon_key", "is_correct", "used_hint", "attempt_timestamp"
+        "guessed_taxon_key", "is_correct", "used_hint", "attempt_timestamp", "data_source"
     }
     assert expected_cols.issubset(columns)
+
+
+def test_user_streak_data_source():
+    """Test per-data-source user streak storage and retrieval."""
+    from taxo_trainer.db import get_user_streak, set_user_streak
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_user_db(conn)
+
+    # Initially 0 for both data sources
+    assert get_user_streak(conn, data_source="plants.zip") == (0, 0)
+    assert get_user_streak(conn, data_source="insects.zip") == (0, 0)
+
+    # Set streak for plants.zip
+    set_user_streak(5, 10, conn, data_source="plants.zip")
+    assert get_user_streak(conn, data_source="plants.zip") == (5, 10)
+    assert get_user_streak(conn, data_source="insects.zip") == (0, 0)
+
+    # Set streak for insects.zip
+    set_user_streak(2, 3, conn, data_source="insects.zip")
+    assert get_user_streak(conn, data_source="plants.zip") == (5, 10)
+    assert get_user_streak(conn, data_source="insects.zip") == (2, 3)
 
 
 def test_prune_gbif_cache():
@@ -80,3 +104,4 @@ def test_prune_gbif_cache():
     remaining = conn.execute("SELECT taxon_key FROM gbif_api_cache").fetchall()
     keys = [r["taxon_key"] for r in remaining]
     assert keys == ["new_key"]
+
