@@ -537,8 +537,9 @@ def render_settings_view(
                 "text-lg font-bold text-yellow-300 mb-2"
             )
             ui.label(
-                "Query GBIF Species API (api.gbif.org) to auto-fill missing Danish & English vernacular names with 1-week persistent disk caching.\nOBS: Reload page after running this step."
+                "Query the GBIF Species API (api.gbif.org) to fetch missing Danish and English vernacular names for taxa and higher taxonomic ranks (Genera & Families) with persistent disk caching."
             ).classes("text-xs text-gray-400 mb-4")
+
 
             saved_enrich_status = get_app_metadata("gbif_enrichment_status", "", conn=app_conn)
 
