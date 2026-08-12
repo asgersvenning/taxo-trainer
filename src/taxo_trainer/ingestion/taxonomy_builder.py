@@ -558,15 +558,19 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
             r_name, r_level = target
             t_cache = get_thread_cache_conn()
 
-            match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(r_name)}"
+            match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(r_name)}&rank={urllib.parse.quote(r_level)}"
             mdata = fetch_gbif_raw_api(match_url, t_cache)
 
             if mdata:
                 gbif_key = None
                 if r_level == "GENUS":
-                    gbif_key = mdata.get("genusKey") or mdata.get("usageKey")
+                    gbif_key = mdata.get("genusKey")
+                    if not gbif_key and (mdata.get("rank") or "").upper() == "GENUS":
+                        gbif_key = mdata.get("usageKey")
                 elif r_level == "FAMILY":
-                    gbif_key = mdata.get("familyKey") or mdata.get("usageKey")
+                    gbif_key = mdata.get("familyKey")
+                    if not gbif_key and (mdata.get("rank") or "").upper() == "FAMILY":
+                        gbif_key = mdata.get("usageKey")
                 else:
                     gbif_key = mdata.get("usageKey") or mdata.get("speciesKey")
 
@@ -581,6 +585,21 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
                             if not vname or not vname.strip():
                                 continue
                             vname = vname.strip()
+
+                            # Reject family suffixes for Genus and genus suffixes for Family
+                            v_lower = vname.lower()
+                            if r_level == "GENUS" and (
+                                v_lower.endswith(("familien", "familie", "family", "families"))
+                                or "familien" in v_lower
+                                or "family" in v_lower
+                            ):
+                                continue
+                            if r_level == "FAMILY" and (
+                                v_lower.endswith(("slægten", "slægt", "genus"))
+                                or "slægten" in v_lower
+                            ):
+                                continue
+
                             code = LANG_MAP.get(raw_lang)
                             if code:
                                 by_lang.setdefault(code, [])
@@ -603,6 +622,8 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
         existing_rows = conn.execute(
             "SELECT rank_name FROM higher_ranks WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
         ).fetchall()
+
+
         existing_names = {r["rank_name"] for r in existing_rows}
         pending_targets = [t for t in targets if t[0] not in existing_names]
 

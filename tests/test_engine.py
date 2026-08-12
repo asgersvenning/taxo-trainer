@@ -348,6 +348,32 @@ def test_get_display_name_vernacular_fallback_non_english():
     assert disp_en == "Mustard"
 
 
+def test_higher_ranks_genus_does_not_receive_family_vernacular(setup_engine_dbs):
+    """Test that genus entries in higher_ranks do not accidentally pick up family names."""
+    app_conn, _ = setup_engine_dbs
+
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Brassicaceae', 'FAMILY', 'Korsblomstfamilien');
+    """)
+    app_conn.execute("""
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
+        VALUES ('Microthlaspi', 'GENUS', NULL);
+    """)
+    app_conn.execute("""
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, occurrence_count)
+        VALUES (66666, 'Microthlaspi perfoliatum', 'Microthlaspi perfoliatum (L.) F.K.Mey.', 'Microthlaspi perfoliatum (L.) F.K.Mey.', 'SPECIES', 'Brassicaceae', 'Microthlaspi', 5);
+    """)
+    app_conn.commit()
+
+    # Querying Microthlaspi should NOT return Korsblomstfamilien for Microthlaspi genus
+    res = autocomplete_taxa(app_conn, "Microthlaspi", lang="da")
+    for m in res:
+        if m["rank"] == "GENUS" and m["canonical_name"] == "Microthlaspi":
+            assert "Korsblomstfamilien" not in m["label"]
+
+
+
 def test_autocomplete_sennep_ordering_and_vernacular(setup_engine_dbs):
     """Test autocomplete search for 'sennep' with word-prefix ranking and Danish display fallbacks."""
     app_conn, _ = setup_engine_dbs

@@ -85,7 +85,9 @@ def get_gbif_cache_connection() -> sqlite3.Connection:
         cols = [r["name"] for r in cursor.fetchall()]
         if "taxon_key" in cols and "url" not in cols:
             try:
-                conn.execute("ALTER TABLE gbif_api_cache RENAME COLUMN taxon_key TO url;")
+                conn.execute(
+                    "ALTER TABLE gbif_api_cache RENAME COLUMN taxon_key TO url;"
+                )
             except sqlite3.OperationalError:
                 pass
     return conn
@@ -235,7 +237,6 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
             except sqlite3.OperationalError:
                 pass
 
-
             conn.executescript("""
                 CREATE INDEX IF NOT EXISTS idx_occ_sampling ON occurrences(taxon_key, month);
                 CREATE INDEX IF NOT EXISTS idx_occ_taxon_key ON occurrences(taxon_key);
@@ -246,7 +247,9 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
             conn.close()
 
 
-def get_app_metadata(key: str, default: str = "", conn: sqlite3.Connection | None = None) -> str:
+def get_app_metadata(
+    key: str, default: str = "", conn: sqlite3.Connection | None = None
+) -> str:
     """Retrieve metadata value from app_data.db app_metadata table.
 
     Args:
@@ -279,7 +282,9 @@ def get_app_metadata(key: str, default: str = "", conn: sqlite3.Connection | Non
             conn.close()
 
 
-def set_app_metadata(key: str, val: str, conn: sqlite3.Connection | None = None) -> None:
+def set_app_metadata(
+    key: str, val: str, conn: sqlite3.Connection | None = None
+) -> None:
     """Set metadata key/val pair in app_data.db app_metadata table.
 
     Args:
@@ -308,8 +313,6 @@ def set_app_metadata(key: str, val: str, conn: sqlite3.Connection | None = None)
             conn.close()
 
 
-
-
 def get_active_data_source(conn: sqlite3.Connection | None = None) -> str:
     """Retrieve active data source path/identifier string from app_data.db.
 
@@ -331,7 +334,6 @@ def get_active_data_source(conn: sqlite3.Connection | None = None) -> str:
     finally:
         if should_close:
             conn.close()
-
 
 
 def init_user_db(conn: sqlite3.Connection | None = None) -> None:
@@ -368,8 +370,9 @@ def init_user_db(conn: sqlite3.Connection | None = None) -> None:
             except sqlite3.OperationalError:
                 pass
 
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_progress_ds ON user_progress(data_source);")
-
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_progress_ds ON user_progress(data_source);"
+            )
 
             # Migrate legacy user_streak table if needed
             cursor = conn.execute("PRAGMA table_info(user_streak);")
@@ -470,4 +473,3 @@ def init_databases() -> None:
     """Initialize both app_data.db and user_data.db schemas."""
     init_app_db()
     init_user_db()
-
