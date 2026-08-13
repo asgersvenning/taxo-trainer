@@ -4,7 +4,7 @@ Launches local NiceGUI desktop application with reactive tabbed navigation.
 Run via: uv run python -m taxo_trainer.app
 """
 
-from nicegui import ui
+from nicegui import app, ui
 
 from taxo_trainer.db import (
     get_app_metadata,
@@ -13,8 +13,11 @@ from taxo_trainer.db import (
     set_app_metadata,
 )
 from taxo_trainer.ui.dashboard_view import render_dashboard_view
+from taxo_trainer.ui.guides_view import GuidesViewState, render_guides_view
 from taxo_trainer.ui.quiz_view import QuizViewState, render_quiz_view
 from taxo_trainer.ui.settings_view import render_settings_view
+
+app.add_static_files("/assets", "assets")
 
 
 @ui.page("/")
@@ -22,6 +25,7 @@ def index_page() -> None:
     """Render main application page layout."""
     init_databases()
     quiz_state = QuizViewState()
+    guides_state = GuidesViewState()
 
     # Dark mode configuration (defaults to system preference "auto")
     app_conn = get_db_connection()
@@ -39,6 +43,11 @@ def index_page() -> None:
     ui.add_head_html("""<style>
 /* Reset NiceGUI default content padding */
 .nicegui-content { padding: 0 !important; margin: 0 !important; }
+
+/* Quasar q-img helper for object-contain */
+.q-img.object-contain .q-img__image {
+  object-fit: contain !important;
+}
 
 /* Base layout reset: zero margins edge-to-edge */
 html, body, .q-layout, .q-page-container, .q-page {
@@ -240,7 +249,16 @@ body.body--light .q-table--dark tbody tr:hover {
             with ui.tabs(value=saved_tab).classes("text-white").props("inline-label") as tabs:
                 ui.tab("quiz", label="Quiz", icon="quiz")
                 ui.tab("dashboard", label="Dashboard", icon="insights")
+                ui.tab("guides", label="Guides", icon="menu_book")
                 ui.tab("settings", label="Settings & Data", icon="settings")
+
+            def navigate_to_tab(tab_name: str, guide_id: str | None = None) -> None:
+                tabs.value = tab_name
+                if guide_id:
+                    guides_state.select_guide(guide_id)
+                conn = get_db_connection()
+                set_app_metadata("active_tab", tab_name, conn=conn)
+                conn.close()
 
             def on_tab_change(e) -> None:
                 if e.value:
@@ -257,10 +275,13 @@ body.body--light .q-table--dark tbody tr:hover {
             with ui.tab_panel("quiz").classes(
                 "w-full h-full p-0 flex flex-col overflow-hidden flex-1 min-h-0"
             ):
-                render_quiz_view(state=quiz_state)
+                render_quiz_view(state=quiz_state, on_navigate_tab=navigate_to_tab)
 
             with ui.tab_panel("dashboard").classes("w-full h-full p-4 overflow-y-auto"):
                 render_dashboard_view()
+
+            with ui.tab_panel("guides").classes("w-full h-full p-4 overflow-y-auto"):
+                render_guides_view(state=guides_state, on_navigate_tab=navigate_to_tab)
 
             with ui.tab_panel("settings").classes(
                 "w-full h-full p-4 overflow-y-auto"

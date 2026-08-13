@@ -41,6 +41,14 @@ _**Note**: `taxo-trainer` is built around a "bring-your-own" data model, so if y
 - **GBIF Vernacular Name Enrichment**: Multithreaded lookup against the GBIF Species API to auto-fill missing vernacular names for taxa, genera, and families with disk caching.
 - **Taxa Filtering**: Restrict training sessions to target families, genera, or species, or exclude non-native taxa.
 
+### Interactive In-App Guides & Onboarding
+- **Data-Driven Interactive Guides**: Built-in structured visual guides with annotated screenshots, step descriptions, and forward/backward navigation for initial dataset setup, custom GBIF dataset creation, and page walkthroughs (Quiz, Dashboard, Settings).
+- **First-Time Setup Assistance**: Automatically detects uninitialized database states on fresh clones and guides users seamlessly through initial dataset ingestion and vernacular name enrichment.
+- **Keyboard-Driven Guide Navigation**:
+  - `Right Arrow` or `d`: Advance to next step
+  - `Left Arrow` or `a`: Return to previous step
+  - `Esc`: Return to guide menu catalog from any step
+
 ---
 
 ## Installation

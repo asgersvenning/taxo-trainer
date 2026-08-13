@@ -59,7 +59,10 @@ class QuizViewState:
         self.is_incorrect: bool = False
 
 
-def render_quiz_view(state: QuizViewState) -> None:
+def render_quiz_view(
+    state: QuizViewState,
+    on_navigate_tab: callable | None = None,
+) -> None:
     """Render core quiz identification view.
 
     Layout structure:
@@ -68,6 +71,7 @@ def render_quiz_view(state: QuizViewState) -> None:
 
     Args:
         state: Per-client QuizViewState instance.
+        on_navigate_tab: Optional callback to switch main app tab or open guide.
     """
     app_conn = get_db_connection(APP_DB_PATH)
     user_conn = get_db_connection(USER_DB_PATH)
@@ -115,7 +119,6 @@ def render_quiz_view(state: QuizViewState) -> None:
 
         state.streak_initialized = True
 
-
     def load_new_question() -> None:
         """Sample next target observation question and refresh UI."""
         if state.is_incorrect and not state.solved:
@@ -158,7 +161,10 @@ def render_quiz_view(state: QuizViewState) -> None:
                 state.current_streak += 1
                 state.best_streak = max(state.best_streak, state.current_streak)
                 set_user_streak(
-                    state.current_streak, state.best_streak, user_conn, data_source=active_ds
+                    state.current_streak,
+                    state.best_streak,
+                    user_conn,
+                    data_source=active_ds,
                 )
 
             state.matched_genus = state.current_question.genus
@@ -481,12 +487,47 @@ def render_quiz_view(state: QuizViewState) -> None:
         main_container.clear()
         with main_container:
             if not state.current_question:
-                ui.label(
-                    "No observations available matching active dataset/filters."
-                ).classes("text-xl text-yellow-400 text-center py-12")
-                ui.button(
-                    "Load Observation", on_click=load_new_question, color="primary"
-                ).classes("mx-auto")
+                with (
+                    ui.column().classes(
+                        "w-full h-full items-center justify-center p-6 max-w-3xl mx-auto text-center my-auto"
+                    ),
+                    ui.card().classes(
+                        "w-full p-8 bg-gradient-to-br from-gray-900 via-slate-900 to-gray-950 border border-blue-800/80 rounded-2xl shadow-2xl space-y-6 items-center"
+                    ),
+                ):
+                    ui.icon("nature_people", size="xl").classes("text-green-400")
+                    ui.label("Welcome to Taxo-Trainer! 🌿").classes(
+                        "text-3xl font-extrabold text-white tracking-tight"
+                    )
+                    ui.label(
+                        "No species observation dataset is currently loaded in your database."
+                    ).classes("text-base text-gray-300 font-medium")
+                    ui.label(
+                        "Taxo-Trainer requires species observation data from GBIF DarwinCore archives to generate identification flashcards. Get started quickly by following the initial setup guide!"
+                    ).classes("text-sm text-gray-400 max-w-xl leading-relaxed")
+
+                    with ui.row().classes("gap-4 pt-4 justify-center items-center"):
+                        if on_navigate_tab:
+                            ui.button(
+                                "📖 Start Initial Setup Guide",
+                                color="amber-600",
+                                on_click=lambda: on_navigate_tab(
+                                    "guides", "initial_dataset_setup"
+                                ),
+                            ).classes("font-bold text-sm px-6 py-2 shadow-lg")
+                            ui.button(
+                                "⚙️ Go to Settings & Data",
+                                color="primary",
+                                on_click=lambda: on_navigate_tab("settings"),
+                            ).classes(
+                                "font-bold text-sm px-6 py-2 border border-blue-600/50"
+                            )
+                        else:
+                            ui.button(
+                                "Load Observation",
+                                on_click=load_new_question,
+                                color="primary",
+                            ).classes("font-bold text-sm px-6 py-2")
                 return
 
             # Main split container: 75% Image Display (I) | 25% User Interface (U)
