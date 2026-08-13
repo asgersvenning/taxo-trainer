@@ -1,0 +1,63 @@
+{
+  "id": "adding_custom_datasets",
+  "title": "Adding Custom GBIF Datasets",
+  "description": "Guide on how to export, configure, and ingest custom DarwinCore occurrence datasets directly from GBIF.org.",
+  "category": "Data Management",
+  "icon": "add_chart",
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "Navigate to GBIF Occurrences Search",
+      "description": "Open GBIF.org in your web browser, navigate to the desired dataset search, and click 'Occurrences' in the top main navigation menu.",
+      "image_filename": "step1_gbif_occurrences.webp"
+    },
+    {
+      "step_number": 2,
+      "title": "Filter Target Area and Taxa",
+      "description": "Apply filters for your target geographic region, seasonality, or taxonomic groups. Keeping dataset size under 1,000,000 observations is recommended for desktop performance.",
+      "image_filename": "step2_filter_taxa_region.webp"
+    },
+    {
+      "step_number": 3,
+      "title": "Select DarwinCore Archive Download",
+      "description": "Select the 'Download' tab, choose 'DarwinCore Archive', and click 'Configure' to open archive export options.",
+      "image_filename": "step3_download_archive.webp"
+    },
+    {
+      "step_number": 4,
+      "title": "Locate Multimedia Extension",
+      "description": "In the archive configuration panel, scroll down to locate the 'Format' section and the 'Multimedia' extension list.",
+      "image_filename": "step4_multimedia_extension.webp"
+    },
+    {
+      "step_number": 5,
+      "title": "Enable Multimedia Extension",
+      "description": "Select the 'Multimedia' extension checkbox (required for field photo URLs) and click 'Continue to Terms'.",
+      "image_filename": "step5_enable_multimedia.webp"
+    },
+    {
+      "step_number": 6,
+      "title": "Acknowledge Terms & Create Download",
+      "description": "Review the GBIF Data License terms (CC BY 4.0), check the agreement box, and click 'Create Download'. GBIF will prepare the export archive.",
+      "image_filename": "step6_create_download.webp"
+    },
+    {
+      "step_number": 7,
+      "title": "Copy Archive Download Link",
+      "description": "Once the export is ready, right-click the 'Download archive' button and select 'Copy link address' to copy the direct ZIP download URL to your clipboard.",
+      "image_filename": "step7_copy_archive_link.webp"
+    },
+    {
+      "step_number": 8,
+      "title": "Clear Current Data Source (Optional)",
+      "description": "In Taxo-Trainer, open 'Settings & Data' tab. If replacing an existing dataset, click 'Clear current data source' to purge previous records.",
+      "image_filename": "step8_clear_data_source.webp"
+    },
+    {
+      "step_number": 9,
+      "title": "Import Archive & Enrich Names",
+      "description": "Paste the copied ZIP URL into the DwC Ingestion input box and click 'Start Ingestion'. Afterward, click 'Fetch Danish Names from GBIF API' to enrich common names.",
+      "image_filename": "step9_import_enrich.webp"
+    }
+  ]
+}

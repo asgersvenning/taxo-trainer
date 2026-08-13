@@ -1,0 +1,39 @@
+{
+  "id": "dashboard_page_walkthrough",
+  "title": "Analytics & Mastery Dashboard",
+  "description": "Walkthrough of the analytics dashboard, performance metrics, family mastery breakdowns, and confusion matrix.",
+  "category": "Page Walkthroughs",
+  "icon": "insights",
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "Core Mastery & Accuracy Metrics",
+      "description": "View overall training performance statistics: Total Attempts, Unassisted Accuracy percentage, Active/Best Streaks, and Mastered Species count (≥90% accuracy over ≥5 attempts).",
+      "image_filename": "step1_mastery_accuracy.webp"
+    },
+    {
+      "step_number": 2,
+      "title": "Time-Range Metrics Filtering",
+      "description": "Filter accuracy metrics across specific time frames: 1 Hour, 24 Hours, 7 Days, 30 Days, 1 Year, or All Time to monitor your learning curve over time.",
+      "image_filename": "step2_time_range_filter.webp"
+    },
+    {
+      "step_number": 3,
+      "title": "Accuracy over time",
+      "description": "Track your accuracy over time with the EMA (Exponential Moving Average) accuracy line. You can adjust the time-window displayed in the graph at the bottom and change the number of items used in the EMA average.",
+      "image_filename": "step3_accuracy_over_time.webp"
+    },
+    {
+      "step_number": 4,
+      "title": "Taxa Mastery & Trouble Taxa",
+      "description": "Identify taxa where your identification accuracy is highest and lowest, which can be helpful when choosing what to practice next. You can change both the taxonomic level which is displayed and how many taxa are shown.",
+      "image_filename": "step4_taxa_mastery_trouble.webp"
+    },
+    {
+      "step_number": 5,
+      "title": "Taxonomic Confusion Matrix",
+      "description": "Inspect pairwise misidentification logs (e.g. mistaking Cirsium palustre for Cirsium vulgare) to identify common visual lookalike pairs and target weak points.",
+      "image_filename": "step5_confusion_matrix.webp"
+    }
+  ]
+}

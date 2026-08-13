@@ -1,0 +1,45 @@
+{
+  "id": "initial_dataset_setup",
+  "title": "Initial Default Dataset Setup",
+  "description": "Step-by-step walkthrough for configuring and ingesting the default species dataset on a fresh clone.",
+  "category": "Setup & Onboarding",
+  "icon": "rocket_launch",
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "Welcome & Database Status",
+      "description": "When first launching Taxo-Trainer on a fresh clone, no observation dataset is loaded yet. Taxo-Trainer relies on GBIF DarwinCore occurrence archives to present real-world visual identification questions.",
+      "image_filename": "step1_welcome.webp"
+    },
+    {
+      "step_number": 2,
+      "title": "Navigate to Settings & Data",
+      "description": "Locate the top navigation header bar and click on the 'Settings & Data' tab (gear icon). This tab contains all dataset management and ingestion tools.",
+      "image_filename": "step2_navigate_settings.webp"
+    },
+    {
+      "step_number": 3,
+      "title": "Ingest Default DarwinCore Dataset",
+      "description": "In the 'DarwinCore (DwC) Occurrence Ingestion' card, the default curated Nordic flora dataset download URL is pre-filled. Click 'Start Ingestion' (or 'Re-Ingest Dataset') to stream occurrence records directly into local SQLite database (app_data.db).",
+      "image_filename": "step3_ingest_dataset.webp"
+    },
+    {
+      "step_number": 4,
+      "title": "Fetch Vernacular Name Enrichment",
+      "description": "Once ingestion completes, scroll down to the 'GBIF Vernacular Name Enrichment' card and click 'Fetch Vernacular Names from GBIF API'. This populates Danish and English common names for all species and genera.",
+      "image_filename": "step4_fetch_vernacular.webp"
+    },
+    {
+      "step_number": 5,
+      "title": "Ready to Practice!",
+      "description": "Switch back to the 'Quiz' tab.",
+      "image_filename": "step5_quiz_tab.webp"
+    },
+    {
+      "step_number": 6,
+      "title": "Practice with High-Resolution Photos",
+      "description": "Practice multi-rank taxonomic identification using high-resolution observation photos.",
+      "image_filename": "step6_practice_identification.webp"
+    }
+  ]
+}

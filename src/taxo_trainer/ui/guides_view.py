@@ -6,7 +6,7 @@ and keyboard bindings (Arrow keys, A/D, Esc).
 
 from nicegui import ui
 
-from taxo_trainer.ui.guides_data import (
+from taxo_trainer.engine.guides import (
     GUIDE_REGISTRY,
     Guide,
     get_guide_by_id,

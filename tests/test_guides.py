@@ -2,7 +2,7 @@
 
 import os
 
-from taxo_trainer.ui.guides_data import (
+from taxo_trainer.engine.guides import (
     GUIDE_REGISTRY,
     Guide,
     GuideStep,
