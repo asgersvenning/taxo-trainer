@@ -8,6 +8,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from taxo_trainer.resources import get_resource_path
+
 
 @dataclass
 class GuideStep:
@@ -90,7 +92,7 @@ def load_guide_from_directory(guide_dir: Path) -> Guide | None:
         return None
 
 
-def load_all_guides(base_dir: str = "assets/guides") -> list[Guide]:
+def load_all_guides(base_dir: str | Path | None = None) -> list[Guide]:
     """Scan base_dir for guide subdirectories and dynamically load all valid guides.
 
     Args:
@@ -99,7 +101,11 @@ def load_all_guides(base_dir: str = "assets/guides") -> list[Guide]:
     Returns:
         Ordered list of Guide objects.
     """
-    base_path = Path(base_dir)
+    if base_dir is None:
+        base_path = get_resource_path("assets/guides")
+    else:
+        base_path = Path(base_dir)
+
     if not base_path.exists():
         return []
 
