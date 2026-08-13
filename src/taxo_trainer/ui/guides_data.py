@@ -182,8 +182,8 @@ QUIZ_PAGE_WALKTHROUGH_GUIDE = Guide(
             step_number=2,
             title="Interactive Multi-Word Autocomplete",
             description=(
-                'Select the "Idenity Taxon" input field either by clicking it or '
-                "pressing ESC (ESC again to deselct). Type species, genus, or family names in "
+                'Select the "Identify Taxon" input field either by clicking it or '
+                "pressing ESC (ESC again to deselect). Type taxa names (e.g. species, genus, or family) in "
                 "scientific or vernacular languages (Danish/English). Autocomplete matches "
                 "space-separated prefix tokens (e.g. 'alm fred' matches 'Almindelig Fredløs')."
             ),
@@ -211,13 +211,13 @@ QUIZ_PAGE_WALKTHROUGH_GUIDE = Guide(
             description=(
                 "Track your current unassisted identification streak (🔥) and personal best record (🏆). "
                 "The streak is broken only when you go to the next observation while the taxonomic "
-                "breakdown contains an incorrect taxa, for convenience this means that subsequent guesses "
+                "breakdown contains an incorrect taxon. For convenience this means that subsequent guesses "
                 "can override an inconvenient guess. This feature is included mainly due to the "
                 "frustration that can be had when a guess is registered as wrong because of a number "
-                "invalid reasons including; incorrect taxon labels on GBIF (e.g. from incorrect "
-                "identifications in iNaturalist) or ambigous photos with multiple species. This also "
+                "of invalid reasons including: incorrect taxon labels on GBIF (e.g. from incorrect "
+                "identifications in iNaturalist) or ambiguous photos with multiple species. This also "
                 "means that you can simply choose to skip an image if you don't want to try and identify "
-                "it because the quality is poor, or the taxa is simply too exotic for you yet."
+                "it because the quality is poor, or the taxon is simply too exotic for you yet."
             ),
             image_path="assets/guides/quiz_step5.png",
         ),
@@ -226,8 +226,8 @@ QUIZ_PAGE_WALKTHROUGH_GUIDE = Guide(
             title="Next observation",
             description=(
                 'The next observation can be triggered by either clicking the "Next Observation" '
-                "button or pressing the Ctrl + Right Arrow key."
-                'Keep in mind that key-bindings only work when the "Identify Taxon" input field'
+                "button or pressing the Ctrl + Right Arrow key. "
+                'Keep in mind that key-bindings only work when the "Identify Taxon" input field '
                 "is deselected, which can be done by pressing the 'Esc' key."
             ),
             image_path="assets/guides/quiz_step6.png",

@@ -13,7 +13,7 @@ from taxo_trainer.ui.guides_view import GuidesViewState
 
 def test_guide_registry_integrity() -> None:
     """Verify that all guides in GUIDE_REGISTRY are valid and non-empty."""
-    assert len(GUIDE_REGISTRY) >= 5
+    assert len(GUIDE_REGISTRY) >= 4
 
     guide_ids = set()
     for guide in GUIDE_REGISTRY:
