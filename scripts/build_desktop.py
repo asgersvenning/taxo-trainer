@@ -16,10 +16,16 @@ DIST_DIR = ROOT_DIR / "dist" / "taxo-trainer"
 
 def build_desktop() -> None:
     """Compile Taxo-Trainer into directory bundle via PyInstaller."""
-    print("🚀 Starting Taxo-Trainer Desktop Compilation...")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):
+            pass
+
+    print("[START] Starting Taxo-Trainer Desktop Compilation...")
 
     if not SPEC_FILE.exists():
-        print(f"❌ Error: Spec file not found at {SPEC_FILE}")
+        print(f"[ERROR] Spec file not found at {SPEC_FILE}")
         sys.exit(1)
 
     cmd = [
@@ -35,14 +41,16 @@ def build_desktop() -> None:
     result = subprocess.run(cmd, cwd=str(ROOT_DIR), check=False)
 
     if result.returncode != 0:
-        print("❌ PyInstaller compilation failed!")
+        print("[ERROR] PyInstaller compilation failed!")
         sys.exit(result.returncode)
 
     if not DIST_DIR.exists():
-        print(f"❌ Error: Dist directory {DIST_DIR} was not created!")
+        print(f"[ERROR] Dist directory {DIST_DIR} was not created!")
         sys.exit(1)
 
-    print(f"✅ Taxo-Trainer desktop directory bundle created successfully at:\n   {DIST_DIR}")
+    print(
+        f"[SUCCESS] Taxo-Trainer desktop directory bundle created successfully at:\n   {DIST_DIR}"
+    )
 
 
 if __name__ == "__main__":
