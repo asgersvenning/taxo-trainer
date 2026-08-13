@@ -17,6 +17,28 @@ def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"))
 
 
+def is_native_gui_available() -> bool:
+    """Check if pywebview native GUI window framing dependencies (GTK/Qt/WinForms/Cocoa) are present.
+
+    Returns:
+        bool: True if GUI window bindings are installed, False otherwise.
+    """
+    try:
+        import webview  # noqa: F401
+
+        if sys.platform.startswith("linux"):
+            for mod in ("gi", "qtpy", "PyQt6", "PyQt5", "PySide6", "PySide2"):
+                try:
+                    __import__(mod)
+                    return True
+                except ImportError:
+                    continue
+            return False
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def get_resource_path(relative_path: str | Path = "") -> Path:
     """Resolve absolute path to a resource file or directory.
 

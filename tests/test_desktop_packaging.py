@@ -13,7 +13,13 @@ from taxo_trainer.db import (
     seed_initial_data,
 )
 from taxo_trainer.engine.guides import load_all_guides
-from taxo_trainer.resources import get_resource_path, is_frozen
+from taxo_trainer.resources import get_resource_path, is_frozen, is_native_gui_available
+
+
+def test_is_native_gui_available_check():
+    """Verify is_native_gui_available returns boolean without raising exceptions."""
+    result = is_native_gui_available()
+    assert isinstance(result, bool)
 
 
 def test_resource_path_interpreted_mode():

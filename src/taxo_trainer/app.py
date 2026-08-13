@@ -14,7 +14,7 @@ from taxo_trainer.db import (
     init_databases,
     set_app_metadata,
 )
-from taxo_trainer.resources import get_resource_path, is_frozen
+from taxo_trainer.resources import get_resource_path, is_frozen, is_native_gui_available
 from taxo_trainer.ui.dashboard_view import render_dashboard_view
 from taxo_trainer.ui.guides_view import GuidesViewState, render_guides_view
 from taxo_trainer.ui.quiz_view import QuizViewState, render_quiz_view
@@ -313,13 +313,25 @@ def main() -> None:
         action="store_true",
         help="Force launch in web browser mode",
     )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable auto-reloading development server",
+    )
     parser.add_argument("--host", default="127.0.0.1", help="Host IP address")
     parser.add_argument("--port", type=int, default=8080, help="Port number")
 
     args, _ = parser.parse_known_args()
 
-    use_native = (args.native or is_frozen()) and not args.browser
+    gui_available = is_native_gui_available()
+    use_native = (args.native or is_frozen()) and not args.browser and gui_available
     frozen_mode = is_frozen()
+
+    if args.native and not gui_available and not frozen_mode:
+        print(
+            "Native window framing requested, but native GUI extensions (GTK/Qt) "
+            "are not available on this system. Running in web browser mode..."
+        )
 
     if use_native:
         try:
@@ -331,7 +343,7 @@ def main() -> None:
                 window_size=(1280, 820),
                 fullscreen=False,
                 show=not frozen_mode,
-                reload=not frozen_mode,
+                reload=False,
             )
             return
         except Exception as err:  # noqa: BLE001
@@ -344,7 +356,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         show=True,
-        reload=not frozen_mode,
+        reload=args.reload,
     )
 
 
