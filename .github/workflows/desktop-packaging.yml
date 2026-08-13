@@ -10,6 +10,8 @@ jobs:
   build-desktop:
     name: Build Desktop Bundle & Installer (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     env:
       PYTHONIOENCODING: "utf-8"
     strategy:
@@ -57,7 +59,7 @@ jobs:
         shell: bash
         run: ${{ matrix.installer_cmd }}
 
-      - name: Upload Build Artifacts
+      - name: Upload Workflow Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
@@ -66,3 +68,12 @@ jobs:
             dist/*.dmg
             dist/*.tar.gz
             dist/taxo-trainer
+
+      - name: Publish Installers to GitHub Release Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.tar.gz

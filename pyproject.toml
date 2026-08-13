@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "taxo-trainer"
-version = "0.1.2"
+version = "0.1.3"
 description = "Modernized species & higher-rank taxonomy training engine powered by GBIF DarwinCore datasets."
 readme = "README.md"
 authors = [
