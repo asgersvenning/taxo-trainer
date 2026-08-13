@@ -51,7 +51,23 @@ _**Note**: `taxo-trainer` is built around a "bring-your-own" data model, so if y
 
 ---
 
-## Installation
+## Installation & Execution
+
+`Taxo-Trainer` can be run either as a standalone native desktop application or directly from source using Python.
+
+### Option A: Standalone Desktop Application (Recommended)
+
+Download the latest installer or executable bundle for your platform from the [GitHub Releases](https://github.com/asgersvenning/taxo-trainer/releases) page:
+
+- **Windows**: Download `TaxoTrainerSetup.exe` and run the setup wizard. It creates desktop and Start Menu shortcuts.
+- **macOS**: Download `TaxoTrainer-macOS.dmg`, open the disk image, and drag **Taxo-Trainer** into your `Applications` folder.
+- **Linux**: Download `TaxoTrainer-Linux-x64.tar.gz`, extract the archive, and run `./taxo-trainer`.
+
+*The packaged desktop application runs as a dedicated native window without requiring Python or an external browser.*
+
+---
+
+### Option B: Running from Source (Developers)
 
 Ensure you have [`uv`](https://docs.astral.sh/uv/) installed.
 
@@ -61,17 +77,34 @@ cd taxo-trainer
 uv sync
 ```
 
----
+#### Launching the Application
 
-## Running the Application
-
-Launch the application locally:
+Run directly using Python / `uv`:
 
 ```bash
+# Standard launch (launches in native desktop window if pywebview is present, or falls back to browser)
 uv run taxo-trainer
+
+# Force web browser mode
+uv run python main.py --browser
+
+# Force native desktop window mode
+uv run python main.py --native
 ```
 
-Open a web browser and navigate to `http://127.0.0.1:8080`.
+When running in browser mode, navigate to `http://127.0.0.1:8080`.
+
+---
+
+### Building the Desktop Executable Bundle Locally
+
+Developers can build the standalone directory-based executable bundle locally using PyInstaller:
+
+```bash
+uv run python scripts/build_desktop.py
+```
+
+The output executable directory will be created under `dist/taxo-trainer`.
 
 ---
 

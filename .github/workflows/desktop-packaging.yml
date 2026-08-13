@@ -1,0 +1,66 @@
+name: Native Desktop Packaging Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-desktop:
+    name: Build Desktop Bundle & Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: TaxoTrainer-Windows
+            installer_cmd: |
+              iscc installer/windows/setup.iss
+          - os: macos-latest
+            artifact_name: TaxoTrainer-macOS
+            installer_cmd: |
+              chmod +x installer/macos/create_dmg.sh
+              ./installer/macos/create_dmg.sh
+          - os: ubuntu-latest
+            artifact_name: TaxoTrainer-Linux
+            installer_cmd: |
+              tar -czvf dist/TaxoTrainer-Linux-x64.tar.gz -C dist taxo-trainer
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install uv Package Manager
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install Dependencies
+        run: uv sync
+
+      - name: Run Test Suite
+        run: uv run pytest
+
+      - name: Compile Desktop Directory Bundle (PyInstaller)
+        run: uv run python scripts/build_desktop.py
+
+      - name: Create Native Installer Artifacts
+        shell: bash
+        run: ${{ matrix.installer_cmd }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.tar.gz
+            dist/taxo-trainer

@@ -4,6 +4,8 @@ Launches local NiceGUI desktop application with reactive tabbed navigation.
 Run via: uv run python -m taxo_trainer.app
 """
 
+import argparse
+
 from nicegui import app, ui
 
 from taxo_trainer.db import (
@@ -12,12 +14,13 @@ from taxo_trainer.db import (
     init_databases,
     set_app_metadata,
 )
+from taxo_trainer.resources import get_resource_path, is_frozen, is_native_gui_available
 from taxo_trainer.ui.dashboard_view import render_dashboard_view
 from taxo_trainer.ui.guides_view import GuidesViewState, render_guides_view
 from taxo_trainer.ui.quiz_view import QuizViewState, render_quiz_view
 from taxo_trainer.ui.settings_view import render_settings_view
 
-app.add_static_files("/assets", "assets")
+app.add_static_files("/assets", str(get_resource_path("assets")))
 
 
 @ui.page("/")
@@ -295,14 +298,65 @@ body.body--light .q-table--dark tbody tr:hover {
 
 
 def main() -> None:
-    """Initialize application database schemas and start NiceGUI server."""
+    """Initialize application database schemas and start Taxo-Trainer."""
     init_databases()
+
+    parser = argparse.ArgumentParser(description="Taxo-Trainer Desktop Application")
+    parser.add_argument(
+        "--native",
+        action="store_true",
+        default=is_frozen(),
+        help="Force launch inside native window frame",
+    )
+    parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="Force launch in web browser mode",
+    )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable auto-reloading development server",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="Host IP address")
+    parser.add_argument("--port", type=int, default=8080, help="Port number")
+
+    args, _ = parser.parse_known_args()
+
+    gui_available = is_native_gui_available()
+    use_native = (args.native or is_frozen()) and not args.browser and gui_available
+    frozen_mode = is_frozen()
+
+    if args.native and not gui_available and not frozen_mode:
+        print(
+            "Native window framing requested, but native GUI extensions (GTK/Qt) "
+            "are not available on this system. Running in web browser mode..."
+        )
+
+    if use_native:
+        try:
+            ui.run(
+                title="Taxo-Trainer",
+                host=args.host,
+                port=args.port,
+                native=True,
+                window_size=(1280, 820),
+                fullscreen=False,
+                show=not frozen_mode,
+                reload=False,
+            )
+            return
+        except Exception as err:  # noqa: BLE001
+            print(
+                f"Native window framing unavailable ({err}); falling back to browser mode..."
+            )
+
     ui.run(
         title="Taxo-Trainer",
-        host="127.0.0.1",
-        port=8080,
-        show=False,
-        reload=False,
+        host=args.host,
+        port=args.port,
+        show=True,
+        reload=args.reload,
     )
 
 

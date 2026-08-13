@@ -4,24 +4,60 @@ Manages SQLite connections for app_data.db and user_data.db with WAL mode
 and explicit indexing for optimal high-performance sampling.
 """
 
+import shutil
 import sqlite3
 from pathlib import Path
 
-# Define default database paths relative to workspace root
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+import platformdirs
+
+from taxo_trainer.resources import get_resource_path
+
+
+def get_user_data_dir() -> Path:
+    """Return OS-compliant user application data directory for taxo-trainer."""
+    return Path(platformdirs.user_data_dir("taxo-trainer", appauthor=False))
+
+
+# Define default database paths within OS user application data directory
+DATA_DIR = get_user_data_dir()
 APP_DB_PATH = DATA_DIR / "app_data.db"
 USER_DB_PATH = DATA_DIR / "user_data.db"
 GBIF_CACHE_DB_PATH = DATA_DIR / "gbif_cache.db"
 
 
+def seed_initial_data(data_dir: Path) -> None:
+    """Seed initial database files and datasets from resource bundle if missing."""
+    resource_data_dir = get_resource_path("src/data")
+    if not resource_data_dir.exists():
+        resource_data_dir = get_resource_path("data")
+
+    if resource_data_dir.exists() and resource_data_dir.resolve() != data_dir.resolve():
+        for item_name in ("app_data.db", "gbif_cache.db", "user_data.db"):
+            src_item = resource_data_dir / item_name
+            target_item = data_dir / item_name
+            if src_item.exists() and not target_item.exists():
+                try:
+                    shutil.copy2(src_item, target_item)
+                except OSError as err:
+                    print(f"Warning: Failed to seed {item_name} into {data_dir}: {err}")
+
+        src_datasets = resource_data_dir / "datasets"
+        target_datasets = data_dir / "datasets"
+        if src_datasets.exists() and not target_datasets.exists():
+            try:
+                shutil.copytree(src_datasets, target_datasets)
+            except OSError as err:
+                print(f"Warning: Failed to seed datasets into {data_dir}: {err}")
+
+
 def ensure_data_dir() -> Path:
-    """Ensure the data directory exists.
+    """Ensure the OS user data directory exists and initial database files are seeded.
 
     Returns:
         Path: Absolute path to the data directory.
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    seed_initial_data(DATA_DIR)
     return DATA_DIR
 
 
