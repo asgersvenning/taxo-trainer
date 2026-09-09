@@ -9,6 +9,15 @@ navigation anchors; line numbers may change as work lands.
 
 ### Completed: README and onboarding refresh
 
+Follow-up after user review: restored the README's illustrated GBIF export sequence
+and explicit Configure / Multimedia / Continue to Terms instructions. Archive-format
+documentation did not establish that the website's illustrated workflow had changed;
+replacing these instructions with conditional prose was unjustified. The existing
+screenshots show an Extensions list, so the corresponding step now names it correctly.
+The quiz guide and README explicitly describe Escape toggling input focus in both
+directions. No keybindings changed. Five guide tests and whitespace checks passed;
+the logged-in GBIF download workflow was not exercised live.
+
 Implemented in `e5f815c`. README and setup/custom-dataset/quiz guides now describe
 the current Species Names controls, configurable vernacular language and scientific
 mode, cache reuse and rate-limit pauses, realistic naming gaps, import add/update
