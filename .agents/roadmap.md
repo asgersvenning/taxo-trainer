@@ -7,6 +7,72 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Current priorities: README contribution review
+
+Re-reviewed against `274123b` on 2026-09-09. This section supersedes the original
+ranking and execution sequence below; numbered items remain historical backlog
+references. The README's contribution list explicitly has no ordering. The
+priority recommendations here are judgments based on product value and the user's
+subsequent steering, not priorities attributed to that list.
+
+The original roadmap overemphasized internal reliability and underrepresented
+several explicitly welcomed contributions. The completed accounting, import, and
+lookup fixes are useful foundations, but finishing every remaining edge case is
+not a prerequisite for taxonomy, session usability, documentation, or styling work.
+The user has also deprioritized sparse filtered sampling, cross-dataset history
+edge cases, and speculative performance work. Optional usability feedback on the
+name card is not a prerequisite for further development.
+
+| README contribution request | Current implementation and roadmap fit | Revised treatment |
+| --- | --- | --- |
+| Taxonomic issue detection and resolution | Synonym consolidation and rank handling exist; item 7 buried correctness beneath request reliability. | Highest-value investigation: verify that matching preserves biological identity, useful observations, names, and progress. |
+| Better vernacular resolution | Multilingual lookup, scoring, cache recovery, and coverage feedback exist. Recent work mostly improved transport and presentation, not matching quality. | Prioritize correct taxon/rank association, retained language coverage, and accepted aliases; keep GBIF as authority. |
+| Cross-platform compatibility | Three-OS packaging workflow exists; ordinary CI is Ubuntu-only and packaging tests simulate resources. Item 8 covers this. | Concrete clean-install and native launch checks remain valuable; do not infer working installers from configuration. |
+| Performance | Candidate costs are recorded in item 6; no user-observed general slowdown. | Measure reported loading/name-resolution delays first, respecting cache reuse and API cooldowns. |
+| More test coverage | Recent regression work expanded backend and some production-action coverage. Item 5 covers remaining interactions. | Add tests alongside meaningful workflows, especially taxonomy and restart persistence; avoid coverage for its own sake. |
+| UI, app-state, and database consistency | Items 4–5 cover technical concerns but understate everyday settings consistency. | Prefer small fixes to shared preference handling over broad refactoring or migrations. |
+| Gamification and metrics | Streaks, mastery, trouble taxa, and confusion pairs already exist; initial roadmap mostly addressed accounting. | Retain as an eligible contribution area, with learning value and user-controlled outcomes ahead of extra rewards. README calls it secondary. |
+| State consistency across sessions | Language/theme/cutoff and some filters persist, but settings callbacks are inconsistent. | Explicit near-term target: settings should survive reopening consistently. |
+| Documentation and guides | Existing illustrated guides are substantial, but README and onboarding still reference old name-lookup labels and Danish/English-only wording. | Small, concrete follow-up: align instructions with the selected-language workflow; inspect screenshots before claiming they are current. |
+| Themes and styling | Light/dark/system modes exist; hardcoded dark styles are counteracted by a large light-mode override block in app.py. | Legitimate contribution area, not categorically deferred until all internals are fixed. Start with consistency/readability if pursued. |
+| Packaging and license | Build scripts and installers exist; no license file found. Item 8 bundles several separate concerns. | Split packaging verification from the owner's license choice; do not select a license incidentally. |
+
+Recommended next target: **taxonomy and vernacular correctness during name
+enrichment**, starting with a bounded set of regression cases rather than a new
+resolver or more status controls. Source inspection found:
+
+- `enrich_vernacular_names_from_gbif` gathers names from several returned keys
+  without explicit match-confidence/rank validation at that collection step.
+  Test species versus higher-rank matches and synonym relationships before
+  choosing changes to matching policy.
+- Its species update replaces `vernacular_json` wholesale whenever any names are
+  returned. A later response containing fewer languages can therefore discard
+  previously stored language entries; higher-rank updates already merge JSON.
+  Preserving languages absent from a later response is a focused first candidate.
+- The same lookup runs `consolidate_synonyms_with_gbif`, whose higher-rank branch
+  deletes the species and its observations. An uncertain name match can therefore
+  affect what remains available for practice. Synonym merges also warrant tests
+  for name aliases, occurrence counts, and historical taxon references. Do not
+  treat a higher-rank result as evidence that an observation is mislabeled.
+- Vernacular scoring contains Nordic source preferences and rank suffix rules,
+  including a Danish-specific acceptance threshold. Audit representative supported
+  languages; these heuristics are not by themselves proof of incorrect results.
+
+These are source-confirmed mechanisms and proposed regression targets, not newly
+reproduced failures against live GBIF data. Preserve the README's boundary: improve
+use of GBIF results rather than attempting to resolve disagreements among external
+taxonomic authorities. User-approved matching-policy changes should be explicit.
+
+Next alternatives are session preference consistency and guide refresh. For
+example, quiz initialization reads `sampling_mode`, but the settings mode callback
+only updates in-memory filters; two cutoff controls also differ in persistence.
+Reproduce the relevant restart flow before implementing a shared fix.
+
+Review validation: inspected README, rules/specification, roadmap, taxonomy and
+settings code, tests, resources, guides, and CI/packaging configuration. No live API,
+browser, installer, or performance validation was performed for this review.
+Documentation-only changes require path/link and whitespace checks, not a test run.
+
 ### Progress update: quiz accounting
 
 The user clarified that deliberate manual outcome overrides are appropriate for
@@ -141,8 +207,8 @@ Prioritize trustworthy training results, complete observation coverage, and
 recoverable dataset operations. These directly support the README's emphasis
 on a functional, fast, reliable application without unnecessary dependencies.
 The application already has substantial quiz, analytics, guide, and packaging
-functionality. Finish and protect those workflows before adding more themes,
-gamification, or new taxonomy infrastructure.
+functionality. Improve these workflows according to the current contribution
+review above; remaining internal fixes do not block other welcomed contributions.
 
 Keep NiceGUI, SQLite, NumPy, uv, and the existing two-stage sampling equations.
 The design specification remains authoritative. Do not change scoring policy,
@@ -172,7 +238,11 @@ workflows; this is not an exhaustive line-by-line audit.
   dataset performance benchmark was run. Passing tests do not establish those
   acceptance criteria.
 
-## Ranked work queue
+## Original ranked work queue and implementation evidence
+
+The current-priorities review above supersedes this ordering. Evidence in the
+original numbered descriptions describes the initial review; progress updates
+record fixes and their verification.
 
 Priority steering: the user has not experienced general performance problems and
 deprioritized the cross-dataset history edge case. Focus loading/name resolution
@@ -455,7 +525,7 @@ chosen Python/OS combinations pass; built artifacts start and retain progress
 after restart. README commands match those verified workflows. Record untested
 platforms explicitly rather than implying native compatibility from mocked tests.
 
-## Recommended execution sequence
+## Original execution sequence (superseded)
 
 Start with diagnostic-hint accounting and a production-action regression test.
 Follow with the independently reproducible 200-observation sampling fix, then
@@ -467,8 +537,10 @@ and expand interaction coverage as those paths change. Establish performance
 baselines before selecting optimizations. Runtime alignment is a small decision
 to settle early, while full distribution validation can follow the core fixes.
 
-Defer cosmetic themes, more gamification, new external services, broad framework
-refactors, and scoring-policy changes. New dependencies should have a concrete
+The initial blanket deferral of themes and gamification is superseded by the
+README contribution review above. New external services, broad framework
+refactors, and scoring-policy changes require a concrete purpose and scope.
+New dependencies should have a concrete
 demonstrated need. Each implemented target should include relevant regression
 tests, full-suite/Ruff results, and explicit remaining limitations.
 
