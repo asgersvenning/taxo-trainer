@@ -47,10 +47,18 @@ edits, moves, or deletions of agent documentation within `.agents/`.
 When a task changes both agent documentation and other files, stage explicit
 paths and create separate commits. Inspect the staged diff before each commit
 to verify the separation. Do not mix these categories when squashing commits.
-This convention governs commits when requested or otherwise authorized; it does
-not require creating a commit for every documentation edit.
+Commit completed changes at natural stable checkpoints without waiting for a
+separate request. Keep each commit focused, coherent, and reviewable, with the
+relevant verification completed and a message describing its purpose. Split
+independent changes into separate commits; do not commit unfinished intermediate
+states or unrelated user changes. Preserve the agent-documentation separation
+and `agent:` prefix above at every checkpoint.
 
 ## Project and current layout
+
+For prioritized development targets, review evidence, and acceptance criteria,
+see the [development roadmap](roadmap.md). It is a backlog, not a replacement
+for the current user task or the design specification.
 
 Taxo-Trainer is a local-first NiceGUI desktop/browser application for learning
 species identification from GBIF DarwinCore observations. It uses SQLite for
