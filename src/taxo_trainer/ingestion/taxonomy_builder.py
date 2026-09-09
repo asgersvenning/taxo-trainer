@@ -5,8 +5,12 @@ vernacular dictionary JSON files, and rebuilding database indices.
 """
 
 import json
+import logging
 import sqlite3
+import threading
+import time
 from collections.abc import Callable
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from taxo_trainer.db import (
@@ -253,11 +257,54 @@ def score_vernacular_item(item: dict, code: str) -> int:
     return score
 
 
+_GBIF_COOLDOWN_LOCK = threading.Lock()
+_GBIF_COOLDOWN_UNTIL = 0.0
+_LOGGER = logging.getLogger(__name__)
+
+
+class GBIFRequestError(RuntimeError):
+    """A lookup failed; this does not mean the taxon has no vernacular names."""
+
+
+def _decode_gbif_json(payload: str) -> dict:
+    """Decode the object/list structure consumed by GBIF enrichment.
+
+    Args:
+        payload: JSON text from a response or cache entry.
+    """
+    data = json.loads(payload)
+    if not isinstance(data, dict):
+        raise TypeError("Expected a GBIF JSON object")
+    if "results" in data and (
+        not isinstance(data["results"], list)
+        or any(not isinstance(item, dict) for item in data["results"])
+    ):
+        raise ValueError("Expected a list of GBIF result objects")
+    return data
+
+
+def _retry_after_seconds(value: str | None) -> float:
+    """Interpret Retry-After as seconds or an HTTP date, defaulting to 60s.
+
+    Args:
+        value: Optional Retry-After response header.
+    """
+    if value:
+        try:
+            return max(1, int(value))
+        except ValueError:
+            try:
+                return max(1, parsedate_to_datetime(value).timestamp() - time.time())
+            except (TypeError, ValueError, OverflowError):
+                pass
+    return 60.0
+
+
 def fetch_gbif_raw_api(
     url: str,
     cache_conn: sqlite3.Connection,
     max_age_days: int = 7,
-) -> dict | None:
+) -> dict:
     """Fetch raw REST API response JSON from URL with 7-day raw HTTP response caching.
 
     Args:
@@ -266,10 +313,13 @@ def fetch_gbif_raw_api(
         max_age_days: Cache TTL in days (default: 7).
 
     Returns:
-        dict | None: Parsed JSON dict response if successful, otherwise None.
+        dict: Parsed JSON response, including valid empty/no-match results.
+
+    Raises:
+        GBIFRequestError: Lookup failed or uncached requests are cooling down.
     """
+    import http.client
     import json
-    import time
     import urllib.error
     import urllib.request
 
@@ -287,42 +337,58 @@ def fetch_gbif_raw_api(
             cached_json, cached_at = row["response_json"], row["cached_at"]
             if (now_ts - cached_at) < one_week_sec:
                 try:
-                    return json.loads(cached_json)
+                    return _decode_gbif_json(cached_json)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
     except sqlite3.Error:
-        pass
+        _LOGGER.warning("Could not read GBIF cache; attempting lookup", exc_info=True)
+
+    global _GBIF_COOLDOWN_UNTIL
+    with _GBIF_COOLDOWN_LOCK:
+        remaining = _GBIF_COOLDOWN_UNTIL - time.monotonic()
+    if remaining > 0:
+        raise GBIFRequestError(
+            f"GBIF requests are paused after rate limiting. Retry in {int(remaining) + 1} seconds. "
+            "Previously cached responses remain available."
+        )
 
     # 2. Fetch raw response over HTTP
     req = urllib.request.Request(url, headers={"User-Agent": "taxo-trainer/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status == 200:
-                raw_bytes = resp.read()
-                raw_str = raw_bytes.decode("utf-8")
-                parsed_json = json.loads(raw_str)
+            if resp.status != 200:
+                raise GBIFRequestError(f"GBIF returned HTTP {resp.status}; retry the incomplete enrichment later.")
+            raw_str = resp.read().decode("utf-8")
+            parsed_json = _decode_gbif_json(raw_str)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            delay = _retry_after_seconds(exc.headers.get("Retry-After") if exc.headers else None)
+            with _GBIF_COOLDOWN_LOCK:
+                _GBIF_COOLDOWN_UNTIL = max(_GBIF_COOLDOWN_UNTIL, time.monotonic() + delay)
+            raise GBIFRequestError(
+                f"GBIF rate limited requests (HTTP 429). Retry in {int(delay) + 1} seconds; "
+                "completed lookups are cached."
+            ) from exc
+        raise GBIFRequestError(f"GBIF returned HTTP {exc.code}; enrichment is incomplete.") from exc
+    except (OSError, http.client.HTTPException, TypeError, ValueError) as exc:
+        raise GBIFRequestError("GBIF lookup failed; enrichment is incomplete. Retry when the service is available.") from exc
 
-                with cache_conn:
-                    cache_conn.execute(
-                        "INSERT OR REPLACE INTO gbif_api_cache (url, response_json, cached_at) VALUES (?, ?, ?)",
-                        (url, raw_str, now_ts),
-                    )
-                return parsed_json
-    except (
-        urllib.error.URLError,
-        urllib.error.HTTPError,
-        TimeoutError,
-        json.JSONDecodeError,
-    ):
-        pass
-
-    return None
+    try:
+        with cache_conn:
+            cache_conn.execute(
+                "INSERT OR REPLACE INTO gbif_api_cache (url, response_json, cached_at) VALUES (?, ?, ?)",
+                (url, raw_str, int(time.time())),
+            )
+    except sqlite3.Error:
+        # A cache write failure must not discard an otherwise successful lookup.
+        _LOGGER.warning("GBIF lookup succeeded but could not be cached", exc_info=True)
+    return parsed_json
 
 
 def enrich_vernacular_names_from_gbif(
     conn: sqlite3.Connection | None = None,
     limit: int | None = None,
-    progress_callback: Callable[[int, int], None] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
     force_all: bool = False,
 ) -> int:
     """Fetch missing Danish (and English) vernacular names from GBIF Species API.
@@ -492,8 +558,12 @@ def enrich_vernacular_names_from_gbif(
                                 (new_da, new_en, v_json_str, tkey),
                             )
                         updated_count += 1
-                except (sqlite3.Error, OSError, ValueError):
-                    pass
+                except (sqlite3.Error, OSError, ValueError, RuntimeError) as exc:
+                    for pending in future_map:
+                        pending.cancel()
+                    if isinstance(exc, GBIFRequestError):
+                        raise
+                    raise RuntimeError("Species enrichment is incomplete; retry to finish remaining lookups.") from exc
 
                 processed_count += 1
                 if progress_callback:
@@ -639,8 +709,12 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
                                 (r_name, r_level, v_da, v_en, v_json_str),
                             )
                         updated += 1
-                except (sqlite3.Error, KeyError, ValueError):
-                    pass
+                except (sqlite3.Error, KeyError, ValueError, RuntimeError) as exc:
+                    for pending in futures:
+                        pending.cancel()
+                    if isinstance(exc, GBIFRequestError):
+                        raise
+                    raise RuntimeError("Higher-rank enrichment is incomplete; retry to finish remaining lookups.") from exc
 
         return updated
     finally:
@@ -763,8 +837,12 @@ def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> in
                                         "DELETE FROM taxa WHERE taxon_key = ?", (tkey,)
                                     )
                                 merged_count += 1
-                except (sqlite3.Error, KeyError, ValueError):
-                    pass
+                except (sqlite3.Error, KeyError, ValueError, RuntimeError) as exc:
+                    for pending in futures:
+                        pending.cancel()
+                    if isinstance(exc, GBIFRequestError):
+                        raise
+                    raise RuntimeError("Synonym consolidation is incomplete; retry to finish remaining lookups.") from exc
 
         return merged_count
     finally:

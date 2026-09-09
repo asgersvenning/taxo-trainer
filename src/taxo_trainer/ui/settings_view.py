@@ -541,8 +541,13 @@ def render_settings_view(
 
 
             saved_enrich_status = get_app_metadata("gbif_enrichment_status", "", conn=app_conn)
+            saved_enrich_error = get_app_metadata("gbif_enrichment_error", "", conn=app_conn)
 
-            if saved_enrich_status:
+            if saved_enrich_error:
+                init_enrich_text = f"GBIF enrichment incomplete — {saved_enrich_error}"
+                init_enrich_class = "text-sm text-amber-400 font-bold mb-3"
+                enrich_btn_label = "Retry GBIF Name Enrichment"
+            elif saved_enrich_status:
                 init_enrich_text = f"✓ GBIF Vernacular Name Enrichment Active — {saved_enrich_status}"
                 init_enrich_class = "text-sm text-green-400 font-bold mb-3"
                 enrich_btn_label = "Re-Fetch Danish Names from GBIF API"
@@ -617,6 +622,7 @@ def render_settings_view(
                     c_pct = int(d_cnt / t_cnt * 100) if t_cnt else 0
                     status_summary = f"{d_cnt:,}/{t_cnt:,} taxa populated with Danish vernacular names ({c_pct}%)."
                     set_app_metadata("gbif_enrichment_status", status_summary, conn=app_conn)
+                    set_app_metadata("gbif_enrichment_error", "", conn=app_conn)
 
                     safe_ui_update(timer.cancel)
                     safe_ui_update(lambda: progress_bar.set_value(1.0))
@@ -637,6 +643,8 @@ def render_settings_view(
 
                     safe_ui_update(timer.cancel)
                     err_msg = str(ex)
+                    set_app_metadata("gbif_enrichment_error", err_msg, conn=app_conn)
+                    safe_ui_update(lambda: enrich_button.set_text("Retry GBIF Name Enrichment"))
                     safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-red-400 font-bold mb-3"))
                     safe_ui_update(lambda: enrich_status.set_text(f"Enrichment Error: {err_msg}"))
                     safe_ui_update(lambda: ui.notify(f"Enrichment failed: {err_msg}", type="negative"))
