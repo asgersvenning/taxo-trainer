@@ -174,6 +174,46 @@ workflows; this is not an exhaustive line-by-line audit.
 
 ## Ranked work queue
 
+Priority steering: the user has not experienced general performance problems and
+deprioritized the cross-dataset history edge case. Focus loading/name resolution
+work on reliability and cache reuse, not a broad performance campaign or increased
+API concurrency. GBIF request limits depend on server load; see the
+[official rate-limit guidance](https://techdocs.gbif.org/en/openapi/#rate-limits).
+
+### Progress update: GBIF cache and visible failures
+
+Fresh cached JSON objects, including valid no-match/empty-name responses, are
+reused. Expired, malformed, and wrong-shaped cache entries trigger a fresh lookup.
+Network/HTTP/decoding failures now raise a distinct GBIFRequestError instead of
+returning None and being confused with missing names. Failed responses are not
+cached; cache-write failures log a warning but retain the successful response.
+
+HTTP 429 establishes a shared in-process cooldown for uncached requests across
+enrichment workers and retries. Retry-After seconds and HTTP dates are supported;
+missing/invalid headers use a 60-second fallback. Fresh cache hits remain available
+during cooldown. No automatic retry loop or increase in worker concurrency was
+introduced. The UI offers a manual retry, which reuses completed cache entries.
+The cooldown is not persisted across process restarts; requests already in flight
+when a 429 arrives cannot be recalled.
+
+Species, higher-rank, and synonym phases now propagate worker failures and cancel
+queued futures where possible. Successful updates already committed are retained.
+The settings view saves an incomplete-run error, displays it after reload, and
+clears it only after successful enrichment, avoiding a false completion banner.
+This is run-level error reporting, not a per-taxon status inventory; cached versus
+fetched counters and detailed no-name/failure summaries remain follow-up work.
+
+Verification: 95 tests passed and Ruff passed for changed files. Nineteen new
+offline cases cover cache reuse/expiry/corruption, empty results, malformed
+responses, cache-write failure, cooldown and delayed retry, and outage propagation
+from all three production enrichment phases. Browser rendering, actual GBIF
+requests, and sustained concurrent load were not tested. Matching/ranking policy
+and the existing 30-worker configuration remain unchanged.
+
+Suggested next step: show a concise enrichment summary separating cache hits,
+fresh requests, taxa without usable names, and incomplete lookups. Measure loading
+only where the user observes a delay; do not prioritize speculative optimization.
+
 Effort is relative: S = a focused patch; M = several related changes; L = split
 into multiple independently verified patches. These are not time estimates.
 
