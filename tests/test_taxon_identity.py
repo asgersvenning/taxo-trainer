@@ -377,3 +377,42 @@ def test_missing_col_rank_links_repair_without_name_lookup(database, monkeypatch
     assert validate_user_guess(database, "6Y6H", "4N93X").is_correct
     assert builder.repair_missing_taxonomy(database) == 0
     assert len(calls) == 1
+
+
+def test_repair_unknown_checklist_preserves_known_rank_identity(database):
+    """Missing namespace metadata is not evidence of a checklist collision."""
+    add_taxon(database, 'S1', genus='Genus', genus_key='G1',
+              family='Family', family_key='F1')
+    database.execute("INSERT INTO higher_ranks(taxon_key,rank_name,rank_level,checklist_key) VALUES ('G1','Genus','GENUS',?)", (builder.COL_CHECKLIST,))
+    database.commit()
+    assert builder.repair_missing_taxonomy(database) == 1
+    assert database.execute("SELECT checklist_key FROM higher_ranks WHERE taxon_key='G1'").fetchone()[0] == builder.COL_CHECKLIST
+    assert database.execute("SELECT checklist_key FROM taxa WHERE taxon_key='S1'").fetchone()[0] is None
+    assert database.execute("SELECT taxon_key FROM higher_ranks WHERE taxon_key='F1'").fetchone()[0] == 'F1'
+    assert builder.repair_missing_taxonomy(database) == 0
+
+
+def test_repair_conflict_skips_whole_taxon_and_continues(database, monkeypatch, caplog):
+    """A real collision neither writes partial links nor blocks other taxa."""
+    add_taxon(database, 'S1', genus='Genus', family='Family')
+    add_taxon(database, 'S2', genus='Other genus', genus_key='G2',
+              checklist_key=builder.COL_CHECKLIST)
+    database.execute("INSERT INTO higher_ranks(taxon_key,rank_name,rank_level,checklist_key) VALUES ('F1','Existing family','FAMILY',?)", (builder.BACKBONE_CHECKLIST,))
+    database.commit()
+    monkeypatch.setattr(builder, '_resolve_usage', lambda *args, **kwargs:
+                        (None, {}, {'checklist_key': builder.COL_CHECKLIST,
+                                    'genus_key': 'G1', 'family_key': 'F1'}))
+    assert builder.repair_missing_taxonomy(database) == 1
+    row = database.execute("SELECT checklist_key,genus_key,family_key FROM taxa WHERE taxon_key='S1'").fetchone()
+    assert tuple(row) == (None, None, None)
+    assert database.execute("SELECT 1 FROM higher_ranks WHERE taxon_key='G1'").fetchone() is None
+    assert database.execute("SELECT checklist_key FROM higher_ranks WHERE taxon_key='F1'").fetchone()[0] == builder.BACKBONE_CHECKLIST
+    assert database.execute("SELECT checklist_key FROM higher_ranks WHERE taxon_key='G2'").fetchone()[0] == builder.COL_CHECKLIST
+    assert 'S1' in caplog.text and 'F1' in caplog.text
+
+
+def test_repair_does_not_count_unresolved_rank_as_updated(database):
+    """An ID without a rank label cannot yet populate the rank catalogue."""
+    add_taxon(database, 'S1', genus_key='G1')
+    assert builder.repair_missing_taxonomy(database) == 0
+    assert builder.repair_missing_taxonomy(database) == 0

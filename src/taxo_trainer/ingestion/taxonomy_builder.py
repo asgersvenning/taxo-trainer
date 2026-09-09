@@ -840,24 +840,43 @@ def repair_missing_taxonomy(conn: sqlite3.Connection | None = None) -> int:
                 with conn:
                     current = conn.execute("SELECT * FROM taxa WHERE taxon_key=?",
                                            (row["taxon_key"],)).fetchone()
-                    if not current or current["checklist_key"] not in (None, links.get("checklist_key")):
+                    if not current:
                         continue
-                    for column, value in links.items():
-                        if current[column] is None:
-                            conn.execute(f"UPDATE taxa SET {column}=? WHERE taxon_key=?",
-                                         (value, row["taxon_key"]))
+                    checklist = links.get("checklist_key")
+                    if (current["checklist_key"] is not None and checklist is not None
+                            and current["checklist_key"] != checklist):
+                        diagnostics.record("checklist_conflicts")
+                        _LOGGER.warning("Skipping taxonomy repair for taxon %s: checklist %s conflicts with %s",
+                                        row["taxon_key"], current["checklist_key"], checklist)
+                        continue
+                    checklist = current["checklist_key"] or checklist
+                    ranks = []
                     for rank in ("genus", "family", "order"):
                         key = current[f"{rank}_key"] or links.get(f"{rank}_key")
                         name = current[rank if rank != "order" else "order_name"]
                         if key and name:
                             existing = conn.execute("SELECT checklist_key FROM higher_ranks WHERE taxon_key=?", (key,)).fetchone()
-                            if existing and existing[0] not in (None, links.get("checklist_key")):
-                                raise GBIFRequestError("Conflicting checklist identity for higher rank")
-                            conn.execute("""INSERT INTO higher_ranks
-                                (taxon_key,rank_name,rank_level,checklist_key) VALUES (?,?,?,?)
-                                ON CONFLICT(taxon_key) DO NOTHING""",
-                                (key, name, rank.upper(), links.get("checklist_key")))
-                    updated += 1
+                            # Unknown provenance is not a confirmed collision. Never
+                            # overwrite known provenance or infer it from another ID.
+                            if (existing and existing[0] is not None and checklist is not None
+                                    and existing[0] != checklist):
+                                diagnostics.record("checklist_conflicts")
+                                _LOGGER.warning(
+                                    "Skipping taxonomy repair for taxon %s: rank ID %s has checklist %s, requested %s",
+                                    row["taxon_key"], key, existing[0], checklist)
+                                break
+                            ranks.append((key, name, rank.upper(), checklist))
+                    else:
+                        # Validate every rank before writing any part of this taxon.
+                        before = conn.total_changes
+                        for column, value in links.items():
+                            if current[column] is None and value is not None:
+                                conn.execute(f"UPDATE taxa SET {column}=? WHERE taxon_key=?",
+                                             (value, row["taxon_key"]))
+                        conn.executemany("""INSERT INTO higher_ranks
+                            (taxon_key,rank_name,rank_level,checklist_key) VALUES (?,?,?,?)
+                            ON CONFLICT(taxon_key) DO NOTHING""", ranks)
+                        updated += conn.total_changes > before
         return updated
     finally:
         if own and conn is not None:
