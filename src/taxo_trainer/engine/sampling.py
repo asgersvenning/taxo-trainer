@@ -140,7 +140,7 @@ def get_candidate_observations(
     taxon_key: str | int,
     filters: SamplingFilter,
 ) -> list[sqlite3.Row]:
-    """Retrieve candidate occurrence rows for a given taxon_key.
+    """Retrieve all eligible occurrence rows for a given taxon_key.
 
     Args:
         app_conn: SQLite connection to app_data.db.
@@ -171,9 +171,7 @@ def get_candidate_observations(
         query += f" AND occurrence_id IN ({placeholders})"
         params.extend(list(misidentified_ids))
 
-    if not filters.misidentified_only:
-        query += " LIMIT 200"
-
+    # A truncated pool would repeat observations before the species is exhausted.
     cursor = app_conn.execute(query, params)
     return cursor.fetchall()
 

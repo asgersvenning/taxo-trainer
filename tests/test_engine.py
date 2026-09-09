@@ -118,6 +118,60 @@ def test_stage1_and_stage2_sampling(setup_engine_dbs):
     assert len(seen_set) == 2
 
 
+@pytest.mark.parametrize("filter_mode", ["all", "month", "review"])
+def test_sampling_exhausts_full_species_pool_before_repeating(
+    setup_engine_dbs, filter_mode
+):
+    """Every eligible observation is seen before resetting only that pool."""
+    app_conn, user_conn = setup_engine_dbs
+    taxon_key = 2435140
+    app_conn.execute("DELETE FROM occurrences WHERE taxon_key = ?", (taxon_key,))
+    eligible_ids = {f"oak_{i}" for i in range(201)}
+    app_conn.executemany(
+        "INSERT INTO occurrences (occurrence_id, taxon_key, month, media_urls) "
+        "VALUES (?, ?, 6, 'http://example.com/photo.jpg')",
+        [(occ_id, taxon_key) for occ_id in sorted(eligible_ids)],
+    )
+    filters = SamplingFilter()
+    preserved_seen = {"occ_f1"}  # Another species must not be reset.
+    if filter_mode != "all":
+        app_conn.execute(
+            "INSERT INTO occurrences (occurrence_id, taxon_key, month, media_urls) "
+            "VALUES ('excluded_oak', ?, 7, 'http://example.com/excluded.jpg')",
+            (taxon_key,),
+        )
+        preserved_seen.add("excluded_oak")
+    if filter_mode == "month":
+        filters.month = 6
+    elif filter_mode == "review":
+        filters.misidentified_only = True
+        user_conn.executemany(
+            "INSERT INTO user_progress "
+            "(occurrence_id, target_taxon_key, is_correct, used_hint) "
+            "VALUES (?, ?, 0, 0)",
+            [(occ_id, taxon_key) for occ_id in sorted(eligible_ids)],
+        )
+
+    seen_set = preserved_seen.copy()
+    sampled_ids = set()
+    for _ in range(len(eligible_ids)):
+        observation = sample_stage2_observation(
+            app_conn, user_conn, taxon_key, filters, seen_set
+        )
+        assert observation is not None
+        assert observation.occurrence_id in eligible_ids - sampled_ids
+        sampled_ids.add(observation.occurrence_id)
+        assert seen_set == preserved_seen | sampled_ids
+    assert sampled_ids == eligible_ids
+
+    repeated = sample_stage2_observation(
+        app_conn, user_conn, taxon_key, filters, seen_set
+    )
+    assert repeated is not None
+    assert repeated.occurrence_id in eligible_ids
+    assert seen_set == preserved_seen | {repeated.occurrence_id}
+
+
 def test_validator_multi_rank_and_autocomplete(setup_engine_dbs):
     """Test validator rank matching, fuzzy typos, and autocomplete."""
     app_conn, _ = setup_engine_dbs
