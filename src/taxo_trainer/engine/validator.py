@@ -212,7 +212,9 @@ def autocomplete_taxa(
     q_clean = normalize_name(query)
     q_words = [w for w in q_strip.replace("-", " ").replace("/", " ").split() if w]
 
-    conn.create_function("normalize_taxon_name", 1, normalize_name, deterministic=True)
+    conn.create_function("exact_taxon_alias", 2,
+                         lambda names, clean: any(normalize_name(part) == clean
+                             for part in str(names or "").split("|")), deterministic=True)
     sub_pat = f"%{q_strip}%"
     clean_sub_pat = f"%{q_clean}%"
 
@@ -488,7 +490,7 @@ def autocomplete_taxa(
 
     exec_params["exact_query"] = q_clean
     def exact_condition(columns):
-        return " OR ".join(f"normalize_taxon_name({column}) = :exact_query" for column in columns)
+        return " OR ".join(f"exact_taxon_alias({column}, :exact_query)" for column in columns)
 
     sp_sql = sp_sql.replace("AND (", "AND (" + exact_condition([
         "canonical_name", "vernacular_da", "vernacular_en",
@@ -580,7 +582,7 @@ def autocomplete_taxa(
                     row["vernacular_en"] if lang == "da" else row["vernacular_da"]
                 ]
                 prio, rw, alias_distance = calc_priority_and_rank_weight(g_name, "GENUS", primary_v, secondary_v)
-                if prio >= 6:
+                if prio >= 8:
                     continue
                 g_label = (
                     f"📁 Genus: {g_disp} ({g_name})"
@@ -625,7 +627,7 @@ def autocomplete_taxa(
                     row["vernacular_en"] if lang == "da" else row["vernacular_da"]
                 ]
                 prio, rw, alias_distance = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
-                if prio >= 6:
+                if prio >= 8:
                     continue
                 f_label = (
                     f"🏛️ Family: {f_disp} ({f_name})"
@@ -646,10 +648,10 @@ def autocomplete_taxa(
                     }
                 )
 
-    # Count distinct concept/display names per rank group for strong matches (priority <= 4) to determine rank ambiguity
+    # Count matching canonical IDs per rank; aliases do not merge distinct taxa.
     rank_distinct_names: dict[str, set[str]] = {}
     for c in candidates:
-        if c["priority"] <= 4:
+        if c["priority"] < 8:
             r_str = (c["rank"] or "").upper()
             r_grp = (
                 "SPECIES"

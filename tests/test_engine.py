@@ -963,3 +963,17 @@ def test_autocomplete_word_distance_beats_display_length(setup_engine_dbs):
          ("A2", "Carex acutiformis", "Carex acutiformis", "Carex acutiformis", "Short")],
     )
     assert [m["taxon_key"] for m in autocomplete_taxa(conn, "carex acut")] == ["A1", "A2"]
+
+
+def test_exact_alias_ignores_spaces_even_with_multiple_vernaculars(setup_engine_dbs):
+    conn, _ = setup_engine_dbs
+    conn.execute("UPDATE taxa SET vernacular_en='Oak|Pedunculate Oak' WHERE taxon_key='2435140'")
+    assert autocomplete_taxa(conn, 'O a k', lang='en')[0]['taxon_key'] == '2435140'
+
+
+def test_exact_genus_beats_unambiguous_partial_family(setup_engine_dbs):
+    conn, _ = setup_engine_dbs
+    conn.execute("UPDATE taxa SET family='Fagusaceae' WHERE taxon_key='2865545'")
+    conn.execute("""INSERT INTO taxa(taxon_key,scientific_name,canonical_name,accepted_name,rank,genus,genus_key,family,family_key)
+        VALUES('C3','Fagusia minor','Fagusia minor','Fagusia minor','SPECIES','Fagusia','G3','Fagusaceae','80000001')""")
+    assert autocomplete_taxa(conn,'Fagus')[0]['taxon_key'] == '80000002'
