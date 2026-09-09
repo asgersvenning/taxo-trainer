@@ -152,7 +152,7 @@ def render_settings_view(
                         icon="diversity_3",
                         color="indigo",
                     ).props("dense dark")
-                    ui.chip(
+                    active_count_chip = ui.chip(
                         f"{active_taxa_cnt:,} Active ({discarded_taxa_cnt:,} Discarded)",
                         icon="filter_alt",
                         color="amber",
@@ -165,11 +165,12 @@ def render_settings_view(
 
                 def clear_data_source() -> None:
                     try:
-                        # Preserve user preferences (theme, language, min_count, active_tab) across dataset clearing
+                        # Preserve user preferences across dataset clearing
                         theme_pref = get_app_metadata("theme_preference", conn=app_conn)
                         lang_pref = get_app_metadata("language_preference", conn=app_conn)
                         min_pref = get_app_metadata("min_count", conn=app_conn)
                         tab_pref = get_app_metadata("active_tab", conn=app_conn)
+                        mode_pref = get_app_metadata("sampling_mode", conn=app_conn)
 
                         with app_conn:
                             app_conn.execute("DELETE FROM occurrences;")
@@ -195,6 +196,11 @@ def render_settings_view(
                                 app_conn.execute(
                                     "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('min_count', ?);",
                                     (min_pref,),
+                                )
+                            if mode_pref:
+                                app_conn.execute(
+                                    "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('sampling_mode', ?);",
+                                    (mode_pref,),
                                 )
                             if tab_pref:
                                 app_conn.execute(
@@ -300,6 +306,7 @@ def render_settings_view(
                         "SELECT COUNT(*) FROM taxa WHERE occurrence_count >= ?;", (mc,)
                     ).fetchone()[0]
                     disc_c = taxa_cnt - act_c
+                    active_count_chip.set_text(f"{act_c:,} Active ({disc_c:,} Discarded)")
                     pct_act = (act_c / taxa_cnt * 100) if taxa_cnt else 0
                     pct_disc = (disc_c / taxa_cnt * 100) if taxa_cnt else 0
 
@@ -320,21 +327,28 @@ def render_settings_view(
 
                 refresh_cutoff_stats(active_filters.min_count)
 
-                def update_cutoff_main(val: float | None) -> None:
-                    if val is not None and int(val) >= 1:
-                        c_val = int(val)
-                        active_filters.min_count = c_val
-                        set_app_metadata("min_count", str(c_val), conn=app_conn)
-                        refresh_cutoff_stats(c_val)
-                        on_filters_changed()
-                        ui.notify(
-                            f"Minimum occurrence limit set to {c_val} per taxon",
-                            type="positive",
-                        )
+                cutoff_controls = [cutoff_input_main]
 
-                cutoff_input_main.on_value_change(
-                    lambda e: update_cutoff_main(e.value)
-                )
+                def update_cutoff(val: float | None) -> None:
+                    if val is None:
+                        return  # Permit a temporarily empty field while editing.
+                    try:
+                        count = int(val)
+                    except (ValueError, TypeError, OverflowError):
+                        return
+                    if count < 1 or count != val:
+                        return
+                    if count == active_filters.min_count:
+                        return  # Synchronizing the other control must not fire twice.
+                    set_app_metadata("min_count", str(count), conn=app_conn)
+                    active_filters.min_count = count
+                    for control in cutoff_controls:
+                        control.set_value(count)
+                    refresh_cutoff_stats(count)
+                    on_filters_changed()
+                    ui.notify(f"Minimum occurrence limit set to {count} per taxon", type="positive")
+
+                cutoff_input_main.on_value_change(lambda e: update_cutoff(e.value))
 
         # 1.5 Theme & Appearance Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
@@ -703,6 +717,9 @@ def render_settings_view(
                     )
 
                     def update_mode(val: str) -> None:
+                        if val not in ("flat", "natural", "log", "sqrt") or val == active_filters.mode:
+                            return
+                        set_app_metadata("sampling_mode", val, conn=app_conn)
                         active_filters.mode = val
                         on_filters_changed()
                         ui.notify(f"Sampling mode set to '{val}'", type="positive")
@@ -721,11 +738,7 @@ def render_settings_view(
                         .props("outlined dark")
                     )
 
-                    def update_cutoff(val: int) -> None:
-                        if val is not None and val >= 1:
-                            active_filters.min_count = int(val)
-                            on_filters_changed()
-                            ui.notify(f"Minimum cutoff set to {val}", type="positive")
+                    cutoff_controls.append(cutoff_input)
 
                     cutoff_input.on_value_change(lambda e: update_cutoff(e.value))
 
