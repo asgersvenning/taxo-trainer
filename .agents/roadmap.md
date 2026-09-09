@@ -95,7 +95,7 @@ distance. Four surface palettes (including High contrast) combine with six accen
 Dashboard groups and confusion pairs lead directly to temporary practice, with a
 return to the usual selection. Settings and Quiz synchronize without replacing an
 ongoing question. Undo ignore restores exact removed history, including after
-advancing. Final verification: 168 tests passed, plus browser interaction and
+advancing. Final verification: 169 tests passed, plus browser interaction and
 rendered contrast checks. See [implementation and verification notes](notes/2026-09-09-autocomplete-themes-and-focused-practice.md)
 for checkpoints, identity constraints, and scope details.
 

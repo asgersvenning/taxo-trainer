@@ -12,6 +12,7 @@ training settings, and make Ignore observation reversible.
 - `c736947`: dashboard practice actions and synchronized training controls.
 - `99d4ca2`: normalize individual aliases; count matching IDs for ambiguity.
 - `e74e8f5`: Undo ignore with exact history and current-question preservation.
+- `ca5623b`: notify before rebuilding the Undo control; regression for its event slot.
 
 ## Findings and behavior
 
@@ -64,7 +65,7 @@ new question. Manual correction policy and the existing ignore scope are retaine
 
 ## Verification
 
-- Full suite: **168 passed in 7.37s**; changed-file Ruff and whitespace checks passed.
+- Full suite: **169 passed in 8.62s**; changed-file Ruff and whitespace checks passed.
 - Regression coverage: word-distance ordering; exact higher-rank and whitespace/
   pipe-alias matching; CoL repair without name lookup; palettes, accents, and
   persistence; temporary scope restoration; original-question cutoff; unavailable
@@ -80,7 +81,11 @@ new question. Manual correction policy and the existing ignore scope are retaine
 - Verification corrections: a fixture inherited cutoff 15 while taxa had ten
   observations; the cutoff was corrected and active-quiz checks repeated. A
   transient theme-transition color required settled-state verification. Chip
-  disappearance required waiting for the server response.
+  disappearance required waiting for the server response. The final server-log
+  audit caught an Undo notification sent after its UI slot had been deleted.
+  Notification now precedes rebuilding; a regression invokes the actual callback
+  inside its original slot. Repeated browser checks passed and the captured server
+  log contained only the startup message, without callback errors.
 
 ## Follow-up boundary
 
