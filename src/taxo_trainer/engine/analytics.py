@@ -9,10 +9,10 @@ from taxo_trainer.engine.validator import get_display_name
 class ConfusionPair:
     """Pairwise misidentification count entry."""
 
-    target_taxon_key: int
+    target_taxon_key: str
     target_canonical: str
     target_display: str
-    guessed_taxon_key: int
+    guessed_taxon_key: str
     guessed_canonical: str
     guessed_display: str
     count: int
@@ -52,7 +52,7 @@ class RankMastery:
 class TroubleTaxon:
     """Struggling species entry with lowest accuracy."""
 
-    taxon_key: int
+    taxon_key: str
     canonical_name: str
     display_name: str
     family: str
@@ -111,8 +111,8 @@ def get_data_source_where_sql(
 def log_attempt(
     user_conn: sqlite3.Connection,
     occurrence_id: str,
-    target_taxon_key: int,
-    guessed_taxon_key: int | None,
+    target_taxon_key: str,
+    guessed_taxon_key: str | None,
     is_correct: bool,
     used_hint: bool = False,
     data_source: str | None = None,
@@ -238,6 +238,7 @@ def get_rank_mastery_stats(
     time_range: str = "ALL",
     data_source: str | None = None,
     limit: int | None = 5,
+    language: str = "da",
 ) -> tuple[list[RankMastery], list[RankMastery]]:
     """Return top best performing and worst performing taxa at the specified rank level.
 
@@ -251,6 +252,7 @@ def get_rank_mastery_stats(
         time_range: Time range filter.
         data_source: Data source identifier filter.
         limit: Optional max items per list (None or <= 0 returns all).
+        language: Preferred language for display names; IDs remain unchanged.
 
     Returns:
         tuple[list[RankMastery], list[RankMastery]]: (best_taxa, worst_taxa)
@@ -265,7 +267,7 @@ def get_rank_mastery_stats(
                COUNT(*) as total,
                SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct
         FROM user_progress
-        WHERE {where_time} AND {where_ds}
+        WHERE used_hint = 0 AND {where_time} AND {where_ds}
         GROUP BY target_taxon_key;
     """
     rows = user_conn.execute(query, params_ds).fetchall()
@@ -298,13 +300,13 @@ def get_rank_mastery_stats(
                     "SELECT * FROM higher_ranks WHERE taxon_key = ?",
                     (taxon_key,),
                 ).fetchone()
-                v_disp = get_display_name(hr) if hr else name_val
+                v_disp = get_display_name(hr, language) if hr else name_val
                 disp = f"{v_disp} ({name_val})" if v_disp and v_disp != name_val else name_val
             elif rank_key == "SPECIES":
                 t_r = app_conn.execute(
                     "SELECT * FROM taxa WHERE taxon_key = ?", (taxon_key,)
                 ).fetchone()
-                disp = get_display_name(t_r) if t_r else name_val
+                disp = get_display_name(t_r, language) if t_r else name_val
             else:
                 disp = name_val
 
@@ -390,6 +392,7 @@ def get_trouble_taxa(
     time_range: str = "ALL",
     limit: int = 5,
     data_source: str | None = None,
+    language: str = "da",
 ) -> list[TroubleTaxon]:
     """Return top species with lowest accuracy.
 
@@ -399,6 +402,7 @@ def get_trouble_taxa(
         time_range: Time range filter.
         limit: Max species entries.
         data_source: Data source identifier filter.
+        language: Preferred language for display names; IDs remain unchanged.
 
     Returns:
         list[TroubleTaxon]: Species requiring extra practice.
@@ -413,7 +417,7 @@ def get_trouble_taxa(
                COUNT(*) as total,
                SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct
         FROM user_progress
-        WHERE {where_time} AND {where_ds}
+        WHERE used_hint = 0 AND {where_time} AND {where_ds}
         GROUP BY target_taxon_key
         HAVING total >= 2
         ORDER BY ((CAST(correct AS FLOAT) + 1.0) / (total + 2.0)) ASC, total DESC
@@ -431,7 +435,7 @@ def get_trouble_taxa(
                 TroubleTaxon(
                     taxon_key=t_key,
                     canonical_name=t_row["canonical_name"],
-                    display_name=get_display_name(t_row),
+                    display_name=get_display_name(t_row, language),
                     family=t_row["family"] or "",
                     total_attempts=r["total"],
                     correct_attempts=r["correct"],
@@ -476,6 +480,7 @@ def get_confusion_matrix(
     time_range: str = "ALL",
     limit: int = 10,
     data_source: str | None = None,
+    language: str = "da",
 ) -> list[ConfusionPair]:
     """Retrieve top-N pairwise species misidentifications.
 
@@ -485,6 +490,7 @@ def get_confusion_matrix(
         time_range: Time range filter.
         limit: Max pairwise entries to return.
         data_source: Data source identifier filter.
+        language: Preferred language for display names; IDs remain unchanged.
 
     Returns:
         List[ConfusionPair]: Top misidentification lookalikes.
@@ -525,10 +531,10 @@ def get_confusion_matrix(
                 ConfusionPair(
                     target_taxon_key=t_key,
                     target_canonical=t_row["canonical_name"],
-                    target_display=get_display_name(t_row),
+                    target_display=get_display_name(t_row, language),
                     guessed_taxon_key=g_key,
                     guessed_canonical=g_row["canonical_name"],
-                    guessed_display=get_display_name(g_row),
+                    guessed_display=get_display_name(g_row, language),
                     count=err_cnt,
                 )
             )
@@ -588,7 +594,7 @@ def get_accuracy_over_time(
     query = f"""
         SELECT attempt_id, is_correct, used_hint, attempt_timestamp
         FROM user_progress
-        WHERE {where_time} AND {where_ds}
+        WHERE used_hint = 0 AND {where_time} AND {where_ds}
         ORDER BY attempt_timestamp ASC, attempt_id ASC;
     """
     rows = user_conn.execute(query, params_ds).fetchall()

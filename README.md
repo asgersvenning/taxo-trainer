@@ -37,10 +37,9 @@ Photo and observation navigation shortcuts work when the identification input is
 ### Analytics & Mastery Dashboard
 
 - **Time-Range Filters**: View performance statistics over 1 Hour, 24 Hours, 7 Days, 30 Days, 1 Year, or All Time.
-- **Core Performance Metrics**: Tracks total attempts, unassisted accuracy percentage, active/best streaks, and mastered species counts ($\ge 90\%$ accuracy over $\ge 5$ attempts).
-- **Family Mastery Breakdown**: Identifies highest-accuracy plant families and families requiring additional practice.
-- **Trouble Taxa Table**: Highlights species with the lowest unassisted identification accuracy.
-- **Taxonomic Confusion Matrix**: Logs pairwise misidentifications to highlight common lookalike species pairs.
+- **Core Performance Metrics**: Tracks total attempts, unassisted accuracy percentage, active/best streaks, and mastered species counts ($\ge 90\%$ accuracy over $\ge 5$ unassisted attempts). Streaks and species coverage show all-time progress; accuracy summaries refresh when you return to Dashboard.
+- **Accuracy by Group**: Compare species, genera, families, or orders in one sortable table, with unassisted accuracy and attempt counts. Practice priorities appear first; names follow your selected language.
+- **Frequently Confused Taxa**: Compare recorded taxa with your guesses and counts of recurring mistakes, including assisted attempts.
 
 ### Dataset Ingestion & Filtering
 

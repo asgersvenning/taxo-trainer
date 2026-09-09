@@ -3,6 +3,8 @@
 Renders user accuracy metrics, time-windowed stats, mastery breakdown, trouble taxa, and confusion matrix.
 """
 
+import json
+from collections.abc import Callable
 from pathlib import Path
 
 from nicegui import ui
@@ -11,6 +13,7 @@ from taxo_trainer.db import (
     APP_DB_PATH,
     USER_DB_PATH,
     get_active_data_source,
+    get_app_metadata,
     get_db_connection,
 )
 from taxo_trainer.engine.analytics import (
@@ -19,19 +22,18 @@ from taxo_trainer.engine.analytics import (
     get_dataset_coverage,
     get_global_stats,
     get_rank_mastery_stats,
-    get_trouble_taxa,
 )
 
 
-def render_dashboard_view() -> None:
+def render_dashboard_view() -> Callable[[], None]:
     """Render user analytics dashboard with time-range filtering, data source scope, and EMA chart."""
     app_conn = get_db_connection(APP_DB_PATH)
     user_conn = get_db_connection(USER_DB_PATH)
 
     selected_range = ["ALL"]
-    selected_rank = ["FAMILY"]
-    selected_limit = [5]
+    selected_rank = ["SPECIES"]
     selected_ema_window = [25]
+    table_pagination = {"rowsPerPage": 5, "page": 1}
 
     active_ds = get_active_data_source(app_conn)
     ds_display_name = (
@@ -81,6 +83,7 @@ def render_dashboard_view() -> None:
 
                 def set_range(val: str) -> None:
                     selected_range[0] = val
+                    table_pagination["page"] = 1
                     for key, btn in btn_widgets.items():
                         if key == val:
                             btn.props("color=primary").classes("font-bold")
@@ -110,20 +113,17 @@ def render_dashboard_view() -> None:
             content_container.clear()
             r_val = selected_range[0]
             rank_val = selected_rank[0]
-            limit_val = selected_limit[0]
             win_val = selected_ema_window[0]
             active_ds_current = get_active_data_source(app_conn)
+            language = get_app_metadata("language_preference", "da", conn=app_conn)
 
             stats = get_global_stats(user_conn, app_conn, time_range=r_val, data_source=active_ds_current)
             coverage = get_dataset_coverage(user_conn, app_conn, data_source=active_ds_current)
-            best_ranks, worst_ranks = get_rank_mastery_stats(
-                user_conn, app_conn, rank_level=rank_val, time_range=r_val, data_source=active_ds_current, limit=limit_val
-            )
-            trouble_taxa = get_trouble_taxa(
-                user_conn, app_conn, time_range=r_val, limit=5, data_source=active_ds_current
+            _, ranked_taxa = get_rank_mastery_stats(
+                user_conn, app_conn, rank_level=rank_val, time_range=r_val, data_source=active_ds_current, limit=0, language=language
             )
             confusion = get_confusion_matrix(
-                user_conn, app_conn, time_range=r_val, limit=10, data_source=active_ds_current
+                user_conn, app_conn, time_range=r_val, limit=10, data_source=active_ds_current, language=language
             )
             ema_points = get_accuracy_over_time(
                 user_conn, app_conn, time_range=r_val, data_source=active_ds_current, window_size=win_val
@@ -141,7 +141,7 @@ def render_dashboard_view() -> None:
                         ui.label(str(stats["total_attempts"])).classes(
                             "text-3xl font-bold mt-1 text-tt-main"
                         )
-                        ui.label(f"Filter: {r_val}").classes(
+                        ui.label(f"{stats['total_attempts'] - stats['unassisted_attempts']} assisted").classes(
                             "text-xs text-tt-muted mt-1"
                         )
 
@@ -151,11 +151,12 @@ def render_dashboard_view() -> None:
                         ui.label("Unassisted Accuracy").classes(
                             "text-xs text-tt-muted font-semibold uppercase"
                         )
-                        ui.label(f"{stats['unassisted_accuracy_pct']}%").classes(
+                        ui.label(f"{stats['unassisted_accuracy_pct']}%" if stats["unassisted_attempts"] else "—").classes(
                             "text-3xl font-bold mt-1 text-tt-positive"
                         )
                         ui.label(
-                            f"({stats['unassisted_correct']} / {stats['unassisted_attempts']} unassisted)"
+                            f"{stats['unassisted_correct']} correct / {stats['unassisted_attempts']} unassisted"
+                            if stats["unassisted_attempts"] else "No unassisted attempts in this period"
                         ).classes("text-xs text-tt-muted mt-1")
 
                     with ui.card().classes(
@@ -172,7 +173,7 @@ def render_dashboard_view() -> None:
                             ui.label(f"🏆 {stats['best_streak']}").classes(
                                 "text-2xl font-bold text-tt-warning"
                             )
-                        ui.label("Active source record").classes(
+                        ui.label("All time · current dataset").classes(
                             "text-xs text-tt-muted mt-1"
                         )
 
@@ -185,7 +186,7 @@ def render_dashboard_view() -> None:
                         ui.label(str(stats["mastered_species_count"])).classes(
                             "text-3xl font-bold mt-1 text-tt-primary"
                         )
-                        ui.label("≥90% accuracy over ≥5 attempts").classes(
+                        ui.label("≥90% over ≥5 unassisted attempts").classes(
                             "text-xs text-tt-muted mt-1"
                         )
 
@@ -201,11 +202,11 @@ def render_dashboard_view() -> None:
                             )
                             if ema_points:
                                 latest_ema = ema_points[-1].ema_accuracy
-                                ui.label(f"Current EMA: {latest_ema}%").classes("text-xs font-bold text-tt-positive ml-2")
+                                ui.label(f"Recent trend: {latest_ema}%").classes("text-xs font-bold text-tt-positive ml-2")
 
                         # Window Size Controls
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Smoothing Window:").classes("text-xs text-tt-muted font-medium")
+                            ui.label("Trend smoothing:").classes("text-xs text-tt-muted font-medium")
                             window_options = {
                                 10: "10 Attempts",
                                 25: "25 Attempts",
@@ -228,11 +229,11 @@ def render_dashboard_view() -> None:
                             win_select.on_value_change(lambda e: update_win(e.value))
 
                     ui.label(
-                        f"Exponential moving average (EMA, {win_val}-attempt window) of unassisted identification accuracy over time."
+                        "Unassisted accuracy: the line shows the smoothed trend; the dashed line shows the period average."
                     ).classes("text-xs text-tt-muted mb-1")
 
                     if not ema_points:
-                        ui.label("No attempt history recorded for this data source yet.").classes(
+                        ui.label("No unassisted attempts in this period. Try a quiz question without hints.").classes(
                             "text-xs text-tt-muted italic py-6 text-center w-full"
                         )
                     else:
@@ -288,7 +289,7 @@ def render_dashboard_view() -> None:
                             },
                             "series": [
                                 {
-                                    "name": "EMA Accuracy",
+                                    "name": "Unassisted accuracy",
                                     "type": "line",
                                     "smooth": True,
                                     "symbol": "none",
@@ -298,7 +299,7 @@ def render_dashboard_view() -> None:
                                         "silent": True,
                                         "symbol": "none",
                                         "label": {
-                                            "formatter": f"Avg ({avg_acc}%)",
+                                            "formatter": f"Period average ({avg_acc}%)",
                                             "position": "insideEndTop",
                                             "color": "var(--tt-positive)",
                                             "fontSize": 10,
@@ -325,7 +326,7 @@ def render_dashboard_view() -> None:
                     "w-full bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border"
                 ):
                     with ui.row().classes("w-full justify-between items-center mb-1"):
-                        ui.label("Dataset Species Coverage").classes(
+                        ui.label("Species encountered · all time").classes(
                             "text-xs font-bold text-tt-main uppercase tracking-wider"
                         )
                         ui.label(
@@ -335,178 +336,33 @@ def render_dashboard_view() -> None:
                         value=coverage["coverage_pct"] / 100.0, show_value=False
                     ).props("color=primary stripe rounded").classes("h-2.5 w-full")
 
-                # 4. Taxonomic Mastery Breakdown Grid (Multi-Rank & Bayesian Score)
-                rank_plural_map = {
-                    "ORDER": "Orders",
-                    "FAMILY": "Families",
-                    "GENUS": "Genera",
-                    "SPECIES": "Species",
-                }
-                curr_rank_plural = rank_plural_map.get(rank_val, "Families")
+                # One sortable table replaces overlapping best/worst and trouble lists.
+                with ui.card().classes("w-full bg-tt-raised p-4 rounded-lg border border-tt-border gap-3"):
+                    with ui.row().classes("w-full justify-between items-center"):
+                        ui.label("Accuracy by group").classes("text-sm font-bold text-tt-main")
+                        rank_select = ui.select(
+                            options={"ORDER": "Order", "FAMILY": "Family", "GENUS": "Genus", "SPECIES": "Species"},
+                            value=rank_val,
+                            label="Group by",
+                        ).props("dense outlined").classes("w-40")
 
-                with ui.column().classes("w-full space-y-3"):
-                    # Rank and Limit Selector Toolbar
-                    with ui.row().classes(
-                        "w-full justify-between items-center bg-tt-raised p-3 rounded-lg border border-tt-border flex-wrap gap-3"
-                    ):
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("layers", color="warning").classes("text-base")
-                            ui.label("Taxonomic Rank Analysis:").classes("text-xs font-bold text-tt-main")
+                        def update_rank(value: str) -> None:
+                            selected_rank[0] = value
+                            table_pagination["page"] = 1
+                            refresh_dashboard()
 
-                            rank_options = {
-                                "ORDER": "Order",
-                                "FAMILY": "Family",
-                                "GENUS": "Genus",
-                                "SPECIES": "Species",
-                            }
-                            rank_select = (
-                                ui.select(
-                                    options=rank_options,
-                                    value=rank_val,
-                                )
-                                .props("dense outlined ")
-                                .classes("w-32 text-xs text-tt-main")
-                            )
-
-                            def update_rank(val: str) -> None:
-                                selected_rank[0] = val
-                                refresh_dashboard()
-
-                            rank_select.on_value_change(lambda e: update_rank(e.value))
-
-                        with ui.row().classes("items-center gap-2"):
-                            ui.label("Items to Show:").classes("text-xs font-bold text-tt-main")
-                            limit_options = {
-                                5: "Top 5",
-                                10: "Top 10",
-                                20: "Top 20",
-                                0: "Show All",
-                            }
-                            limit_select = (
-                                ui.select(
-                                    options=limit_options,
-                                    value=limit_val,
-                                )
-                                .props("dense outlined ")
-                                .classes("w-28 text-xs text-tt-main")
-                            )
-
-                            def update_limit(val: int) -> None:
-                                selected_limit[0] = val
-                                refresh_dashboard()
-
-                            limit_select.on_value_change(lambda e: update_limit(e.value))
-
-                    with ui.row().classes("w-full gap-4 justify-between flex-wrap items-start"):
-                        # Best Performing Taxa
-                        with ui.card().classes(
-                            "flex-1 min-w-[320px] bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-2 max-h-96 overflow-y-auto"
-                        ):
-                            with ui.row().classes("items-center gap-2"):
-                                ui.icon("verified", color="positive").classes("text-base")
-                                ui.label(f"Top Mastered {curr_rank_plural}").classes(
-                                    "text-sm font-bold text-tt-positive"
-                                )
-                            ui.label("Ranked by Bayesian accuracy under 50% prior").classes("text-xs text-tt-muted")
-
-                            if not best_ranks:
-                                ui.label(f"No {curr_rank_plural.lower()} attempts recorded yet.").classes(
-                                    "text-xs text-tt-muted italic py-2"
-                                )
-                            else:
-                                with ui.column().classes("w-full gap-1.5"):
-                                    for item in best_ranks:
-                                        with ui.row().classes(
-                                            "w-full justify-between items-center bg-tt-surface px-3 py-1.5 rounded border border-tt-border"
-                                        ):
-                                            ui.label(item.display_name).classes(
-                                                "text-xs font-medium text-tt-main truncate max-w-[200px]"
-                                            )
-                                            ui.label(
-                                                f"{item.accuracy_pct}% ({item.correct_attempts}/{item.total_attempts})"
-                                            ).classes("text-xs font-bold text-tt-positive")
-
-                        # Struggling Taxa (Needing Practice)
-                        with ui.card().classes(
-                            "flex-1 min-w-[320px] bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-2 max-h-96 overflow-y-auto"
-                        ):
-                            with ui.row().classes("items-center gap-2"):
-                                ui.icon("warning", color="warning").classes("text-base")
-                                ui.label(f"{curr_rank_plural} Needing Practice").classes(
-                                    "text-sm font-bold text-tt-warning"
-                                )
-                            ui.label("Ranked by Bayesian accuracy under 50% prior").classes("text-xs text-tt-muted")
-
-                            if not worst_ranks:
-                                ui.label("No weak patterns identified yet!").classes(
-                                    "text-xs text-tt-muted italic py-2"
-                                )
-                            else:
-                                with ui.column().classes("w-full gap-1.5"):
-                                    for item in worst_ranks:
-                                        with ui.row().classes(
-                                            "w-full justify-between items-center bg-tt-surface px-3 py-1.5 rounded border border-tt-border"
-                                        ):
-                                            ui.label(item.display_name).classes(
-                                                "text-xs font-medium text-tt-main truncate max-w-[200px]"
-                                            )
-                                            ui.label(
-                                                f"{item.accuracy_pct}% ({item.correct_attempts}/{item.total_attempts})"
-                                            ).classes("text-xs font-bold text-tt-warning")
-
-                # 5. Trouble Taxa List Card
-                if trouble_taxa:
-                    with ui.card().classes(
-                        "w-full bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-2"
-                    ):
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("priority_high", color="negative").classes(
-                                "text-base"
-                            )
-                            ui.label("Trouble Taxa (Lowest Accuracy Species)").classes(
-                                "text-sm font-bold text-tt-negative"
-                            )
-
-                        t_columns = [
-                            {
-                                "name": "species",
-                                "label": "Species",
-                                "field": "display_name",
-                                "align": "left",
-                            },
-                            {
-                                "name": "canonical",
-                                "label": "Scientific Name",
-                                "field": "canonical_name",
-                                "align": "left",
-                            },
-                            {
-                                "name": "family",
-                                "label": "Family",
-                                "field": "family",
-                                "align": "left",
-                            },
-                            {
-                                "name": "accuracy",
-                                "label": "Accuracy",
-                                "field": "acc_str",
-                                "align": "center",
-                            },
+                        rank_select.on_value_change(lambda e: update_rank(e.value))
+                    ui.label("Practice priorities first. Sort columns to compare strengths; few attempts give less reliable results.").classes("text-xs text-tt-muted")
+                    if not ranked_taxa:
+                        ui.label("No unassisted results with this group information in this period.").classes("text-sm text-tt-muted")
+                    else:
+                        columns = [
+                            {"name": "name", "label": "Taxon", "field": "display_name", "align": "left", "sortable": True},
+                            {"name": "accuracy", "label": "Unassisted accuracy", "field": "accuracy", "align": "right", "sortable": True, ":format": "value => `${value}%`"},
+                            {"name": "attempts", "label": "Attempts", "field": "attempts", "align": "right", "sortable": True},
                         ]
-                        t_rows = [
-                            {
-                                "display_name": tt.display_name,
-                                "canonical_name": tt.canonical_name,
-                                "family": tt.family,
-                                "acc_str": f"{tt.accuracy_pct}% ({tt.correct_attempts}/{tt.total_attempts})",
-                            }
-                            for tt in trouble_taxa
-                        ]
-                        ui.table(
-                            columns=t_columns, rows=t_rows, row_key="canonical_name"
-                        ).classes("w-full bg-tt-surface text-tt-main rounded-md").props(
-                            "flat bordered dense"
-                        )
+                        rows = [{"taxon_key": item.taxon_key, "display_name": item.display_name, "accuracy": item.accuracy_pct, "attempts": item.total_attempts} for item in ranked_taxa]
+                        ui.table(columns=columns, rows=rows, row_key="taxon_key", pagination=table_pagination.copy(), on_pagination_change=lambda e: table_pagination.update(e.value)).classes("w-full bg-tt-surface text-tt-main").props("flat bordered dense")
 
                 # 6. Pairwise Lookalikes (Confusion Matrix) Table Card
                 with ui.card().classes(
@@ -516,16 +372,16 @@ def render_dashboard_view() -> None:
                         ui.icon("compare_arrows", color="warning").classes(
                             "text-base"
                         )
-                        ui.label("Top Taxonomic Lookalikes (Confusion Matrix)").classes(
+                        ui.label("Frequently confused taxa").classes(
                             "text-sm font-bold text-tt-warning"
                         )
                     ui.label(
-                        "Pairwise misidentifications logged during quiz attempts."
+                        "Mistaken taxon pairs in this period, including assisted attempts."
                     ).classes("text-xs text-tt-muted mb-2")
 
                     if not confusion:
                         ui.label(
-                            "No misidentifications recorded in this time period. Keep practicing!"
+                            "No mistaken taxon pairs recorded in this period."
                         ).classes(
                             "text-xs text-tt-muted italic py-4 text-center w-full"
                         )
@@ -533,50 +389,48 @@ def render_dashboard_view() -> None:
                         columns = [
                             {
                                 "name": "target",
-                                "label": "Target Species",
+                                "label": "Observation",
                                 "field": "target_display",
                                 "align": "left",
                             },
                             {
-                                "name": "target_sci",
-                                "label": "Scientific Name",
-                                "field": "target_canonical",
-                                "align": "left",
-                            },
-                            {
                                 "name": "guessed",
-                                "label": "Mistaken For",
+                                "label": "Your guess",
                                 "field": "guessed_display",
                                 "align": "left",
                             },
                             {
-                                "name": "guessed_sci",
-                                "label": "Guessed Scientific",
-                                "field": "guessed_canonical",
-                                "align": "left",
-                            },
-                            {
                                 "name": "count",
-                                "label": "Frequency",
+                                "label": "Times",
                                 "field": "count",
                                 "align": "center",
                             },
                         ]
                         rows = [
                             {
+                                "pair_key": json.dumps([str(c.target_taxon_key), str(c.guessed_taxon_key)]),
                                 "target_display": c.target_display,
                                 "target_canonical": c.target_canonical,
                                 "guessed_display": c.guessed_display,
                                 "guessed_canonical": c.guessed_canonical,
-                                "count": f"{c.count} time(s)",
+                                "count": c.count,
                             }
                             for c in confusion
                         ]
-                        ui.table(
-                            columns=columns, rows=rows, row_key="target_canonical"
+                        pair_table = ui.table(
+                            columns=columns, rows=rows, row_key="pair_key"
                         ).classes("w-full bg-tt-surface text-tt-main rounded-md").props(
                             "flat bordered dense"
                         )
 
-        # Initial dashboard load
+                        for column, field, scientific in [("target", "target_display", "target_canonical"), ("guessed", "guessed_display", "guessed_canonical")]:
+                            pair_table.add_slot("body-cell-" + column, f"""
+                                <q-td :props="props">
+                                  <div>{{{{ props.row.{field} }}}}</div>
+                                  <div v-if="props.row.{field} !== props.row.{scientific}" class="text-tt-muted text-xs">{{{{ props.row.{scientific} }}}}</div>
+                                </q-td>
+                            """)
+
+        # Reuse the same controls and refresh data when returning from practice.
         refresh_dashboard()
+    return refresh_dashboard

@@ -1,39 +1,39 @@
 {
   "id": "dashboard_page_walkthrough",
   "title": "Analytics & Mastery Dashboard",
-  "description": "Walkthrough of the analytics dashboard, performance metrics, family mastery breakdowns, and confusion matrix.",
+  "description": "Read your progress, compare groups, and identify recurring confusions.",
   "category": "Page Walkthroughs",
   "icon": "insights",
   "steps": [
     {
       "step_number": 1,
       "title": "Core Mastery & Accuracy Metrics",
-      "description": "View overall training performance statistics: Total Attempts, Unassisted Accuracy percentage, Active/Best Streaks, and Mastered Species count (≥90% accuracy over ≥5 attempts).",
-      "image_filename": "step1_mastery_accuracy.webp"
+      "description": "Total Attempts includes assisted guesses. Accuracy and mastery use only unassisted attempts; mastery requires at least 90% accuracy over at least five unassisted attempts. A dash means no unassisted attempts in the selected period. Streak records cover all time.",
+      "image_filename": "current_summary.png"
     },
     {
       "step_number": 2,
-      "title": "Time-Range Metrics Filtering",
-      "description": "Filter accuracy metrics across specific time frames: 1 Hour, 24 Hours, 7 Days, 30 Days, 1 Year, or All Time to monitor your learning curve over time.",
-      "image_filename": "step2_time_range_filter.webp"
+      "title": "Choose a Time Period",
+      "description": "Choose a period for accuracy, mastery, group comparisons, and confused pairs. Species encountered and streak records remain all-time measures. Returning to Dashboard after practice refreshes the results.",
+      "image_filename": "current_time_range.png"
     },
     {
       "step_number": 3,
-      "title": "Accuracy over time",
-      "description": "Track your accuracy over time with the EMA (Exponential Moving Average) accuracy line. You can adjust the time-window displayed in the graph at the bottom and change the number of items used in the EMA average.",
-      "image_filename": "step3_accuracy_over_time.webp"
+      "title": "Read Your Accuracy Trend",
+      "description": "The solid line shows a smoothed trend in unassisted accuracy; the dashed line is the average for the selected period. Trend smoothing controls how quickly the line responds to recent attempts. Use the slider or zoom to inspect a section.",
+      "image_filename": "current_accuracy_trend.png"
     },
     {
       "step_number": 4,
-      "title": "Taxa Mastery & Trouble Taxa",
-      "description": "Identify taxa where your identification accuracy is highest and lowest, which can be helpful when choosing what to practice next. You can change both the taxonomic level which is displayed and how many taxa are shown.",
-      "image_filename": "step4_taxa_mastery_trouble.webp"
+      "title": "Compare Accuracy by Group",
+      "description": "Choose species, genus, family, or order in Group by. The table starts with practice priorities; sort accuracy or attempt counts to compare strengths. Small samples are less reliable. Use the table pagination to see more groups. Names follow your selected language.",
+      "image_filename": "current_group_accuracy.png"
     },
     {
       "step_number": 5,
-      "title": "Taxonomic Confusion Matrix",
-      "description": "Inspect pairwise misidentification logs (e.g. mistaking Cirsium palustre for Cirsium vulgare) to identify common visual lookalike pairs and target weak points.",
-      "image_filename": "step5_confusion_matrix.webp"
+      "title": "Recognize Recurring Confusions",
+      "description": "Compare the observation’s recorded taxon with your guess and how often you confused them. Scientific names appear beneath vernacular names when different. These counts include assisted mistakes.",
+      "image_filename": "current_confusions.png"
     }
   ]
 }

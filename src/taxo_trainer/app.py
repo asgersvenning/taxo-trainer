@@ -30,6 +30,7 @@ def index_page() -> None:
     init_databases()
     quiz_state = QuizViewState()
     guides_state = GuidesViewState()
+    refresh_dashboard = None
 
     # Dark mode configuration (defaults to system preference "auto")
     app_conn = get_db_connection()
@@ -82,6 +83,8 @@ def index_page() -> None:
                     conn = get_db_connection()
                     set_app_metadata("active_tab", str(e.value), conn=conn)
                     conn.close()
+                    if e.value == "dashboard" and refresh_dashboard:
+                        refresh_dashboard()
 
             tabs.on_value_change(on_tab_change)
 
@@ -95,7 +98,7 @@ def index_page() -> None:
                 render_quiz_view(state=quiz_state, on_navigate_tab=navigate_to_tab)
 
             with ui.tab_panel("dashboard").classes("w-full h-full p-4 overflow-y-auto"):
-                render_dashboard_view()
+                refresh_dashboard = render_dashboard_view()
 
             with ui.tab_panel("guides").classes("w-full h-full p-4 overflow-y-auto"):
                 render_guides_view(state=guides_state, on_navigate_tab=navigate_to_tab)
