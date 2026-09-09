@@ -19,7 +19,7 @@ class GuideStep:
         step_number: 1-indexed step number.
         title: Concise title of the step.
         description: Detailed explanation of actions or features in this step.
-        image_path: Path to annotated screenshot or diagram asset.
+        image_path: Path to screenshot or diagram asset, or empty for a text-only step.
     """
 
     step_number: int

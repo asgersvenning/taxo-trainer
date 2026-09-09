@@ -1,44 +1,40 @@
 {
   "id": "initial_dataset_setup",
   "title": "Initial Default Dataset Setup",
-  "description": "Step-by-step walkthrough for configuring and ingesting the default species dataset on a fresh clone.",
+  "description": "Set up observation data, choose a name language, and start your first quiz.",
   "category": "Setup & Onboarding",
   "icon": "rocket_launch",
   "steps": [
     {
       "step_number": 1,
       "title": "Welcome & Database Status",
-      "description": "When first launching Taxo-Trainer on a fresh clone, no observation dataset is loaded yet. Taxo-Trainer relies on GBIF DarwinCore occurrence archives to present real-world visual identification questions.",
+      "description": "Taxo-Trainer uses GBIF observations for photo identification practice. If observations are already available, you can start in Quiz. Otherwise, follow these steps to import a dataset.",
       "image_filename": "step1_welcome.webp"
     },
     {
       "step_number": 2,
       "title": "Navigate to Settings & Data",
-      "description": "Locate the top navigation header bar and click on the 'Settings & Data' tab (gear icon). This tab contains all dataset management and ingestion tools.",
-      "image_filename": "step2_navigate_settings.webp"
+      "description": "Open 'Settings & Data' in the top navigation. This is where you choose your name language, manage observation data, and adjust training preferences."
     },
     {
       "step_number": 3,
-      "title": "Ingest Default DarwinCore Dataset",
-      "description": "In the 'DarwinCore (DwC) Occurrence Ingestion' card, the default curated Nordic flora dataset download URL is pre-filled. Click 'Start Ingestion' (or 'Re-Ingest Dataset') to stream occurrence records directly into local SQLite database (app_data.db).",
-      "image_filename": "step3_ingest_dataset.webp"
+      "title": "Import Observation Data",
+      "description": "In 'DarwinCore (DwC) Occurrence Ingestion', use the prefilled local dataset path if the bundled archive is available, or supply your own ZIP path or direct download URL. Click 'Start Ingestion' or 'Re-Ingest Dataset' and wait for completion. Imports add or update records; they do not automatically replace existing data."
     },
     {
       "step_number": 4,
-      "title": "Fetch Vernacular Name Enrichment",
-      "description": "Once ingestion completes, scroll down to the 'GBIF Vernacular Name Enrichment' card and click 'Fetch Vernacular Names from GBIF API'. This populates Danish and English common names for all species and genera.",
-      "image_filename": "step4_fetch_vernacular.webp"
+      "title": "Choose Your Name Language",
+      "description": "Choose 'Primary Display Language', then find 'Species Names' and click 'Look Up Names'. Danish is the default, but other languages are supported. Lookup retrieves available species, genus, and family names; coverage is not guaranteed. You can train while lookup runs, or skip it when using 'Scientific Binomial (Latin)'."
     },
     {
       "step_number": 5,
       "title": "Ready to Practice!",
-      "description": "Switch back to the 'Quiz' tab.",
-      "image_filename": "step5_quiz_tab.webp"
+      "description": "Switch to 'Quiz'. If no questions are available, check that ingestion completed and that your family, taxon, and minimum-occurrence filters leave observations available."
     },
     {
       "step_number": 6,
       "title": "Practice with High-Resolution Photos",
-      "description": "Practice multi-rank taxonomic identification using high-resolution observation photos.",
+      "description": "Inspect a photo and enter a species, genus, or family name. Select an autocomplete suggestion to submit it. Hints mark the attempt as assisted. Open the Quiz walkthrough for shortcuts and the Settings walkthrough to adjust your training pool.",
       "image_filename": "step6_practice_identification.webp"
     }
   ]

@@ -1,0 +1,34 @@
+{
+  "id": "settings_page_walkthrough",
+  "title": "Settings & Species Names",
+  "description": "Choose name languages, look up available names, and adjust saved training preferences.",
+  "category": "Page Walkthroughs",
+  "icon": "settings",
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "Choose Your Name Language",
+      "description": "In 'Settings & Data', set 'Primary Display Language'. Danish is the default, with 12 other vernacular languages and 'Scientific Binomial (Latin)' available. This changes taxon names, not the English interface. Your choice is saved."
+    },
+    {
+      "step_number": 2,
+      "title": "Look Up Available Names",
+      "description": "Under 'Species Names', click 'Look Up Names'. Availability is shown for your selected language; a missing result does not mean a local name does not exist. You can train during lookup. Successful results are cached. Use 'Check for Names Again' or 'Retry Name Lookup' as offered; if asked to wait, follow the displayed delay before retrying."
+    },
+    {
+      "step_number": 3,
+      "title": "Choose Your Training Pool",
+      "description": "Set 'Minimum Occurrence Threshold' to omit taxa with fewer retained observations. The 'Minimum Occurrence Cutoff (C_min)' control under 'Stage 1 Sampling & Probability Weights' changes the same saved value. This does not delete observations. 'Max Occurrences Per Taxon' is a separate cap applied during import."
+    },
+    {
+      "step_number": 4,
+      "title": "Choose How Often Taxa Appear",
+      "description": "Under 'Stage 1 Sampling & Probability Weights', Flat gives eligible taxa equal weight; Natural follows their retained observation counts. Log Transformed and Square-Root Transformed soften the influence of those counts. Counts describe the imported data, not biological abundance. Sampling mode, minimum threshold, language, and theme are saved across launches and dataset clearing."
+    },
+    {
+      "step_number": 5,
+      "title": "Focus Your Practice",
+      "description": "Use family and taxon filters to focus on groups you choose, or 'Practice Misidentified Photos Only' to revisit previous mistakes. Family and misidentified-only filters are session controls. If no questions remain, broaden the filters or lower the minimum threshold. Reselect saved training groups if prompted after upgrading."
+    }
+  ]
+}

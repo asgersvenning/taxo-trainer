@@ -126,7 +126,7 @@ def render_guides_view(
         ):
             ui.icon("rocket_launch", size="lg").classes("text-amber-400")
             with ui.column().classes("gap-1"):
-                ui.label("Fresh Clone? Start Here!").classes(
+                ui.label("First Session? Start Here!").classes(
                     "text-lg font-bold text-amber-300"
                 )
                 ui.label(
@@ -238,13 +238,14 @@ def render_guides_view(
                         "text-sm text-gray-300 leading-relaxed"
                     )
 
-            # Annotated Screenshot / Diagram View
-            with ui.column().classes(
-                "w-full items-center justify-center bg-gray-950 p-2 rounded-lg border border-gray-800 overflow-hidden shadow-inner"
-            ):
-                ui.image(step.image_path).props("fit=contain img-class=object-contain").classes(
-                    "w-full max-h-[500px] object-contain rounded"
-                )
+            # Only show an image when the guide supplies a current illustration.
+            if step.image_path:
+                with ui.column().classes(
+                    "w-full items-center justify-center bg-gray-950 p-2 rounded-lg border border-gray-800 overflow-hidden shadow-inner"
+                ):
+                    ui.image(step.image_path).props("fit=contain img-class=object-contain").classes(
+                        "w-full max-h-[500px] object-contain rounded"
+                    )
 
             # Step Navigation Control Bar
             with ui.row().classes(

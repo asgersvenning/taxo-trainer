@@ -2,13 +2,16 @@
 
 import os
 
+import pytest
+from nicegui import ui
+
 from taxo_trainer.engine.guides import (
     GUIDE_REGISTRY,
     Guide,
     GuideStep,
     get_guide_by_id,
 )
-from taxo_trainer.ui.guides_view import GuidesViewState
+from taxo_trainer.ui.guides_view import GuidesViewState, render_guides_view
 
 
 def test_guide_registry_integrity() -> None:
@@ -33,8 +36,27 @@ def test_guide_registry_integrity() -> None:
             assert step.step_number == idx
             assert step.title
             assert step.description
-            assert step.image_path
-            assert os.path.exists(step.image_path), f"Asset missing for step: {step.image_path}"
+            if step.image_path:
+                assert os.path.exists(step.image_path), f"Asset missing for step: {step.image_path}"
+
+
+@pytest.mark.parametrize("guide_id", ["settings_page_walkthrough", "quiz_page_walkthrough"])
+def test_guide_steps_render_with_optional_images(guide_id: str) -> None:
+    """Text-only steps remain readable and navigable without broken images."""
+    guide = get_guide_by_id(guide_id)
+    assert guide is not None
+    with ui.column() as container:
+        render_guides_view(GuidesViewState(guide_id))
+    try:
+        elements = list(container.descendants())
+        assert any(isinstance(e, ui.label) and e.text == guide.steps[0].description for e in elements)
+        images = [e for e in elements if isinstance(e, ui.image)]
+        assert [e.source for e in images] == ([guide.steps[0].image_path] if guide.steps[0].image_path else [])
+        next_button = next(e for e in elements if isinstance(e, ui.button) and e.text == "Next ▶ [ D / → ]")
+        next(listener.handler for listener in next_button._event_listeners.values() if listener.type == "click")(None)
+        assert any(isinstance(e, ui.label) and e.text == guide.steps[1].description for e in container.descendants())
+    finally:
+        container.delete()
 
 
 def test_get_guide_by_id() -> None:
