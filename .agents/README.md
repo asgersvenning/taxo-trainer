@@ -115,6 +115,10 @@ Known discrepancies to account for:
 - Keep changes focused, reuse existing modules, and avoid unnecessary
   dependencies. Preserve user changes and existing datasets. Do not commit
   generated environments, caches, runtime databases, or build output.
+- Use the shared semantic palette in `src/taxo_trainer/ui/theme.py` for new UI
+  styling rather than hardcoded color shades or forced dark-mode props. Keep
+  feedback colors independent of accent preferences and verify contrast in
+  both modes; browser checks are needed to catch CSS cascade differences.
 
 ## Product communication and language
 

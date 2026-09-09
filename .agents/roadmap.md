@@ -33,8 +33,7 @@ reload restoration, SVG text colors, chart wheel interaction, guide navigation,
 and screenshots at 1440x1000 and 1280x820. Browser checks exposed and corrected
 Quasar important-layer precedence and contrast problems in filled guide buttons.
 
-Statistics and self-explanatory interaction work remain outstanding under the
-active user goal; theme completion is not completion of the full sequence.
+The theme checkpoint was followed by the statistics and interaction stages below.
 
 Statistics stage completed next: all accuracy summaries, rank/trouble aggregates,
 and trend points now exclude assisted attempts consistently. The existing
@@ -53,7 +52,39 @@ switching, empty/current period selection, ascending/descending numeric sorting,
 and retained grouping/sort after returning from Quiz. Five current dashboard
 screenshots replace the obsolete guide assets. A browser test initially used an
 incorrect table-container locator; scoped card/header checks confirmed the
-actual interactions work. Self-explanatory interaction improvements remain.
+actual interactions work. Statistics implementation is in `efc6ed5`.
+
+The self-explanatory stage in `00c4929` simplifies existing controls: one minimum
+observation threshold replaces the two synchronized copies, preserving the saved
+value, count updates, and restart behavior. Import controls explain adding/updating
+data and the separate import cap. Sampling labels describe the effect of the four
+unchanged weighting modes. Include/exclude wording replaces whitelist/blacklist,
+and group suggestions use the selected language. The quiz input is shorter and
+has an accessible name; both Escape directions remain unchanged. Hint controls
+use plain labels with an assistance tooltip. Ignore observation describes removal
+of saved attempts without falsely promising external reporting or permanent
+exclusion. Compact current quiz screenshots replace obsolete illustrations, and
+the trend chart drops overlapping extrema labels while retaining point tooltips.
+
+Final verification: **144 tests passed in 8.87s**, Ruff and whitespace checks
+passed; guide asset references were verified. The cutoff test now proves that only
+one control exists and retains the prior persistence/invalid-edit protections.
+A new callback test covers selected-language suggestions for both include/exclude
+inputs. Chromium exercised the one cutoff, both Escape focus directions, hint
+buttons, ignore-observation tooltip/action, and current guide captures using
+temporary application data. The final chart capture was taken after animation
+settled. The temporary reload server stopped once and was restarted only after
+its tool handle reported completion.
+
+Completion review: shared roles and six selectable appearance combinations cover
+theme generalizability/customization; palette and rendered checks cover contrast;
+consistent unassisted denominators, refreshed language-aware results, and the
+sortable comparison table improve statistics; shorter labels, accurate outcomes,
+and current illustrations clarify existing interactions. No new pages or tutorial
+panels were added. The only new preference is the accent selector within Appearance;
+duplicate cutoff and overlapping statistics displays were removed. This completes
+the requested three-stage UX pass, without claiming universal accessibility or
+substituting packaging work for the user's priorities.
 
 ### Completed: README and onboarding refresh
 
