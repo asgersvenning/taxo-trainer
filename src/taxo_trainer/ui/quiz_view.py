@@ -243,8 +243,17 @@ def render_quiz_view(
         if saved_lang:
             state.filters.language = saved_lang
 
+        # Old name-only filters are retained for recovery, but cannot identify taxa.
+        needs_scope_selection = any(
+            get_app_metadata(f"{kind}_{active_ds}", "", conn=app_conn)
+            and get_app_metadata(f"{kind}_ids_{active_ds}", "__missing__", conn=app_conn) == "__missing__"
+            for kind in ("whitelist", "blacklist")
+        )
+        if needs_scope_selection:
+            ui.notify("Please reselect your saved training groups after this update.", type="info")
+
         # Load persistent Whitelist (include_taxa) and Blacklist (exclude_taxa) per data_source
-        saved_whitelist = get_app_metadata(f"whitelist_{active_ds}", "", conn=app_conn)
+        saved_whitelist = get_app_metadata(f"whitelist_ids_{active_ds}", "", conn=app_conn)
         if saved_whitelist:
             state.filters.include_taxa = [
                 t.strip() for t in saved_whitelist.split("|") if t.strip()
@@ -252,7 +261,7 @@ def render_quiz_view(
         else:
             state.filters.include_taxa = []
 
-        saved_blacklist = get_app_metadata(f"blacklist_{active_ds}", "", conn=app_conn)
+        saved_blacklist = get_app_metadata(f"blacklist_ids_{active_ds}", "", conn=app_conn)
         if saved_blacklist:
             state.filters.exclude_taxa = [
                 t.strip() for t in saved_blacklist.split("|") if t.strip()
@@ -320,20 +329,14 @@ def render_quiz_view(
         ).fetchone()
         if r and r["order_name"]:
             return r["order_name"].strip()
-        r = app_conn.execute(
-            "SELECT order_name FROM taxa WHERE LOWER(canonical_name) = LOWER(?)",
-            (question.canonical_name,),
-        ).fetchone()
-        if r and r["order_name"]:
-            return r["order_name"].strip()
-        if question.family:
-            r = app_conn.execute(
-                "SELECT order_name FROM taxa WHERE LOWER(family) = LOWER(?) AND order_name IS NOT NULL AND order_name != '' LIMIT 1",
-                (question.family,),
-            ).fetchone()
-            if r and r["order_name"]:
-                return r["order_name"].strip()
         return ""
+
+    def scope_key(rank: str) -> str | None:
+        if not state.current_question:
+            return None
+        row = app_conn.execute(f"SELECT {rank}_key FROM taxa WHERE taxon_key=?",
+                               (state.current_question.taxon_key,)).fetchone()
+        return row[0] if row else None
 
     def handle_higher_order_hint() -> None:
         """Trigger sequential higher order rank revelation hint, revealing the highest current hidden rank."""
@@ -387,14 +390,14 @@ def render_quiz_view(
         params = []
 
         if state.matched_genus:
-            where_clauses.append("LOWER(genus) = LOWER(?)")
-            params.append(state.matched_genus)
+            where_clauses.append("genus_key = ?")
+            params.append(scope_key("genus"))
         elif state.matched_family:
-            where_clauses.append("LOWER(family) = LOWER(?)")
-            params.append(state.matched_family)
+            where_clauses.append("family_key = ?")
+            params.append(scope_key("family"))
         elif state.matched_order:
-            where_clauses.append("LOWER(order_name) = LOWER(?)")
-            params.append(state.matched_order)
+            where_clauses.append("order_key = ?")
+            params.append(scope_key("order"))
 
         where_sql = " AND ".join(where_clauses)
 
@@ -436,11 +439,11 @@ def render_quiz_view(
             if disp.lower() not in seen_names and c_name not in seen_names:
                 seen_names.add(disp.lower())
                 seen_names.add(c_name)
-                distractor_choices.append(disp)
+                distractor_choices.append((str(row["taxon_key"]), disp))
                 if len(distractor_choices) >= 4:
                     break
 
-        choices = [target_disp] + distractor_choices
+        choices = [(target_key_str, target_disp)] + distractor_choices
         random.shuffle(choices)
 
         count_label = f"1/{len(choices)}"
@@ -668,9 +671,9 @@ def render_quiz_view(
                                 text,
                                 limit=5,
                                 lang=state.filters.language,
-                                parent_genus=state.matched_genus,
-                                parent_family=state.matched_family,
-                                parent_order=state.matched_order,
+                                parent_genus=scope_key("genus") if state.matched_genus else None,
+                                parent_family=scope_key("family") if state.matched_family else None,
+                                parent_order=scope_key("order") if state.matched_order else None,
                             )
                             suggestions_container.clear()
                             if matches:
@@ -700,9 +703,9 @@ def render_quiz_view(
                                 val,
                                 limit=1,
                                 lang=state.filters.language,
-                                parent_genus=state.matched_genus,
-                                parent_family=state.matched_family,
-                                parent_order=state.matched_order,
+                                parent_genus=scope_key("genus") if state.matched_genus else None,
+                                parent_family=scope_key("family") if state.matched_family else None,
+                                parent_order=scope_key("order") if state.matched_order else None,
                             )
                             if matches:
                                 handle_submit_guess(matches[0]["value"])
@@ -778,10 +781,10 @@ def render_quiz_view(
                                 and "choices" in state.last_feedback
                             ):
                                 with ui.column().classes("w-full gap-1 mt-2"):
-                                    for choice_label in state.last_feedback["choices"]:
+                                    for choice_key, choice_label in state.last_feedback["choices"]:
                                         ui.button(
                                             choice_label,
-                                            on_click=lambda l=choice_label: (
+                                            on_click=lambda l=choice_key: (
                                                 handle_submit_guess(l)
                                             ),
                                             color="secondary",

@@ -22,8 +22,8 @@ class SamplingFilter:
     month: int | None = None
     misidentified_only: bool = False
     language: str = "da"  # "da" (Danish), "en" (English), etc.
-    include_taxa: list[str] = field(default_factory=list)  # Whitelist of taxa names (species/genus/family)
-    exclude_taxa: list[str] = field(default_factory=list)  # Blacklist of taxa names (species/genus/family)
+    include_taxa: list[str] = field(default_factory=list)  # Whitelist of GBIF IDs (species/genus/family)
+    exclude_taxa: list[str] = field(default_factory=list)  # Blacklist of GBIF IDs (species/genus/family)
 
 
 @dataclass
@@ -93,23 +93,23 @@ def sample_stage1_taxon(
     params: list[object] = [filters.min_count, filters.rank]
 
     if filters.family:
-        query += " AND UPPER(family) = UPPER(?)"
+        query += " AND family_key = ?"
         params.append(filters.family)
 
     if filters.genus:
-        query += " AND UPPER(genus) = UPPER(?)"
+        query += " AND genus_key = ?"
         params.append(filters.genus)
 
     if filters.include_taxa:
         inc_conditions = []
         for inc_item in filters.include_taxa:
-            inc_conditions.append("(UPPER(canonical_name) = UPPER(?) OR UPPER(genus) = UPPER(?) OR UPPER(family) = UPPER(?))")
+            inc_conditions.append("(taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ?)")
             params.extend([inc_item, inc_item, inc_item])
         query += " AND (" + " OR ".join(inc_conditions) + ")"
 
     if filters.exclude_taxa:
         for exc_item in filters.exclude_taxa:
-            query += " AND NOT (UPPER(canonical_name) = UPPER(?) OR UPPER(genus) = UPPER(?) OR UPPER(family) = UPPER(?))"
+            query += " AND NOT (taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ?)"
             params.extend([exc_item, exc_item, exc_item])
 
 

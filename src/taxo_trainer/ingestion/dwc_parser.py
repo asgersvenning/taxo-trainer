@@ -273,6 +273,8 @@ def resolve_dwc_source_path(
         return Path(s_clean)
 
     parsed = urllib.parse.urlparse(s_clean)
+    if parsed.hostname == "api.gbif.org" and not parsed.path.startswith("/v1/occurrence/download/request/"):
+        raise ValueError("Use a GBIF archive download URL, not a search or other API endpoint")
     filename = Path(parsed.path).name
     if not filename or filename.startswith("."):
         filename = "remote_dwc_dataset.zip"
@@ -391,20 +393,36 @@ def _activate_import(staged_path: Path, db_path: Path) -> None:
         conn.execute("ATTACH DATABASE ? AS staged", (str(staged_path),))
         with conn:
             conn.execute("BEGIN IMMEDIATE")
+            for table in ("taxa", "higher_ranks"):
+                collision = conn.execute(f"""SELECT 1 FROM {table} old
+                    JOIN staged.{table} new ON old.taxon_key=new.taxon_key
+                    WHERE old.checklist_key IS NOT NULL AND new.checklist_key IS NOT NULL
+                    AND old.checklist_key != new.checklist_key LIMIT 1""").fetchone()
+                if collision:
+                    raise ValueError("Conflicting GBIF checklist IDs; existing data was preserved")
             conn.execute("""
                 INSERT INTO taxa (
                     taxon_key, scientific_name, canonical_name, accepted_name,
                     rank, kingdom, phylum, class, order_name, family, genus,
-                    vernacular_da, vernacular_en, occurrence_count
+                    vernacular_da, vernacular_en, occurrence_count,
+                    genus_key, family_key, order_key, checklist_key
                 ) SELECT taxon_key, scientific_name, canonical_name, accepted_name,
                     rank, kingdom, phylum, class, order_name, family, genus,
-                    vernacular_da, vernacular_en, occurrence_count
+                    vernacular_da, vernacular_en, occurrence_count,
+                    genus_key, family_key, order_key, checklist_key
                   FROM staged.taxa WHERE 1
                 ON CONFLICT(taxon_key) DO UPDATE SET
                     occurrence_count = excluded.occurrence_count,
+                    genus_key = COALESCE(excluded.genus_key, taxa.genus_key),
+                    family_key = COALESCE(excluded.family_key, taxa.family_key),
+                    order_key = COALESCE(excluded.order_key, taxa.order_key),
+                    checklist_key = COALESCE(excluded.checklist_key, taxa.checklist_key),
                     vernacular_da = COALESCE(NULLIF(excluded.vernacular_da, ''), taxa.vernacular_da),
                     vernacular_en = COALESCE(NULLIF(excluded.vernacular_en, ''), taxa.vernacular_en)
             """)
+            conn.execute("""INSERT INTO higher_ranks (taxon_key,rank_name,rank_level,checklist_key)
+                SELECT taxon_key,rank_name,rank_level,checklist_key FROM staged.higher_ranks WHERE 1
+                ON CONFLICT(taxon_key) DO NOTHING""")
             conn.execute("""
                 INSERT OR REPLACE INTO occurrences (
                     occurrence_id, taxon_key, latitude, longitude, locality,
@@ -484,14 +502,14 @@ def _ingest_to_database(
                 row.get("speciesKey")
                 or row.get("acceptedTaxonKey")
                 or row.get("taxonKey")
-                or row.get("taxonID")
-                or row.get("acceptedNameUsageID")
             )
 
             if not occ_id or not taxon_key_raw:
                 continue
 
             taxon_key = str(taxon_key_raw).strip()
+            if not taxon_key.isascii() or not taxon_key.isalnum():
+                continue
 
             # Immediate threshold filtering for max occurrences per raw taxon
             if (
@@ -610,6 +628,10 @@ def _ingest_to_database(
                     "order_name": order_name,
                     "family": family,
                     "genus": genus,
+                    "genus_key": row.get("genusKey") or None,
+                    "family_key": row.get("familyKey") or None,
+                    "order_key": row.get("orderKey") or None,
+                    "checklist_key": row.get("checklistKey") or None,
                     "vernacular_da": vernacular_da,
                     "vernacular_en": vernacular_en,
                     "count": 1,
@@ -675,6 +697,7 @@ def _flush_batch(
             data["vernacular_da"],
             data["vernacular_en"],
             data["count"],
+            data["genus_key"], data["family_key"], data["order_key"], data["checklist_key"],
         )
         for tkey, data in taxa_accumulator.items()
     ]
@@ -686,15 +709,29 @@ def _flush_batch(
                 INSERT INTO taxa (
                     taxon_key, scientific_name, canonical_name, accepted_name,
                     rank, kingdom, phylum, class, order_name, family, genus,
-                    vernacular_da, vernacular_en, occurrence_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    vernacular_da, vernacular_en, occurrence_count,
+                    genus_key, family_key, order_key, checklist_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(taxon_key) DO UPDATE SET
                     occurrence_count = excluded.occurrence_count,
+                    genus_key = COALESCE(excluded.genus_key, taxa.genus_key),
+                    family_key = COALESCE(excluded.family_key, taxa.family_key),
+                    order_key = COALESCE(excluded.order_key, taxa.order_key),
+                    checklist_key = COALESCE(excluded.checklist_key, taxa.checklist_key),
                     vernacular_da = COALESCE(NULLIF(excluded.vernacular_da, ''), taxa.vernacular_da),
                     vernacular_en = COALESCE(NULLIF(excluded.vernacular_en, ''), taxa.vernacular_en);
             """,
                 taxa_batch,
             )
+
+        for data in taxa_accumulator.values():
+            for rank in ("genus", "family", "order"):
+                key = data.get(f"{rank}_key")
+                name = data.get(rank if rank != "order" else "order_name")
+                if key and name:
+                    conn.execute("""INSERT INTO higher_ranks (taxon_key,rank_name,rank_level,checklist_key)
+                        VALUES (?,?,?,?) ON CONFLICT(taxon_key) DO NOTHING""",
+                        (str(key),name,rank.upper(),data.get("checklist_key")))
 
         if occurrence_batch:
             conn.executemany(

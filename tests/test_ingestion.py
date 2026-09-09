@@ -67,7 +67,7 @@ def test_ingest_dwc_file_and_taxonomy_builder(tmp_path):
 
     # Test load_custom_vernacular_json
     dict_json = tmp_path / "dict.json"
-    dict_json.write_text('{"Quercus robur": {"vernacular_da": "Stilke-Eg Custom"}}', encoding="utf-8")
+    dict_json.write_text('{"2435140": {"vernacular_da": "Stilke-Eg Custom"}}', encoding="utf-8")
     updated = load_custom_vernacular_json(dict_json, conn=conn)
     assert updated == 1
 
@@ -77,61 +77,39 @@ def test_ingest_dwc_file_and_taxonomy_builder(tmp_path):
     conn.close()
 
 
-def test_consolidate_synonyms_with_gbif(tmp_path, monkeypatch):
-    """Test consolidating synonym species into accepted species using mocked GBIF Match response."""
-    from taxo_trainer.db import init_app_db
-    from taxo_trainer.ingestion.taxonomy_builder import consolidate_synonyms_with_gbif
+def test_accepted_id_relationship_preserves_observations(tmp_path, monkeypatch):
+    """Accepted-ID relationships preserve observations and original identity."""
+    import json
 
-    db_path = tmp_path / "test_synonyms.db"
-    conn = sqlite3.connect(str(db_path))
+    from taxo_trainer.ingestion.taxonomy_builder import (
+        enrich_vernacular_names_from_gbif,
+    )
+    from tests.test_gbif_requests import Response
+
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+    conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
+    from taxo_trainer.db import init_app_db
     init_app_db(conn)
-
-    # Insert accepted species and a synonym species
-    with conn:
-        conn.execute(
-            "INSERT INTO taxa (taxon_key, canonical_name, accepted_name, scientific_name, rank) VALUES ('LX6F', 'Bistorta officinalis', 'Bistorta officinalis', 'Bistorta officinalis Raf.', 'SPECIES')"
-        )
-        conn.execute(
-            "INSERT INTO taxa (taxon_key, canonical_name, accepted_name, scientific_name, rank) VALUES ('5FY79', 'Persicaria bistorta', 'Bistorta officinalis', 'Persicaria bistorta (L.) Samp.', 'SPECIES')"
-        )
-        conn.execute(
-            "INSERT INTO occurrences (occurrence_id, taxon_key, media_urls) VALUES ('1', '5FY79', 'http://example.com/img.jpg')"
-        )
-
-    # Mock GBIF Match API response for Persicaria bistorta -> Bistorta officinalis
-    def mock_urlopen(req, timeout=5):
-        url = req.full_url if hasattr(req, "full_url") else str(req)
-
-        class MockResp:
-            status = 200
-
-            def read(self):
-                if "Persicaria" in url:
-                    return b'{"status": "SYNONYM", "synonym": true, "speciesKey": "LX6F", "species": "Bistorta officinalis"}'
-                return b'{"status": "ACCEPTED", "synonym": false, "speciesKey": "LX6F", "species": "Bistorta officinalis"}'
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-        return MockResp()
-
-    import urllib.request
-    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
-
-    merged = consolidate_synonyms_with_gbif(conn)
-    assert merged == 1
-
-    # Verify synonym 5FY79 was merged into LX6F and occurrence updated
-    occ = conn.execute("SELECT taxon_key FROM occurrences WHERE occurrence_id = '1'").fetchone()
-    assert occ["taxon_key"] == "LX6F"
-
-    syn_row = conn.execute("SELECT * FROM taxa WHERE taxon_key = '5FY79'").fetchone()
-    assert syn_row is None
-
+    for key in ('1', '2'):
+        conn.execute("INSERT INTO taxa (taxon_key,canonical_name,scientific_name,accepted_name,rank) VALUES (?, 'Same name','Same name','Same name','SPECIES')", (key,))
+    conn.execute("UPDATE taxa SET checklist_key='d7dddbf4-2cf0-4f39-9b2a-bb099caae36c'")
+    conn.execute("INSERT INTO occurrences (occurrence_id,taxon_key,media_urls) VALUES ('10','1','http://example.com/photo.jpg')")
+    conn.commit()
+    def response(req, **kwargs):
+        if 'vernacularNames' in req.full_url:
+            data = {'results': []}
+        elif req.full_url.endswith('/1'):
+            data = {'key': 1, 'rank': 'SPECIES', 'acceptedKey': 2}
+        else:
+            data = {'key': 2, 'rank': 'SPECIES'}
+        return Response(json.dumps(data).encode())
+    monkeypatch.setattr('taxo_trainer.ingestion.taxonomy_builder._open_gbif', response)
+    enrich_vernacular_names_from_gbif(conn)
+    assert conn.execute("SELECT accepted_taxon_key FROM taxa WHERE taxon_key='1'").fetchone()[0] == '2'
+    assert conn.execute("SELECT taxon_key FROM occurrences").fetchone()[0] == '1'
+    assert conn.execute("SELECT COUNT(*) FROM taxa").fetchone()[0] == 2
     conn.close()
 
 
@@ -260,9 +238,9 @@ def test_fetch_gbif_raw_api_cache(tmp_path, monkeypatch):
     monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", cache_db)
 
     cache_conn = get_gbif_cache_connection()
-    target_url = "https://api.gbif.org/v1/species/match?name=Quercus+robur"
+    target_url = "https://api.gbif.org/v1/species/2435140"
 
-    # Mock urllib.request.urlopen to return raw JSON
+    # Mock taxo_trainer.ingestion.taxonomy_builder._open_gbif to return raw JSON
     class MockResp:
         status = 200
 
@@ -275,7 +253,7 @@ def test_fetch_gbif_raw_api_cache(tmp_path, monkeypatch):
         def __exit__(self, *args):
             pass
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=5: MockResp())
+    monkeypatch.setattr("taxo_trainer.ingestion.taxonomy_builder._open_gbif", lambda req, timeout=5: MockResp())
 
     # 1. First fetch — triggers HTTP request and caches raw JSON string
     res1 = fetch_gbif_raw_api(target_url, cache_conn)
@@ -288,7 +266,7 @@ def test_fetch_gbif_raw_api_cache(tmp_path, monkeypatch):
     assert "Quercus robur" in row["response_json"]
 
     # 2. Second fetch with failing HTTP mock — should read directly from disk cache
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=5: Exception("Network Down"))
+    monkeypatch.setattr("taxo_trainer.ingestion.taxonomy_builder._open_gbif", lambda req, timeout=5: Exception("Network Down"))
     res2 = fetch_gbif_raw_api(target_url, cache_conn)
     assert res2 is not None
     assert res2["usageKey"] == 2435140

@@ -37,22 +37,10 @@ def setup_engine_dbs(tmp_path):
 
     # Insert sample taxa
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            family, genus, vernacular_da, vernacular_en, occurrence_count
-        ) VALUES (
-            2435140, 'Quercus robur L.', 'Quercus robur', 'Quercus robur', 'SPECIES',
-            'Fagaceae', 'Quercus', 'Stilk-Eg', 'Pedunculate Oak', 100
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, occurrence_count, genus_key, family_key) VALUES (2435140, 'Quercus robur L.', 'Quercus robur', 'Quercus robur', 'SPECIES', 'Fagaceae', 'Quercus', 'Stilk-Eg', 'Pedunculate Oak', 100, '80000000', '80000001');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            family, genus, vernacular_da, vernacular_en, occurrence_count
-        ) VALUES (
-            2865545, 'Fagus sylvatica L.', 'Fagus sylvatica', 'Fagus sylvatica', 'SPECIES',
-            'Fagaceae', 'Fagus', 'Almindelig Bøg', 'European Beech', 10
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, occurrence_count, genus_key, family_key) VALUES (2865545, 'Fagus sylvatica L.', 'Fagus sylvatica', 'Fagus sylvatica', 'SPECIES', 'Fagaceae', 'Fagus', 'Almindelig Bøg', 'European Beech', 10, '80000002', '80000001');
     """)
 
     # Insert sample occurrences
@@ -179,7 +167,7 @@ def test_validator_multi_rank_and_autocomplete(setup_engine_dbs):
     # Autocomplete
     suggestions = autocomplete_taxa(app_conn, "Quercus")
     assert len(suggestions) >= 1
-    s_values = [s["value"] for s in suggestions]
+    s_values = [s["canonical_name"] for s in suggestions]
     assert "Quercus" in s_values
     assert "Quercus robur" in s_values
 
@@ -305,12 +293,12 @@ def test_sampling_whitelist_and_blacklist(setup_engine_dbs):
     app_conn, _ = setup_engine_dbs
 
     # 1. Whitelist Genus Quercus
-    f_inc = SamplingFilter(include_taxa=["Quercus"])
+    f_inc = SamplingFilter(include_taxa=["80000000"])
     sampled_q = sample_stage1_taxon(app_conn, f_inc)
     assert str(sampled_q) == "2435140"  # Quercus robur
 
     # 2. Blacklist Quercus (should exclude Quercus robur and sample Fagus sylvatica)
-    f_exc = SamplingFilter(exclude_taxa=["Quercus"])
+    f_exc = SamplingFilter(exclude_taxa=["80000000"])
     sampled_f = sample_stage1_taxon(app_conn, f_exc)
     assert str(sampled_f) == "2865545"  # Fagus sylvatica
 
@@ -320,16 +308,16 @@ def test_parent_scoped_autocomplete(setup_engine_dbs):
     app_conn, _ = setup_engine_dbs
 
     # When parent_genus='Quercus' is set, matching 'rob' returns Quercus robur
-    matches_q = autocomplete_taxa(app_conn, "rob", parent_genus="Quercus")
+    matches_q = autocomplete_taxa(app_conn, "rob", parent_genus="80000000")
     assert len(matches_q) == 1
     assert matches_q[0]["canonical_name"] == "Quercus robur"
 
     # When parent_genus='Quercus' is set, typing 'sylv' (Fagus) returns 0 results
-    matches_f = autocomplete_taxa(app_conn, "sylv", parent_genus="Quercus")
+    matches_f = autocomplete_taxa(app_conn, "sylv", parent_genus="80000000")
     assert len(matches_f) == 0
 
     # When parent_family='Fagaceae' is set, matching 'Eg' returns Quercus robur (Stilk-Eg)
-    matches_fam = autocomplete_taxa(app_conn, "Eg", parent_family="Fagaceae")
+    matches_fam = autocomplete_taxa(app_conn, "Eg", parent_family="80000001")
     assert len(matches_fam) >= 1
 
 
@@ -339,8 +327,7 @@ def test_autocomplete_rank_ordering_species_before_genus(setup_engine_dbs):
 
     # Insert a genus 'Quercus' with vernacular_da 'Stilk-Eg' in higher_ranks to create equal priority match
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Quercus', 'GENUS', 'Stilk-Eg');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Quercus', 'GENUS', 'Stilk-Eg', '80000000');
     """)
     app_conn.commit()
 
@@ -362,13 +349,11 @@ def test_autocomplete_canonical_exact_match_beats_secondary_vernacular(
 
     # Insert Artemisia vulgaris species with English/secondary vernacular 'Artemisia'
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES (99999, 'Artemisia vulgaris', 'Artemisia vulgaris L.', 'Artemisia vulgaris L.', 'SPECIES', 'Asteraceae', 'Artemisia', 'Grå-bynke', 'Artemisia|Mugwort');
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES (99999, 'Artemisia vulgaris', 'Artemisia vulgaris L.', 'Artemisia vulgaris L.', 'SPECIES', 'Asteraceae', 'Artemisia', 'Grå-bynke', 'Artemisia|Mugwort', '80000003', '80000004');
     """)
     # Insert Artemisia genus
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level)
-        VALUES ('Artemisia', 'GENUS');
+        INSERT INTO higher_ranks (rank_name, rank_level, taxon_key) VALUES ('Artemisia', 'GENUS', '80000003');
     """)
     app_conn.commit()
 
@@ -386,12 +371,10 @@ def test_autocomplete_prefix_match_ranks_genus_before_species(setup_engine_dbs):
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES (88888, 'Trifolium dubium', 'Trifolium dubium Sibth.', 'Trifolium dubium Sibth.', 'SPECIES', 'Fabaceae', 'Trifolium', 'Fin kløver', 'Lesser trefoil');
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES (88888, 'Trifolium dubium', 'Trifolium dubium Sibth.', 'Trifolium dubium Sibth.', 'SPECIES', 'Fabaceae', 'Trifolium', 'Fin kløver', 'Lesser trefoil', '80000005', '80000006');
     """)
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Trifolium', 'GENUS', 'Kløver-slægten');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Trifolium', 'GENUS', 'Kløver-slægten', '80000005');
     """)
     app_conn.commit()
 
@@ -409,8 +392,7 @@ def test_multiword_per_word_prefix_autocomplete_and_validation(setup_engine_dbs)
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, occurrence_count)
-        VALUES (77777, 'Lysimachia vulgaris', 'Lysimachia vulgaris L.', 'Lysimachia vulgaris L.', 'SPECIES', 'Primulaceae', 'Lysimachia', 'Almindelig Fredløs', 'Yellow loosestrife', 10);
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, occurrence_count, genus_key, family_key) VALUES (77777, 'Lysimachia vulgaris', 'Lysimachia vulgaris L.', 'Lysimachia vulgaris L.', 'SPECIES', 'Primulaceae', 'Lysimachia', 'Almindelig Fredløs', 'Yellow loosestrife', 10, '80000007', '80000008');
     """)
     app_conn.commit()
 
@@ -455,16 +437,13 @@ def test_higher_ranks_genus_does_not_receive_family_vernacular(setup_engine_dbs)
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Brassicaceae', 'FAMILY', 'Korsblomstfamilien');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Brassicaceae', 'FAMILY', 'Korsblomstfamilien', '80000009');
     """)
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Microthlaspi', 'GENUS', NULL);
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Microthlaspi', 'GENUS', NULL, '80000010');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, occurrence_count)
-        VALUES (66666, 'Microthlaspi perfoliatum', 'Microthlaspi perfoliatum (L.) F.K.Mey.', 'Microthlaspi perfoliatum (L.) F.K.Mey.', 'SPECIES', 'Brassicaceae', 'Microthlaspi', 5);
+        INSERT INTO taxa (taxon_key, canonical_name, scientific_name, accepted_name, rank, family, genus, occurrence_count, genus_key, family_key) VALUES (66666, 'Microthlaspi perfoliatum', 'Microthlaspi perfoliatum (L.) F.K.Mey.', 'Microthlaspi perfoliatum (L.) F.K.Mey.', 'SPECIES', 'Brassicaceae', 'Microthlaspi', 5, '80000010', '80000009');
     """)
     app_conn.commit()
 
@@ -481,26 +460,13 @@ def test_autocomplete_sennep_ordering_and_vernacular(setup_engine_dbs):
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            family, genus, vernacular_da, vernacular_en, vernacular_json, occurrence_count
-        ) VALUES (
-            1001, 'Sinapis alba L.', 'Sinapis alba', 'Sinapis alba L.', 'SPECIES',
-            'Brassicaceae', 'Sinapis', 'Gul sennep', 'White Mustard', '{"da": "Gul sennep", "en": "White Mustard"}', 5
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, vernacular_json, occurrence_count, genus_key, family_key) VALUES (1001, 'Sinapis alba L.', 'Sinapis alba', 'Sinapis alba L.', 'SPECIES', 'Brassicaceae', 'Sinapis', 'Gul sennep', 'White Mustard', '{"da": "Gul sennep", "en": "White Mustard"}', 5, '80000011', '80000009');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            family, genus, vernacular_da, vernacular_en, vernacular_json, occurrence_count
-        ) VALUES (
-            1002, 'Mutarda Bernh.', 'Mutarda Bernh.', 'Brassica L.', 'GENUS',
-            'Brassicaceae', 'Rhamphospermum', '', 'Mustard', '{"en": "Mustard", "no": "svartsennepslekta"}', 1
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, vernacular_json, occurrence_count, genus_key, family_key) VALUES (1002, 'Mutarda Bernh.', 'Mutarda Bernh.', 'Brassica L.', 'GENUS', 'Brassicaceae', 'Rhamphospermum', '', 'Mustard', '{"en": "Mustard", "no": "svartsennepslekta"}', 1, '80000012', '80000009');
     """)
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json)
-        VALUES ('Descurainia', 'GENUS', 'Vejsennep', 'Tansymustard', '{"da": "Vejsennep"}');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json, taxon_key) VALUES ('Descurainia', 'GENUS', 'Vejsennep', 'Tansymustard', '{"da": "Vejsennep"}', '80000013');
     """)
     app_conn.commit()
 
@@ -545,17 +511,10 @@ def test_autocomplete_monotypic_genus_vs_species_mistelte(setup_engine_dbs):
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            order_name, family, genus, vernacular_da, vernacular_en
-        ) VALUES (
-            9901, 'Viscum album L.', 'Viscum album', 'Viscum album L.', 'SPECIES',
-            'Santalales', 'Santalaceae', 'Viscum', 'Mistelten', 'Mistletoe'
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, order_name, family, genus, vernacular_da, vernacular_en, genus_key, family_key, order_key) VALUES (9901, 'Viscum album L.', 'Viscum album', 'Viscum album L.', 'SPECIES', 'Santalales', 'Santalaceae', 'Viscum', 'Mistelten', 'Mistletoe', '80000014', '80000015', '80000016');
     """)
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Viscum', 'GENUS', 'Mistelten');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Viscum', 'GENUS', 'Mistelten', '80000014');
     """)
     app_conn.commit()
 
@@ -574,13 +533,7 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
     from taxo_trainer.ui.quiz_view import QuizViewState
 
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            order_name, family, genus, vernacular_da, vernacular_en
-        ) VALUES (
-            9901, 'Viscum album L.', 'Viscum album', 'Viscum album L.', 'SPECIES',
-            'Santalales', 'Santalaceae', 'Viscum', 'Mistelten', 'Mistletoe'
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, order_name, family, genus, vernacular_da, vernacular_en, genus_key, family_key, order_key) VALUES (9901, 'Viscum album L.', 'Viscum album', 'Viscum album L.', 'SPECIES', 'Santalales', 'Santalaceae', 'Viscum', 'Mistelten', 'Mistletoe', '80000014', '80000015', '80000016');
     """)
     app_conn.commit()
 
@@ -636,9 +589,9 @@ def test_higher_order_hint_sequential_revelation(setup_engine_dbs):
         app_conn,
         "Viscum",
         lang="da",
-        parent_genus=state.matched_genus,
-        parent_family=state.matched_family,
-        parent_order=state.matched_order,
+        parent_genus=None,
+        parent_family=None,
+        parent_order="80000016",
     )
     assert len(matches) > 0
     for m in matches:
@@ -734,22 +687,10 @@ def test_multiple_choice_hint_revealed_scope_filtering(setup_engine_dbs):
 
     # Insert 2 species in genus 'Ficaria'
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            order_name, family, genus, vernacular_da, vernacular_en
-        ) VALUES (
-            9910, 'Ficaria verna Huds.', 'Ficaria verna', 'Ficaria verna Huds.', 'SPECIES',
-            'Ranunculales', 'Ranunculaceae', 'Ficaria', 'Vorterod', 'Lesser Celandine'
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, order_name, family, genus, vernacular_da, vernacular_en, genus_key, family_key, order_key) VALUES (9910, 'Ficaria verna Huds.', 'Ficaria verna', 'Ficaria verna Huds.', 'SPECIES', 'Ranunculales', 'Ranunculaceae', 'Ficaria', 'Vorterod', 'Lesser Celandine', '80000017', '80000018', '80000019');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (
-            taxon_key, scientific_name, canonical_name, accepted_name, rank,
-            order_name, family, genus, vernacular_da, vernacular_en
-        ) VALUES (
-            9911, 'Ficaria ficarioides (L.)', 'Ficaria ficarioides', 'Ficaria ficarioides (L.)', 'SPECIES',
-            'Ranunculales', 'Ranunculaceae', 'Ficaria', 'Kaukasisk Vorterod', 'Caucasian Celandine'
-        );
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, order_name, family, genus, vernacular_da, vernacular_en, genus_key, family_key, order_key) VALUES (9911, 'Ficaria ficarioides (L.)', 'Ficaria ficarioides', 'Ficaria ficarioides (L.)', 'SPECIES', 'Ranunculales', 'Ranunculaceae', 'Ficaria', 'Kaukasisk Vorterod', 'Caucasian Celandine', '80000017', '80000018', '80000019');
     """)
     app_conn.commit()
 
@@ -791,16 +732,13 @@ def test_autocomplete_unambiguous_rank_prioritization(setup_engine_dbs):
 
     # Insert 1 genus match and 2 species matches for prefix 'Ambiguustaxon'
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Ambiguustaxon', 'GENUS', 'Ambiguus');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Ambiguustaxon', 'GENUS', 'Ambiguus', '80000020');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES (88901, 'Ambiguus sp1', 'Ambiguus sp1', 'Ambiguus sp1', 'SPECIES', 'Fabaceae', 'Ambiguus', 'Ambiguus sp1', 'Ambiguus sp1');
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES (88901, 'Ambiguus sp1', 'Ambiguus sp1', 'Ambiguus sp1', 'SPECIES', 'Fabaceae', 'Ambiguus', 'Ambiguus sp1', 'Ambiguus sp1', '80000021', '80000006');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES (88902, 'Ambiguus sp2', 'Ambiguus sp2', 'Ambiguus sp2', 'SPECIES', 'Fabaceae', 'Ambiguus', 'Ambiguus sp2', 'Ambiguus sp2');
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES (88902, 'Ambiguus sp2', 'Ambiguus sp2', 'Ambiguus sp2', 'SPECIES', 'Fabaceae', 'Ambiguus', 'Ambiguus sp2', 'Ambiguus sp2', '80000021', '80000006');
     """)
     app_conn.commit()
 
@@ -820,16 +758,13 @@ def test_autocomplete_exact_species_match_always_top(setup_engine_dbs):
 
     # Insert 1 genus match and 2 species matches (one exact, one prefix)
     app_conn.execute("""
-        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da)
-        VALUES ('Vorterodgenus', 'GENUS', 'Vorterod');
+        INSERT INTO higher_ranks (rank_name, rank_level, vernacular_da, taxon_key) VALUES ('Vorterodgenus', 'GENUS', 'Vorterod', '80000022');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES (99501, 'Ficaria verna', 'Ficaria verna', 'Ficaria verna', 'SPECIES', 'Ranunculaceae', 'Vorterodgenus', 'Vorterod', 'Lesser Celandine');
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES (99501, 'Ficaria verna', 'Ficaria verna', 'Ficaria verna', 'SPECIES', 'Ranunculaceae', 'Vorterodgenus', 'Vorterod', 'Lesser Celandine', '80000022', '80000018');
     """)
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES (99502, 'Ficaria ficarioides', 'Ficaria ficarioides', 'Ficaria ficarioides', 'SPECIES', 'Ranunculaceae', 'Vorterodgenus', 'Kaukasisk Vorterod', 'Caucasian Celandine');
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES (99502, 'Ficaria ficarioides', 'Ficaria ficarioides', 'Ficaria ficarioides', 'SPECIES', 'Ranunculaceae', 'Vorterodgenus', 'Kaukasisk Vorterod', 'Caucasian Celandine', '80000022', '80000018');
     """)
     app_conn.commit()
 
@@ -846,8 +781,7 @@ def test_autocomplete_unicode_non_ascii_casing(setup_engine_dbs):
     app_conn, _ = setup_engine_dbs
 
     app_conn.execute("""
-        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en)
-        VALUES ('KEY_ZOS', 'Zostera marina L.', 'Zostera marina', 'Zostera marina L.', 'SPECIES', 'Zosteraceae', 'Zostera', 'Ålegræs|Almindelig bændeltang', 'Eelgrass');
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, vernacular_en, genus_key, family_key) VALUES ('KEY_ZOS', 'Zostera marina L.', 'Zostera marina', 'Zostera marina L.', 'SPECIES', 'Zosteraceae', 'Zostera', 'Ålegræs|Almindelig bændeltang', 'Eelgrass', '80000023', '80000024');
     """)
     app_conn.commit()
 
@@ -871,12 +805,10 @@ def test_autocomplete_min_count_filtering(setup_engine_dbs) -> None:
     """Verify that autocomplete_taxa and validate_user_guess exclude taxa below min_count threshold."""
     app_conn, _ = setup_engine_dbs
     app_conn.execute("""
-        INSERT OR REPLACE INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, occurrence_count)
-        VALUES ('KEY_RARE', 'Rare species L.', 'Rare species', 'Rare species L.', 'SPECIES', 'Rarefam', 'Raregenus', 'Sjælden plante', 2);
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, occurrence_count, genus_key, family_key) VALUES ('KEY_RARE', 'Rare species L.', 'Rare species', 'Rare species L.', 'SPECIES', 'Rarefam', 'Raregenus', 'Sjælden plante', 2, '80000025', '80000026');
     """)
     app_conn.execute("""
-        INSERT OR REPLACE INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, occurrence_count)
-        VALUES ('KEY_COMMON', 'Common species L.', 'Common species', 'Common species L.', 'SPECIES', 'Commonfam', 'Commongenus', 'Almindelig plante', 20);
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, vernacular_da, occurrence_count, genus_key, family_key) VALUES ('KEY_COMMON', 'Common species L.', 'Common species', 'Common species L.', 'SPECIES', 'Commonfam', 'Commongenus', 'Almindelig plante', 20, '80000027', '80000028');
     """)
     app_conn.commit()
 
@@ -941,8 +873,7 @@ def test_bayesian_accuracy_ranking(setup_engine_dbs) -> None:
     # Add Family A (Pinaceae): 1 attempt, 1 correct (Raw 100%, Bayes (1+1)/(1+2) = 2/3 = 66.7%)
     # Add Family B (Fagaceae): 10 attempts, 9 correct (Raw 90%, Bayes (9+1)/(10+2) = 10/12 = 83.3%)
     app_conn.execute("""
-        INSERT OR REPLACE INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, occurrence_count)
-        VALUES (101, 'Pinus sylvestris', 'Pinus sylvestris', 'Pinus sylvestris', 'SPECIES', 'Pinaceae', 'Pinus', 50);
+        INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, family, genus, occurrence_count, genus_key, family_key) VALUES (101, 'Pinus sylvestris', 'Pinus sylvestris', 'Pinus sylvestris', 'SPECIES', 'Pinaceae', 'Pinus', 50, '80000029', '80000030');
     """)
     app_conn.commit()
 
@@ -968,7 +899,7 @@ def test_multi_rank_mastery_stats(setup_engine_dbs) -> None:
     from taxo_trainer.engine.analytics import get_rank_mastery_stats, log_attempt
 
     # Set order_name for test taxa
-    app_conn.execute("UPDATE taxa SET order_name = 'Fagales' WHERE family = 'Fagaceae';")
+    app_conn.execute("UPDATE taxa SET order_name = 'Fagales', order_key = '80000031' WHERE family = 'Fagaceae';")
     app_conn.commit()
 
     log_attempt(user_conn, "occ_m1", 2435140, 2435140, is_correct=True, data_source="test_ds")

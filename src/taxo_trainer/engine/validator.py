@@ -17,7 +17,7 @@ class ValidationResult:
     user_input: str
     is_correct: bool
     matched_rank: str | None  # "FAMILY", "GENUS", "SPECIES"
-    matched_taxon_key: int | None
+    matched_taxon_key: str | int | None
     matched_name: str
     similarity_score: float
     is_soft_typo: bool
@@ -169,9 +169,9 @@ def autocomplete_taxa(
         query: User typed search string.
         limit: Max autocomplete suggestions.
         lang: Preferred language ("da", "en", etc.).
-        parent_genus: Optional genus constraint to restrict suggestions to species within genus.
-        parent_family: Optional family constraint to restrict suggestions to genera/species within family.
-        parent_order: Optional order constraint to restrict suggestions to family/genus/species within order.
+        parent_genus: Optional GBIF genus ID constraining species suggestions.
+        parent_family: Optional GBIF family ID constraining genus/species suggestions.
+        parent_order: Optional GBIF order ID constraining lower-rank suggestions.
         min_count: Minimum occurrence count cutoff threshold.
 
     Returns:
@@ -188,15 +188,15 @@ def autocomplete_taxa(
     clean_sub_pat = f"%{q_clean}%"
 
     p_gen = (
-        parent_genus.strip().lower() if parent_genus and parent_genus.strip() else None
+        str(parent_genus).strip() if parent_genus and str(parent_genus).strip() else None
     )
     p_fam = (
-        parent_family.strip().lower()
-        if parent_family and parent_family.strip()
+        str(parent_family).strip()
+        if parent_family and str(parent_family).strip()
         else None
     )
     p_ord = (
-        parent_order.strip().lower() if parent_order and parent_order.strip() else None
+        str(parent_order).strip() if parent_order and str(parent_order).strip() else None
     )
 
     params = {
@@ -352,21 +352,21 @@ def autocomplete_taxa(
     # Build SQL queries (handling multi-word AND conditions when len(q_words) > 1)
     sp_where_extra = ""
     if p_gen:
-        sp_where_extra = " AND LOWER(genus) = :p_gen"
+        sp_where_extra = " AND genus_key = :p_gen"
     elif p_fam:
-        sp_where_extra = " AND LOWER(family) = :p_fam"
+        sp_where_extra = " AND family_key = :p_fam"
     elif p_ord:
-        sp_where_extra = " AND LOWER(order_name) = :p_ord"
+        sp_where_extra = " AND order_key = :p_ord"
 
     g_where_extra = ""
     if p_fam:
-        g_where_extra = " AND LOWER(t.family) = :p_fam"
+        g_where_extra = " AND t.family_key = :p_fam"
     elif p_ord:
-        g_where_extra = " AND LOWER(t.order_name) = :p_ord"
+        g_where_extra = " AND t.order_key = :p_ord"
 
     f_where_extra = ""
     if p_ord:
-        f_where_extra = " AND LOWER(t.order_name) = :p_ord"
+        f_where_extra = " AND t.order_key = :p_ord"
 
     if len(q_words) > 1:
         sp_conds = []
@@ -399,17 +399,17 @@ def autocomplete_taxa(
               AND ({" AND ".join(sp_conds)}){sp_where_extra}
         """
         g_sql = f"""
-            SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            SELECT DISTINCT t.genus_key AS taxon_key, t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json
             FROM taxa t
-            LEFT JOIN higher_ranks h ON h.rank_name = t.genus
-            WHERE t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
+            LEFT JOIN higher_ranks h ON h.taxon_key = t.genus_key
+            WHERE t.genus_key IS NOT NULL AND t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
               AND ({" AND ".join(g_conds)})
         """
         f_sql = f"""
-            SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            SELECT DISTINCT t.family_key AS taxon_key, t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json
             FROM taxa t
-            LEFT JOIN higher_ranks h ON h.rank_name = t.family
-            WHERE t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
+            LEFT JOIN higher_ranks h ON h.taxon_key = t.family_key
+            WHERE t.family_key IS NOT NULL AND t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
               AND ({" AND ".join(f_conds)})
         """
         exec_params = multi_params
@@ -429,24 +429,24 @@ def autocomplete_taxa(
                OR REPLACE(REPLACE(LOWER(scientific_name), '-', ''), ' ', '') LIKE :clean_sub){sp_where_extra}
         """
         g_sql = f"""
-            SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            SELECT DISTINCT t.genus_key AS taxon_key, t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json
             FROM taxa t
-            LEFT JOIN higher_ranks h ON h.rank_name = t.genus
-            WHERE t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
-              AND (LOWER(t.genus) LIKE :sub 
-                OR LOWER(h.vernacular_da) LIKE :sub 
+            LEFT JOIN higher_ranks h ON h.taxon_key = t.genus_key
+            WHERE t.genus_key IS NOT NULL AND t.genus IS NOT NULL AND t.genus != '' AND t.occurrence_count >= :min_count{g_where_extra}
+              AND (LOWER(t.genus) LIKE :sub
+                OR LOWER(h.vernacular_da) LIKE :sub
                 OR LOWER(h.vernacular_en) LIKE :sub
                 OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
                 OR REPLACE(REPLACE(LOWER(t.genus), '-', ''), ' ', '') LIKE :clean_sub
                 OR REPLACE(REPLACE(LOWER(h.vernacular_da), '-', ''), ' ', '') LIKE :clean_sub)
         """
         f_sql = f"""
-            SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
+            SELECT DISTINCT t.family_key AS taxon_key, t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json
             FROM taxa t
-            LEFT JOIN higher_ranks h ON h.rank_name = t.family
-            WHERE t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
-              AND (LOWER(t.family) LIKE :sub 
-                OR LOWER(h.vernacular_da) LIKE :sub 
+            LEFT JOIN higher_ranks h ON h.taxon_key = t.family_key
+            WHERE t.family_key IS NOT NULL AND t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
+              AND (LOWER(t.family) LIKE :sub
+                OR LOWER(h.vernacular_da) LIKE :sub
                 OR LOWER(h.vernacular_en) LIKE :sub
                 OR json_extract(h.vernacular_json, '$.' || :lang_code) LIKE :sub
                 OR REPLACE(REPLACE(LOWER(t.family), '-', ''), ' ', '') LIKE :clean_sub
@@ -469,13 +469,13 @@ def autocomplete_taxa(
         ):
             continue
         canon = row["canonical_name"]
-        if canon not in seen_values:
-            seen_values.add(canon)
+        if row["taxon_key"] not in seen_values:
+            seen_values.add(row["taxon_key"])
             display = get_display_name(row, lang=lang)
             primary_v = (
                 [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
             )
-            v_json_raw = row.get("vernacular_json") if "vernacular_json" in row else None
+            v_json_raw = row["vernacular_json"]
             if v_json_raw:
                 try:
                     v_dict = json.loads(v_json_raw)
@@ -495,7 +495,7 @@ def autocomplete_taxa(
             candidates.append(
                 {
                     "label": label,
-                    "value": canon,
+                    "value": str(row["taxon_key"]),
                     "display_name": display,
                     "canonical_name": canon,
                     "rank": r_str,
@@ -509,14 +509,14 @@ def autocomplete_taxa(
     if not p_gen:
         for row in conn.execute(g_sql, exec_params).fetchall():
             g_name = row["genus"]
-            if g_name and g_name not in seen_values:
-                seen_values.add(g_name)
+            if g_name and row["taxon_key"] not in seen_values:
+                seen_values.add(row["taxon_key"])
                 g_disp = get_display_name(row, lang=lang)
                 primary_v = (
                     [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
                 )
                 v_json_raw = (
-                    row.get("vernacular_json") if "vernacular_json" in row else None
+                    row["vernacular_json"]
                 )
                 if v_json_raw:
                     try:
@@ -539,11 +539,11 @@ def autocomplete_taxa(
                 candidates.append(
                     {
                         "label": g_label,
-                        "value": g_name,
+                        "value": str(row["taxon_key"]),
                         "display_name": g_disp,
                         "canonical_name": g_name,
                         "rank": "GENUS",
-                        "taxon_key": None,
+                        "taxon_key": row["taxon_key"],
                         "priority": prio,
                         "rank_order": rw,
                     }
@@ -553,14 +553,14 @@ def autocomplete_taxa(
     if not p_gen and not p_fam:
         for row in conn.execute(f_sql, exec_params).fetchall():
             f_name = row["family"]
-            if f_name and f_name not in seen_values:
-                seen_values.add(f_name)
+            if f_name and row["taxon_key"] not in seen_values:
+                seen_values.add(row["taxon_key"])
                 f_disp = get_display_name(row, lang=lang)
                 primary_v = (
                     [row["vernacular_da"]] if lang == "da" else [row["vernacular_en"]]
                 )
                 v_json_raw = (
-                    row.get("vernacular_json") if "vernacular_json" in row else None
+                    row["vernacular_json"]
                 )
                 if v_json_raw:
                     try:
@@ -583,51 +583,15 @@ def autocomplete_taxa(
                 candidates.append(
                     {
                         "label": f_label,
-                        "value": f_name,
+                        "value": str(row["taxon_key"]),
                         "display_name": f_disp,
                         "canonical_name": f_name,
                         "rank": "FAMILY",
-                        "taxon_key": None,
+                        "taxon_key": row["taxon_key"],
                         "priority": prio,
                         "rank_order": rw,
                     }
                 )
-
-                prio, rw = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
-                if prio >= 6:
-                    continue
-                f_label = (
-                    f"🏛️ Family: {f_disp} ({f_name})"
-                    if f_disp and f_disp != f_name and f_disp != "Unknown Species"
-                    else f"🏛️ Family: {f_name}"
-                )
-                candidates.append(
-                    {
-                        "label": f_label,
-                        "value": f_name,
-                        "display_name": f_disp,
-                        "canonical_name": f_name,
-                        "rank": "FAMILY",
-                        "taxon_key": None,
-                        "priority": prio,
-                        "rank_order": rw,
-                    }
-                )
-
-    # Filter out pseudo-species candidates whose canonical/scientific name represents a higher rank
-    higher_canonical = {
-        normalize_name(c["canonical_name"]) for c in candidates if (c["rank"] or "").upper() in ("GENUS", "FAMILY")
-    }
-
-    filtered_candidates = []
-    for c in candidates:
-        r_up = (c["rank"] or "").upper()
-        if r_up in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM"):
-            norm_c = normalize_name(c["canonical_name"])
-            if norm_c in higher_canonical:
-                continue
-        filtered_candidates.append(c)
-    candidates = filtered_candidates
 
     # Count distinct concept/display names per rank group for strong matches (priority <= 4) to determine rank ambiguity
     rank_distinct_names: dict[str, set[str]] = {}
@@ -639,7 +603,7 @@ def autocomplete_taxa(
                 if r_str in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM")
                 else r_str
             )
-            norm_disp = normalize_name(c["display_name"])
+            norm_disp = str(c["taxon_key"])
             rank_distinct_names.setdefault(r_grp, set()).add(norm_disp)
 
     def get_sort_key(c: dict[str, Any]) -> tuple:
@@ -700,448 +664,95 @@ def check_string_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, norm_a, norm_b).ratio()
 
 
-def validate_user_guess(
-    conn: sqlite3.Connection,
-    user_input: str,
-    target_taxon_key: int | str,
-    typo_threshold: float = 0.90,
-    lang: str = "da",
-    min_count: int = 1,
-) -> ValidationResult:
-    """Validate user guess against target taxon across Family, Genus, and Species ranks.
-
-    Args:
-        conn: Connection to app_data.db.
-        user_input: Raw input guess string.
-        target_taxon_key: Target GBIF taxon_key for observation.
-        typo_threshold: SequenceMatcher similarity threshold for soft typo acceptance (default >0.90).
-        lang: Preferred language ("da" or "en").
-        min_count: Minimum occurrence count cutoff threshold for valid taxa lookup.
-
-    Returns:
-        ValidationResult: Detailed validation outcome dataclass.
-    """
-    clean_input = user_input.strip()
-    if not clean_input:
-        return ValidationResult(
-            user_input=user_input,
-            is_correct=False,
-            matched_rank=None,
-            matched_taxon_key=None,
-            matched_name="",
-            similarity_score=0.0,
-            is_soft_typo=False,
-            feedback_message="Please enter a species, genus, or family name.",
-        )
-
-    # 1. Fetch target taxon details
-    cursor = conn.execute("SELECT * FROM taxa WHERE taxon_key = ?", (target_taxon_key,))
-    target_row = cursor.fetchone()
-    if not target_row:
-        return ValidationResult(
-            user_input=user_input,
-            is_correct=False,
-            matched_rank=None,
-            matched_taxon_key=None,
-            matched_name="",
-            similarity_score=0.0,
-            is_soft_typo=False,
-            feedback_message="Target species record missing.",
-        )
-
-    target_canonical = target_row["canonical_name"].strip()
-    target_sci = target_row["scientific_name"].strip()
-    target_da = (target_row["vernacular_da"] or "").strip()
-    target_en = (target_row["vernacular_en"] or "").strip()
-    target_genus = (target_row["genus"] or "").strip()
-    target_family = (target_row["family"] or "").strip()
-
-    input_lower = clean_input.lower()
-    input_clean = normalize_name(clean_input)
-
-    # Direct exact / symmetric check against target species (including all multi-language pipe-separated vernacular variations)
+def _aliases(row: dict) -> list[str]:
+    """Return local input aliases attached to a taxon ID, never new identities."""
     import re
 
-    target_names_clean = [
-        normalize_name(target_canonical),
-        normalize_name(target_sci),
-    ]
-    for syn in re.findall(r"\((.*?)\)", target_sci):
-        norm_syn = normalize_name(syn)
-        if norm_syn and norm_syn not in target_names_clean:
-            target_names_clean.append(norm_syn)
+    names = [row.get("canonical_name"), row.get("scientific_name"), row.get("rank_name"),
+             row.get("vernacular_da"), row.get("vernacular_en")]
+    try:
+        translations = json.loads(row.get("vernacular_json") or "{}")
+        if isinstance(translations, dict):
+            names.extend(v for v in translations.values() if isinstance(v, str))
+    except (ValueError, TypeError):
+        pass
+    names.extend(re.findall(r"\((.*?)\)", row.get("scientific_name") or ""))
+    aliases = [part.strip() for name in names if name for part in name.split("|") if part.strip()]
+    if row.get("rank_level") in ("GENUS", "FAMILY", "ORDER"):
+        for name in list(aliases):
+            for suffix in ("-slægten", " slægten", "-familien", " familien", "-ordenen", " ordenen"):
+                if name.lower().endswith(suffix):
+                    aliases.append(name[:-len(suffix)])
+    return aliases
 
-    v_json_raw = (
-        target_row["vernacular_json"]
-        if "vernacular_json" in target_row.keys()  # noqa: SIM118
-        else None
-    )
-    v_dict = {}
-    if v_json_raw and str(v_json_raw).strip():
-        try:
-            v_dict = json.loads(str(v_json_raw).strip())
-        except (json.JSONDecodeError, TypeError, ValueError):
-            v_dict = {}
 
-    for pipe_str in v_dict.values():
-        if pipe_str:
-            for part in pipe_str.split("|"):
-                norm_p = normalize_name(part)
-                if norm_p and norm_p not in target_names_clean:
-                    target_names_clean.append(norm_p)
+def validate_user_guess(conn, user_input, target_taxon_key, typo_threshold=0.90, lang="da", min_count=1) -> ValidationResult:
+    """Resolve local input aliases or a selected GBIF ID and compare IDs only.
 
-    if target_da:
-        for part in target_da.split("|"):
-            norm_p = normalize_name(part)
-            if norm_p and norm_p not in target_names_clean:
-                target_names_clean.append(norm_p)
+    Ambiguous aliases require a selection. Higher-rank guesses carry their own
+    IDs, never the ID of an arbitrary example species.
+    """
+    raw = user_input.strip()
+    target = conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (str(target_taxon_key),)).fetchone()
 
-    if target_en:
-        for part in target_en.split("|"):
-            norm_p = normalize_name(part)
-            if norm_p and norm_p not in target_names_clean:
-                target_names_clean.append(norm_p)
+    def result(row=None, correct=False, similarity=0.0, soft=False, message=""):
+        rank = (row.get("rank_level") or row.get("rank") or "SPECIES") if row else None
+        if rank in ("SUBSPECIES", "VARIETY", "FORM"):
+            rank = "SPECIES"
+        return ValidationResult(user_input, correct, rank, row["taxon_key"] if row else None,
+                                get_display_name(row, lang) if row else "", similarity, soft, message)
 
-    if input_clean in target_names_clean and input_clean != "":
-        return ValidationResult(
-            user_input=user_input,
-            is_correct=True,
-            matched_rank="SPECIES",
-            matched_taxon_key=target_taxon_key,
-            matched_name=get_display_name(target_row, lang=lang),
-            similarity_score=1.0,
-            is_soft_typo=False,
-            feedback_message="Correct species identification!",
-        )
-
-    # Direct exact / symmetric check against target genus (including scientific name and higher_ranks vernaculars)
-    if target_genus:
-        genus_names_clean = [normalize_name(target_genus)]
-        g_row = conn.execute(
-            "SELECT vernacular_da, vernacular_en, vernacular_json FROM higher_ranks WHERE rank_name = ?",
-            (target_genus,),
-        ).fetchone()
-        if g_row:
-            for v_col in [g_row["vernacular_da"], g_row["vernacular_en"]]:
-                if v_col:
-                    for part in v_col.split("|"):
-                        np = normalize_name(part)
-                        if np and np not in genus_names_clean:
-                            genus_names_clean.append(np)
-                        for suf in ("slægten", "familien", "ordenen"):
-                            if np.endswith(suf) and len(np) > len(suf):
-                                base_np = np[: -len(suf)].strip()
-                                if base_np and base_np not in genus_names_clean:
-                                    genus_names_clean.append(base_np)
-            if g_row["vernacular_json"]:
-                try:
-                    g_dict = json.loads(g_row["vernacular_json"])
-                    for p_str in g_dict.values():
-                        if p_str:
-                            for part in p_str.split("|"):
-                                np = normalize_name(part)
-                                if np and np not in genus_names_clean:
-                                    genus_names_clean.append(np)
-                                for suf in ("slægten", "familien", "ordenen"):
-                                    if np.endswith(suf) and len(np) > len(suf):
-                                        base_np = np[: -len(suf)].strip()
-                                        if base_np and base_np not in genus_names_clean:
-                                            genus_names_clean.append(base_np)
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    pass
-
-        if input_clean in genus_names_clean:
-            g_disp = get_display_name(g_row, lang=lang) if g_row else target_genus
-            return ValidationResult(
-                user_input=user_input,
-                is_correct=True,
-                matched_rank="GENUS",
-                matched_taxon_key=None,
-                matched_name=f"{g_disp} ({target_genus})"
-                if g_disp != target_genus
-                else target_genus,
-                similarity_score=1.0,
-                is_soft_typo=False,
-                feedback_message=f"Correct Genus! ({g_disp} / {target_genus}). Now identify the species.",
-            )
-
-    # Direct exact / symmetric check against target family (including scientific name and higher_ranks vernaculars)
-    if target_family:
-        family_names_clean = [normalize_name(target_family)]
-        f_row = conn.execute(
-            "SELECT vernacular_da, vernacular_en, vernacular_json FROM higher_ranks WHERE rank_name = ?",
-            (target_family,),
-        ).fetchone()
-        if f_row:
-            for v_col in [f_row["vernacular_da"], f_row["vernacular_en"]]:
-                if v_col:
-                    for part in v_col.split("|"):
-                        np = normalize_name(part)
-                        if np and np not in family_names_clean:
-                            family_names_clean.append(np)
-                        for suf in ("slægten", "familien", "ordenen"):
-                            if np.endswith(suf) and len(np) > len(suf):
-                                base_np = np[: -len(suf)].strip()
-                                if base_np and base_np not in family_names_clean:
-                                    family_names_clean.append(base_np)
-            if f_row["vernacular_json"]:
-                try:
-                    f_dict = json.loads(f_row["vernacular_json"])
-                    for p_str in f_dict.values():
-                        if p_str:
-                            for part in p_str.split("|"):
-                                np = normalize_name(part)
-                                if np and np not in family_names_clean:
-                                    family_names_clean.append(np)
-                                for suf in ("slægten", "familien", "ordenen"):
-                                    if np.endswith(suf) and len(np) > len(suf):
-                                        base_np = np[: -len(suf)].strip()
-                                        if base_np and base_np not in family_names_clean:
-                                            family_names_clean.append(base_np)
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    pass
-
-        if input_clean in family_names_clean:
-            f_disp = get_display_name(f_row, lang=lang) if f_row else target_family
-            return ValidationResult(
-                user_input=user_input,
-                is_correct=True,
-                matched_rank="FAMILY",
-                matched_taxon_key=None,
-                matched_name=f"{f_disp} ({target_family})"
-                if f_disp != target_family
-                else target_family,
-                similarity_score=1.0,
-                is_soft_typo=False,
-                feedback_message=f"Correct Family! ({f_disp} / {target_family}). Now refine to Genus or Species.",
-            )
-
-    # Check fuzzy typo match against target names
-    all_target_variants = [target_canonical, target_sci]
-    if target_da:
-        all_target_variants.extend(
-            [p.strip() for p in target_da.split("|") if p.strip()]
-        )
-    if target_en:
-        all_target_variants.extend(
-            [p.strip() for p in target_en.split("|") if p.strip()]
-        )
-
-    # Check multi-word per-word prefix match (e.g. "alm fred" -> "Almindelig Fredløs")
-    q_input_words = [
-        w for w in input_lower.replace("-", " ").replace("/", " ").split() if w
-    ]
-    if len(q_input_words) > 1:
-        for name in all_target_variants:
-            if not name:
-                continue
-            if is_multiword_prefix(name, q_input_words):
-                return ValidationResult(
-                    user_input=user_input,
-                    is_correct=True,
-                    matched_rank="SPECIES",
-                    matched_taxon_key=target_taxon_key,
-                    matched_name=get_display_name(target_row, lang=lang),
-                    similarity_score=1.0,
-                    is_soft_typo=False,
-                    feedback_message="Correct species identification!",
-                )
-
-    for name in all_target_variants:
-
-        if not name:
+    if not raw or not target:
+        return result(message="Please enter a species, genus, or family name." if not raw else "Target species record missing.")
+    target = dict(target)
+    target_ids = {"SPECIES": str(target_taxon_key), "GENUS": target.get("genus_key"),
+                  "FAMILY": target.get("family_key"), "ORDER": target.get("order_key")}
+    ancestors = []
+    for rank in ("GENUS", "FAMILY", "ORDER"):
+        key = target_ids[rank]
+        if not key:
             continue
-        sim = check_string_similarity(input_clean, name)
-        if sim >= typo_threshold:
-            return ValidationResult(
-                user_input=user_input,
-                is_correct=True,
-                matched_rank="SPECIES",
-                matched_taxon_key=target_taxon_key,
-                matched_name=get_display_name(target_row, lang=lang),
-                similarity_score=sim,
-                is_soft_typo=True,
-                feedback_message=f"Correct! (Soft typo correction for '{name.title()}')",
-            )
+        row = conn.execute("SELECT * FROM higher_ranks WHERE taxon_key=?", (key,)).fetchone()
+        ancestors.append(dict(row) if row else {"taxon_key": key, "rank_level": rank,
+            "rank_name": target.get(rank.lower() if rank != "ORDER" else "order_name")})
 
-    # Fuzzy check on Genus
-    if target_genus:
-        sim_g = check_string_similarity(input_clean, target_genus)
-        if sim_g >= typo_threshold:
-            return ValidationResult(
-                user_input=user_input,
-                is_correct=True,
-                matched_rank="GENUS",
-                matched_taxon_key=None,
-                matched_name=target_row["genus"],
-                similarity_score=sim_g,
-                is_soft_typo=True,
-                feedback_message=f"Correct Genus '{target_row['genus']}'! (Soft typo accepted).",
-            )
-
-    # Fuzzy check on Family
-    if target_family:
-        sim_f = check_string_similarity(input_clean, target_family)
-        if sim_f >= typo_threshold:
-            return ValidationResult(
-                user_input=user_input,
-                is_correct=True,
-                matched_rank="FAMILY",
-                matched_taxon_key=None,
-                matched_name=target_row["family"],
-                similarity_score=sim_f,
-                is_soft_typo=True,
-                feedback_message=f"Correct Family '{target_row['family']}'! (Soft typo accepted).",
-            )
-
-    # Identify if user entered a real Genus or Family taxon name
-    # 1. Check Genus match
-    g_match = conn.execute(
-        """SELECT DISTINCT t.genus, h.vernacular_da, h.vernacular_en, h.vernacular_json 
-           FROM taxa t LEFT JOIN higher_ranks h ON h.rank_name = t.genus
-           WHERE LOWER(t.genus) = :raw 
-              OR LOWER(h.vernacular_da) = :raw
-              OR LOWER(h.vernacular_en) = :raw
-              OR LOWER(h.vernacular_da) LIKE :pipe_prefix
-              OR LOWER(h.vernacular_da) LIKE :pipe_suffix
-              OR LOWER(h.vernacular_da) LIKE :pipe_mid
-           LIMIT 1""",
-        {
-            "raw": input_lower,
-            "pipe_prefix": f"{input_lower}|%",
-            "pipe_suffix": f"%|{input_lower}",
-            "pipe_mid": f"%|{input_lower}|%",
-        },
-    ).fetchone()
-
-    if g_match and g_match["genus"]:
-        g_name = g_match["genus"]
-        g_disp = get_display_name(g_match, lang=lang)
-        g_label = (
-            f"📁 Genus: {g_disp} ({g_name})"
-            if g_disp and g_disp != g_name and g_disp != "Unknown Species"
-            else f"📁 Genus: {g_name}"
-        )
-        sample_sp = conn.execute(
-            "SELECT taxon_key FROM taxa WHERE genus = ? AND taxon_key IS NOT NULL LIMIT 1",
-            (g_name,),
-        ).fetchone()
-        sample_key = sample_sp["taxon_key"] if sample_sp else None
-        return ValidationResult(
-            user_input=user_input,
-            is_correct=False,
-            matched_rank="GENUS",
-            matched_taxon_key=sample_key,
-            matched_name=g_label,
-            similarity_score=0.0,
-            is_soft_typo=False,
-            feedback_message=f"Incorrect. Target species was {get_display_name(target_row)} ({target_row['canonical_name']}).",
-        )
-
-    # 2. Check Family match
-    f_match = conn.execute(
-        """SELECT DISTINCT t.family, h.vernacular_da, h.vernacular_en, h.vernacular_json 
-           FROM taxa t LEFT JOIN higher_ranks h ON h.rank_name = t.family
-           WHERE LOWER(t.family) = :raw 
-              OR LOWER(h.vernacular_da) = :raw
-              OR LOWER(h.vernacular_en) = :raw
-              OR LOWER(h.vernacular_da) LIKE :pipe_prefix
-              OR LOWER(h.vernacular_da) LIKE :pipe_suffix
-              OR LOWER(h.vernacular_da) LIKE :pipe_mid
-           LIMIT 1""",
-        {
-            "raw": input_lower,
-            "pipe_prefix": f"{input_lower}|%",
-            "pipe_suffix": f"%|{input_lower}",
-            "pipe_mid": f"%|{input_lower}|%",
-        },
-    ).fetchone()
-
-    if f_match and f_match["family"]:
-        f_name = f_match["family"]
-        f_disp = get_display_name(f_match, lang=lang)
-        f_label = (
-            f"🏛️ Family: {f_disp} ({f_name})"
-            if f_disp and f_disp != f_name and f_disp != "Unknown Species"
-            else f"🏛️ Family: {f_name}"
-        )
-        sample_sp = conn.execute(
-            "SELECT taxon_key FROM taxa WHERE family = ? AND taxon_key IS NOT NULL LIMIT 1",
-            (f_name,),
-        ).fetchone()
-        sample_key = sample_sp["taxon_key"] if sample_sp else None
-        return ValidationResult(
-            user_input=user_input,
-            is_correct=False,
-            matched_rank="FAMILY",
-            matched_taxon_key=sample_key,
-            matched_name=f_label,
-            similarity_score=0.0,
-            is_soft_typo=False,
-            feedback_message=f"Incorrect. Target species was {get_display_name(target_row)} ({target_row['canonical_name']}).",
-        )
-
-    # 3. Species match fallback
-    guessed_cursor = conn.execute(
-        """
-        SELECT taxon_key, canonical_name, genus, family, order_name, vernacular_da, vernacular_en, vernacular_json, scientific_name FROM taxa
-        WHERE LOWER(canonical_name) = :raw
-           OR LOWER(vernacular_da) = :raw
-           OR LOWER(vernacular_en) = :raw
-           OR LOWER(scientific_name) = :raw
-           OR LOWER(vernacular_da) LIKE :pipe_prefix
-           OR LOWER(vernacular_da) LIKE :pipe_suffix
-           OR LOWER(vernacular_da) LIKE :pipe_mid
-           OR LOWER(vernacular_en) LIKE :pipe_prefix
-           OR LOWER(vernacular_en) LIKE :pipe_suffix
-           OR LOWER(vernacular_en) LIKE :pipe_mid
-           OR LOWER(vernacular_json) LIKE :json_pat
-           OR REPLACE(REPLACE(LOWER(canonical_name), '-', ''), ' ', '') = :clean
-           OR REPLACE(REPLACE(LOWER(vernacular_da), '-', ''), ' ', '') LIKE :clean_pipe_prefix
-           OR REPLACE(REPLACE(LOWER(vernacular_da), '-', ''), ' ', '') LIKE :clean_pipe_suffix
-           OR REPLACE(REPLACE(LOWER(vernacular_da), '-', ''), ' ', '') LIKE :clean_pipe_mid
-        LIMIT 1
-        """,
-        {
-            "raw": input_lower,
-            "clean": input_clean,
-            "pipe_prefix": f"{input_lower}|%",
-            "pipe_suffix": f"%|{input_lower}",
-            "pipe_mid": f"%|{input_lower}|%",
-            "json_pat": f'%"{input_lower}"%',
-            "clean_pipe_prefix": f"{input_clean}|%",
-            "clean_pipe_suffix": f"%|{input_clean}",
-            "clean_pipe_mid": f"%|{input_clean}|%",
-        },
-    )
-    guessed_row = guessed_cursor.fetchone()
-
-    if not guessed_row:
-        return ValidationResult(
-            user_input=user_input,
-            is_correct=False,
-            matched_rank=None,
-            matched_taxon_key=None,
-            matched_name="",
-            similarity_score=0.0,
-            is_soft_typo=False,
-            feedback_message=f"Unrecognized taxon name '{user_input}'. Please check spelling or select from suggestions.",
-        )
-
-    sp_disp = get_display_name(guessed_row, lang=lang)
-    sp_label = (
-        f"{sp_disp} ({guessed_row['canonical_name']})"
-        if sp_disp != guessed_row["canonical_name"]
-        else guessed_row["canonical_name"]
-    )
-
-    return ValidationResult(
-        user_input=user_input,
-        is_correct=False,
-        matched_rank="SPECIES",
-        matched_taxon_key=guessed_row["taxon_key"],
-        matched_name=sp_label,
-        similarity_score=0.0,
-        is_soft_typo=False,
-        feedback_message=f"Incorrect. Target species was {get_display_name(target_row)} ({target_row['canonical_name']}).",
-    )
+    selected = conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (raw,)).fetchone()
+    if selected is None:
+        selected = conn.execute("SELECT * FROM higher_ranks WHERE taxon_key=?", (raw,)).fetchone()
+    if selected is None:
+        selected = next((r for r in ancestors if str(r["taxon_key"]) == raw), None)
+    if selected:
+        selected = dict(selected)
+    else:
+        # SQL autocomplete narrows the set; only local aliases are inspected.
+        matches = autocomplete_taxa(conn, raw, limit=100, lang=lang, min_count=min_count)
+        candidates = {str(r["taxon_key"]): r for r in [target] + ancestors}
+        for match in matches:
+            table = "higher_ranks" if match["rank"] in ("GENUS", "FAMILY", "ORDER") else "taxa"
+            row = conn.execute(f"SELECT * FROM {table} WHERE taxon_key=?", (match["taxon_key"],)).fetchone()
+            if row:
+                candidates[str(row["taxon_key"])] = dict(row)
+        clean = normalize_name(raw)
+        exact = [r for r in candidates.values() if clean in {normalize_name(a) for a in _aliases(r)}]
+        species = [r for r in exact if r.get("rank", "") in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM")]
+        exact = species or exact
+        if len(exact) > 1:
+            return result(message="This name refers to more than one taxon. Please select a suggestion.")
+        if exact:
+            selected = exact[0]
+        else:
+            for row in [target] + ancestors:
+                aliases = _aliases(row)
+                if len(raw.split()) > 1 and any(is_multiword_prefix(a, raw.lower().replace("-", " ").split()) for a in aliases):
+                    return result(row, True, 1.0, message="Correct identification!")
+                similarity = max((check_string_similarity(raw, a) for a in aliases), default=0.0)
+                if similarity >= typo_threshold:
+                    return result(row, True, similarity, True, "Correct identification! (Soft typo accepted).")
+            return result(message=f"Unrecognized taxon name '{user_input}'. Please check spelling or select from suggestions.")
+    rank = selected.get("rank_level") or selected.get("rank")
+    if rank in ("SUBSPECIES", "VARIETY", "FORM"):
+        rank = "SPECIES"
+    correct = str(selected["taxon_key"]) == str(target_ids.get(rank))
+    return result(selected, correct, 1.0 if correct else 0.0,
+                  message=f"Correct {rank.lower()} identification!" if correct else
+                  f"Incorrect. Target species was {get_display_name(target, lang)} ({target['canonical_name']}).")

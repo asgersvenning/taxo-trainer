@@ -258,6 +258,22 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
                 CREATE INDEX IF NOT EXISTS idx_higher_ranks_names ON higher_ranks(rank_name, vernacular_da, vernacular_en);
             """)
 
+            # Preserve old name-keyed data for recovery, but never infer IDs from it.
+            hr_columns = {r["name"] for r in conn.execute("PRAGMA table_info(higher_ranks)")}
+            if "taxon_key" not in hr_columns:
+                conn.execute("ALTER TABLE higher_ranks RENAME TO legacy_higher_ranks")
+                conn.execute("DROP INDEX IF EXISTS idx_higher_ranks_names")
+                conn.execute("""CREATE TABLE higher_ranks (
+                    taxon_key TEXT PRIMARY KEY, rank_name TEXT NOT NULL,
+                    rank_level TEXT NOT NULL, vernacular_da TEXT,
+                    vernacular_en TEXT, vernacular_json TEXT, checklist_key TEXT
+                )""")
+                conn.execute("CREATE INDEX idx_higher_ranks_names ON higher_ranks(rank_name, vernacular_da, vernacular_en)")
+            columns = {r["name"] for r in conn.execute("PRAGMA table_info(taxa)")}
+            for column in ("genus_key", "family_key", "order_key", "checklist_key", "accepted_taxon_key"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE taxa ADD COLUMN {column} TEXT")
+
             try:
                 conn.execute("ALTER TABLE taxa ADD COLUMN vernacular_json TEXT;")
             except sqlite3.OperationalError:

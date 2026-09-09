@@ -38,6 +38,7 @@ class FamilyMastery:
 class RankMastery:
     """Taxonomic rank mastery summary entry."""
 
+    taxon_key: str
     taxon_name: str
     display_name: str
     rank: str
@@ -270,51 +271,38 @@ def get_rank_mastery_stats(
     rows = user_conn.execute(query, params_ds).fetchall()
 
     rank_key = rank_level.upper()
-    col_name = "family"
-    if rank_key == "ORDER":
-        col_name = "order_name"
-    elif rank_key == "GENUS":
-        col_name = "genus"
-    elif rank_key == "SPECIES":
-        col_name = "canonical_name"
-
-    stats: dict[str, dict[str, int]] = {}
+    col_name = {"ORDER": "order_key", "FAMILY": "family_key", "GENUS": "genus_key", "SPECIES": "taxon_key"}.get(rank_key, "family_key")
+    display_column = {"ORDER": "order_name", "FAMILY": "family", "GENUS": "genus", "SPECIES": "canonical_name"}.get(rank_key, "family")
+    stats: dict[str, dict] = {}
     for r in rows:
-        t_key = r["target_taxon_key"]
-        tax_row = app_conn.execute(
-            f"SELECT {col_name}, canonical_name FROM taxa WHERE taxon_key = ?", (t_key,)
-        ).fetchone()
-
-        if tax_row and tax_row[col_name]:
-            name_val = tax_row[col_name]
-        elif tax_row and rank_key == "SPECIES":
-            name_val = tax_row["canonical_name"]
-        else:
-            name_val = "Unknown"
-
-        if name_val not in stats:
-            stats[name_val] = {"total": 0, "correct": 0}
-        stats[name_val]["total"] += r["total"]
-        stats[name_val]["correct"] += r["correct"]
+        tax_row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (r["target_taxon_key"],)).fetchone()
+        if not tax_row or not tax_row[col_name]:
+            continue  # Unknown hierarchy remains unresolved, not a synthetic class.
+        key = str(tax_row[col_name])
+        if key not in stats:
+            stats[key] = {"total": 0, "correct": 0, "name": tax_row[display_column] or key}
+        stats[key]["total"] += r["total"]
+        stats[key]["correct"] += r["correct"]
 
     res_list: list[RankMastery] = []
-    for name_val, s in stats.items():
+    for taxon_key, s in stats.items():
+        name_val = s["name"]
         if s["total"] > 0:
             acc = round((s["correct"] / s["total"]) * 100.0, 1)
             # Bayesian smoothed score under 50% prior (m=1 prior pseudocount correct, m=1 incorrect)
             bayesian_score = (s["correct"] + 1.0) / (s["total"] + 2.0)
 
             # Determine display name
-            if rank_key in ("ORDER", "FAMILY"):
+            if rank_key in ("ORDER", "FAMILY", "GENUS"):
                 hr = app_conn.execute(
-                    "SELECT vernacular_da, vernacular_en FROM higher_ranks WHERE rank_name = ?",
-                    (name_val,),
+                    "SELECT * FROM higher_ranks WHERE taxon_key = ?",
+                    (taxon_key,),
                 ).fetchone()
                 v_disp = get_display_name(hr) if hr else name_val
                 disp = f"{v_disp} ({name_val})" if v_disp and v_disp != name_val else name_val
             elif rank_key == "SPECIES":
                 t_r = app_conn.execute(
-                    "SELECT * FROM taxa WHERE canonical_name = ? LIMIT 1", (name_val,)
+                    "SELECT * FROM taxa WHERE taxon_key = ?", (taxon_key,)
                 ).fetchone()
                 disp = get_display_name(t_r) if t_r else name_val
             else:
@@ -322,6 +310,7 @@ def get_rank_mastery_stats(
 
             res_list.append(
                 RankMastery(
+                    taxon_key=taxon_key,
                     taxon_name=name_val,
                     display_name=disp,
                     rank=rank_key,

@@ -272,12 +272,18 @@ def render_taxa_filter_controls(
         ui.card: Container holding interactive whitelist & blacklist filtering controls.
     """
     from taxo_trainer.db import get_active_data_source, set_app_metadata
-    from taxo_trainer.engine.validator import autocomplete_taxa
+    from taxo_trainer.engine.validator import autocomplete_taxa, get_display_name
+
+    def scope_label(key: str) -> str:
+        row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (key,)).fetchone()
+        if row is None:
+            row = app_conn.execute("SELECT * FROM higher_ranks WHERE taxon_key=?", (key,)).fetchone()
+        return get_display_name(row, lang=filters.language) if row else "Unresolved taxon"
 
     def save_scope() -> None:
         active_ds = get_active_data_source(app_conn)
-        set_app_metadata(f"whitelist_{active_ds}", "|".join(filters.include_taxa), conn=app_conn)
-        set_app_metadata(f"blacklist_{active_ds}", "|".join(filters.exclude_taxa), conn=app_conn)
+        set_app_metadata(f"whitelist_ids_{active_ds}", "|".join(filters.include_taxa), conn=app_conn)
+        set_app_metadata(f"blacklist_ids_{active_ds}", "|".join(filters.exclude_taxa), conn=app_conn)
         on_changed()
 
     card = ui.card().classes(
@@ -326,11 +332,7 @@ def render_taxa_filter_controls(
                     inc_suggestions.classes(remove="hidden")
                     with inc_suggestions:
                         for m in matches:
-                            val_name = (
-                                m["canonical_name"]
-                                if m["rank"] == "SPECIES"
-                                else m["value"]
-                            )
+                            val_name = str(m["taxon_key"])
                             lbl_name = m["label"]
 
                             def add_inc(val=val_name):
@@ -361,7 +363,7 @@ def render_taxa_filter_controls(
                                 save_scope()
 
                         ui.chip(
-                            f"✓ {inc_t}", color="positive", on_click=remove_inc
+                            f"✓ {scope_label(inc_t)}", color="positive", on_click=remove_inc
                         ).props("removable dense dark").classes("text-[10px]")
 
                     def clear_inc():
@@ -403,11 +405,7 @@ def render_taxa_filter_controls(
                     exc_suggestions.classes(remove="hidden")
                     with exc_suggestions:
                         for m in matches:
-                            val_name = (
-                                m["canonical_name"]
-                                if m["rank"] == "SPECIES"
-                                else m["value"]
-                            )
+                            val_name = str(m["taxon_key"])
                             lbl_name = m["label"]
 
                             def add_exc(val=val_name):
@@ -438,7 +436,7 @@ def render_taxa_filter_controls(
                                 save_scope()
 
                         ui.chip(
-                            f"✕ {exc_t}", color="negative", on_click=remove_exc
+                            f"✕ {scope_label(exc_t)}", color="negative", on_click=remove_exc
                         ).props("removable dense dark").classes("text-[10px]")
 
                     def clear_exc():
@@ -511,12 +509,12 @@ def render_taxonomic_hierarchy_feedback(
         target_sci = target_row["canonical_name"].strip()
 
         # Helper to get higher_ranks display string
-        def get_hr_disp(rank_name: str) -> str:
+        def get_hr_disp(rank_name: str, rank_key: str | None) -> str:
             if not rank_name:
                 return ""
             hr = app_conn.execute(
-                "SELECT vernacular_da, vernacular_en FROM higher_ranks WHERE rank_name = ?",
-                (rank_name,),
+                "SELECT * FROM higher_ranks WHERE taxon_key = ?",
+                (rank_key,),
             ).fetchone()
             if hr:
                 v_disp = get_display_name(hr, lang=lang)
@@ -524,8 +522,8 @@ def render_taxonomic_hierarchy_feedback(
                     return f"{v_disp} ({rank_name})"
             return rank_name
 
-        family_disp = get_hr_disp(target_family)
-        genus_disp = get_hr_disp(target_genus)
+        family_disp = get_hr_disp(target_family, target_row["family_key"] if "family_key" in row_keys else None)
+        genus_disp = get_hr_disp(target_genus, target_row["genus_key"] if "genus_key" in row_keys else None)
 
         # 2. Determine Guessed Taxon Row if available
         guessed_row = None
@@ -545,7 +543,7 @@ def render_taxonomic_hierarchy_feedback(
                 guessed_row
                 and guessed_row["order_name"]
                 and target_order
-                and guessed_row["order_name"].lower() == target_order.lower()
+                and guessed_row["order_key"] is not None and guessed_row["order_key"] == target_row["order_key"]
             )
             or bool(
                 revealed_order
@@ -559,7 +557,7 @@ def render_taxonomic_hierarchy_feedback(
                 guessed_row
                 and guessed_row["family"]
                 and target_family
-                and guessed_row["family"].lower() == target_family.lower()
+                and guessed_row["family_key"] is not None and guessed_row["family_key"] == target_row["family_key"]
             )
             or bool(
                 revealed_family
@@ -573,7 +571,7 @@ def render_taxonomic_hierarchy_feedback(
                 guessed_row
                 and guessed_row["genus"]
                 and target_genus
-                and guessed_row["genus"].lower() == target_genus.lower()
+                and guessed_row["genus_key"] is not None and guessed_row["genus_key"] == target_row["genus_key"]
             )
             or bool(
                 revealed_genus
@@ -595,56 +593,9 @@ def render_taxonomic_hierarchy_feedback(
         genus_hidden = not genus_ok and not is_solved and not is_incorrect_guess
         species_hidden = not species_ok and not is_solved and not is_incorrect_guess
 
-        # Cache for GBIF keys
-        if not hasattr(render_taxonomic_hierarchy_feedback, "_gbif_cache"):
-            render_taxonomic_hierarchy_feedback._gbif_cache = {}
-        gbif_cache = render_taxonomic_hierarchy_feedback._gbif_cache
-
-        # Helper to resolve GBIF taxon key for a given rank & name
         def resolve_gbif_key(rank_lvl: str, raw_name: str) -> str | None:
-            if not raw_name or raw_name.startswith("Unknown") or raw_name == "???":
-                return None
-
-            cache_key = f"{rank_lvl}:{raw_name}"
-            if cache_key in gbif_cache:
-                return gbif_cache[cache_key]
-
-            # Query GBIF match API to get authoritative rank key (preferring speciesKey for SPECIES rank)
-            import json
-            import urllib.parse
-            import urllib.request
-
-            try:
-                url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(raw_name)}"
-                req = urllib.request.Request(
-                    url, headers={"User-Agent": "taxo-trainer/1.0"}
-                )
-                with urllib.request.urlopen(req, timeout=3) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    rank_key_map = {
-                        "ORDER": data.get("orderKey"),
-                        "FAMILY": data.get("familyKey"),
-                        "GENUS": data.get("genusKey"),
-                        "SPECIES": data.get("speciesKey") or data.get("usageKey"),
-                    }
-                    key = rank_key_map.get(rank_lvl.upper()) or data.get("usageKey")
-                    if key:
-                        gbif_cache[cache_key] = str(key)
-                        return str(key)
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
-                pass
-
-            # Fallback: database lookup for taxon_key
-            r = app_conn.execute(
-                "SELECT taxon_key FROM taxa WHERE LOWER(canonical_name) = LOWER(?) AND taxon_key IS NOT NULL LIMIT 1",
-                (raw_name,),
-            ).fetchone()
-            if r and r["taxon_key"]:
-                key = str(r["taxon_key"])
-                gbif_cache[cache_key] = key
-                return key
-
-            return None
+            column = "taxon_key" if rank_lvl.upper() == "SPECIES" else f"{rank_lvl.lower()}_key"
+            return str(target_row[column]) if column in row_keys and target_row[column] else None
 
         # ranks_data: (label, display_name, is_correct, is_hidden, raw_name)
         ranks_data = [

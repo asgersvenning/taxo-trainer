@@ -115,9 +115,9 @@ def render_settings_view(
 
     # Query distinct families for dropdown
     fam_cursor = app_conn.execute(
-        "SELECT DISTINCT family FROM taxa WHERE family != '' ORDER BY family;"
+        "SELECT DISTINCT family_key, family FROM taxa WHERE family_key IS NOT NULL ORDER BY family;"
     )
-    families = ["All Families"] + [r["family"] for r in fam_cursor.fetchall()]
+    families = {"All Families": "All Families"} | {r["family_key"]: r["family"] for r in fam_cursor.fetchall()}
 
     container = ui.column().classes(
         "w-full max-w-5xl mx-auto p-4 spacing-y-6 text-white"
@@ -751,7 +751,7 @@ def render_settings_view(
                     def update_family(val: str) -> None:
                         active_filters.family = None if val == "All Families" else val
                         on_filters_changed()
-                        ui.notify(f"Family filter updated: {val}", type="info")
+                        ui.notify(f"Family filter updated: {families.get(val, val)}", type="info")
 
                     family_select.on_value_change(lambda e: update_family(e.value))
 
