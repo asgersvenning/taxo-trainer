@@ -7,6 +7,29 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Progress update: quiz accounting
+
+The user clarified that deliberate manual outcome overrides are appropriate for
+personal training with potentially mislabeled GBIF images. Preserve that control;
+do not treat it as cheating or introduce stricter scoring policy as cleanup.
+Automatic diagnostic-photo accounting and accidental duplicate successes were
+confirmed as bugs and fixed in separate implementation commits.
+
+The UI now calls a testable production `submit_guess` action. An available
+diagnostic photo marks subsequent guesses assisted without rewriting the original
+incorrect attempt; no-photo cases remain unassisted. A separate per-question
+success flag prevents repeated successful submissions from adding history rows,
+including after an answer reveal. It resets when loading the next question.
+The existing report-misidentified action remains unchanged; a general editable
+outcome/undo workflow has not been implemented.
+
+Regression tests reproduced both failures before their fixes. Latest verification:
+53 tests passed, Ruff passed for changed Python files, and diff whitespace passed.
+Tests invoke production submission logic with SQLite; browser interaction and
+next-question UI wiring were inspected but not browser-tested. Item 1's two
+concrete accounting fixes are complete; broader UI lifecycle coverage remains
+under item 5. The next recommended target is item 2's reproducible sampling cap.
+
 Prioritize trustworthy training results, complete observation coverage, and
 recoverable dataset operations. These directly support the README's emphasis
 on a functional, fast, reliable application without unnecessary dependencies.
