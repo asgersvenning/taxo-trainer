@@ -47,6 +47,7 @@ class QuizViewState:
         self.current_question: TargetObservation | None = None
         self.used_hint: bool = False
         self.solved: bool = False
+        self.success_recorded: bool = False
         self.last_feedback: dict[str, str] | None = None
         self.last_validation_result = None
         self.diagnostic_photo_url: str | None = None
@@ -89,6 +90,8 @@ def submit_guess(
     state.last_validation_result = res
 
     if res.is_correct and res.matched_rank == "SPECIES":
+        if state.success_recorded:
+            return
         if not state.solved:
             state.solved = True
             state.is_incorrect = False
@@ -112,6 +115,7 @@ def submit_guess(
             used_hint=state.used_hint,
             data_source=active_ds,
         )
+        state.success_recorded = True
         state.last_feedback = {
             "type": "success",
             "message": res.feedback_message,
@@ -267,6 +271,7 @@ def render_quiz_view(
         state.is_incorrect = False
         state.used_hint = False
         state.solved = False
+        state.success_recorded = False
         state.last_feedback = None
         state.last_validation_result = None
         state.diagnostic_photo_url = None

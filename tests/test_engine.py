@@ -224,6 +224,28 @@ def test_diagnostic_photo_marks_subsequent_success_assisted(setup_engine_dbs, ha
     assert stats["unassisted_correct"] == (0 if has_photo else 1)
 
 
+@pytest.mark.parametrize("revealed", [False, True])
+def test_successful_submission_is_recorded_once(setup_engine_dbs, revealed):
+    """Repeated submissions add one success, even after an answer reveal."""
+    from taxo_trainer.ui.quiz_view import QuizViewState, submit_guess
+
+    app_conn, user_conn = setup_engine_dbs
+    state = QuizViewState()
+    state.current_question = sample_stage2_observation(
+        app_conn, user_conn, 2435140, state.filters, state.seen_set
+    )
+    state.solved = revealed
+    state.used_hint = revealed
+    for _ in range(3):
+        submit_guess(state, app_conn, user_conn, "fixture", "Quercus robur")
+
+    rows = user_conn.execute(
+        "SELECT is_correct, used_hint FROM user_progress"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [(1, int(revealed))]
+    assert state.current_streak == (0 if revealed else 1)
+
+
 def test_sampling_whitelist_and_blacklist(setup_engine_dbs):
     """Test stage 1 taxon sampling with whitelist (include_taxa) and blacklist (exclude_taxa)."""
     app_conn, _ = setup_engine_dbs
@@ -934,4 +956,3 @@ def test_accuracy_over_time_ema(setup_engine_dbs) -> None:
     assert points[0].ema_accuracy == 100.0
     assert points[1].ema_accuracy == 87.5
     assert points[2].ema_accuracy == 89.1
-
