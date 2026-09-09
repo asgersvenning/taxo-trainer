@@ -149,3 +149,9 @@ especially hint accounting, anti-repeat, parameterized SQL, and prohibited
 imports. Do not claim ingestion throughput from small fixtures; measure a
 representative workload when making performance claims. Report what changed,
 checks actually run, and any failures or unverified acceptance criteria.
+
+When finishing a task, consider suggesting one concrete next step based on the
+roadmap and current findings, with a brief reason it is useful. This is a soft
+convention: omit it when no clear follow-up exists or it would add noise. A
+suggestion is not authorization to start new work; wait for the user's direction
+unless that work is already within the authorized scope.
