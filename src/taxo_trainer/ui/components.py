@@ -6,6 +6,8 @@ and taxonomic badge components.
 
 from nicegui import ui
 
+from taxo_trainer.ui.photo_canvas import PhotoCanvas, PhotoViewerState
+
 
 def render_photo_viewer(
     media_urls: list[str],
@@ -16,6 +18,9 @@ def render_photo_viewer(
     nav_callbacks: dict | None = None,
     recorded_by: str = "",
     references: str = "",
+    state: PhotoViewerState | None = None,
+    label: str = "Observation photo",
+    show_map: bool = True,
 ) -> ui.column:
     """Render 75% width main image display panel with object-contain showing the whole photo,
     carousel controls, photo credits, source links, and a toggle between Field Photo and Satellite Map.
@@ -44,20 +49,18 @@ def render_photo_viewer(
             )
         return container
 
-    state = {
-        "index": min(current_index, len(media_urls) - 1),
-        "view": "photo",  # "photo" or "map"
-    }
+    state = state if state is not None else PhotoViewerState(index=current_index)
+    state.index = max(0, min(state.index, len(media_urls) - 1))
 
     photo_count_label: ui.label | None = None
 
     def update_photo(step: int):
-        state["index"] = (state["index"] + step) % len(media_urls)
+        state.index = (state.index + step) % len(media_urls)
         if photo_count_label:
             photo_count_label.set_text(
-                f"Photo {state['index'] + 1} of {len(media_urls)}"
+                f"Photo {state.index + 1} of {len(media_urls)}"
             )
-        if state["view"] == "photo":
+        if state.view == "photo":
             refresh_canvas()
 
     if nav_callbacks is not None:
@@ -74,7 +77,7 @@ def render_photo_viewer(
             with ui.row().classes("items-center gap-2"):
                 ui.icon("photo_library", color="primary", size="sm")
                 photo_count_label = ui.label(
-                    f"Photo {state['index'] + 1} of {len(media_urls)}"
+                    f"Photo {state.index + 1} of {len(media_urls)}"
                 ).classes("text-xs font-semibold text-tt-main")
 
             with ui.row().classes("gap-2 items-center"):
@@ -91,18 +94,15 @@ def render_photo_viewer(
 
         # Main viewport canvas
         canvas = ui.column().classes(
-            "w-full flex-1 relative overflow-hidden items-center justify-center p-1"
+            "w-full flex-1 min-h-0 relative overflow-hidden items-center justify-center p-1"
         )
 
         def refresh_canvas() -> None:
             canvas.clear()
             with canvas:
-                if state["view"] == "photo":
-                    ui.element("img").props(
-                        f'src="{media_urls[state["index"]]}"'
-                    ).style(
-                        "max-width: 100%; max-height: 100%; object-fit: scale-down; display: block; margin: auto; border-radius: 4px;"
-                    )
+                if state.view == "photo":
+                    PhotoCanvas(media_urls[state.index], state, label=label,
+                                on_next=(lambda: update_photo(1)) if len(media_urls) > 1 else None)
                 else:
                     if latitude is not None and longitude is not None:
                         map_widget = ui.leaflet(
@@ -122,19 +122,21 @@ def render_photo_viewer(
                         ).classes("text-sm text-tt-muted italic m-auto")
 
         def switch_to_photo():
-            state["view"] = "photo"
+            state.view = "photo"
             photo_tab_btn.props("color=primary")
             map_tab_btn.props("color=secondary")
             refresh_canvas()
 
         def switch_to_map():
-            state["view"] = "map"
+            state.view = "map"
             photo_tab_btn.props("color=secondary")
             map_tab_btn.props("color=primary")
             refresh_canvas()
 
         photo_tab_btn.on_click(switch_to_photo)
         map_tab_btn.on_click(switch_to_map)
+        photo_tab_btn.set_visibility(show_map)
+        map_tab_btn.set_visibility(show_map)
 
         refresh_canvas()
 

@@ -39,6 +39,7 @@ from taxo_trainer.ui.components import (
     render_taxa_filter_controls,
     render_taxonomic_hierarchy_feedback,
 )
+from taxo_trainer.ui.photo_canvas import PhotoViewerState
 
 
 @dataclass
@@ -60,6 +61,7 @@ class QuizViewState:
         self.filters: SamplingFilter = SamplingFilter(mode="log", min_count=1)
         self.seen_set: set[str] = set()
         self.current_question: TargetObservation | None = None
+        self.photo_view = PhotoViewerState()
         self.used_hint: bool = False
         self.solved: bool = False
         self.success_recorded: bool = False
@@ -369,6 +371,7 @@ def render_quiz_view(
         state.matched_family = None
         state.matched_order = None
         state.draft_guess = ""
+        state.photo_view.reset()
         state.question_filters = state.effective_filters()
         state.current_question = question or sample_next_question(
             app_conn, user_conn, state.question_filters, state.seen_set
@@ -687,6 +690,7 @@ def render_quiz_view(
                 ):
                     render_photo_viewer(
                         state.current_question.media_urls,
+                        state=state.photo_view,
                         latitude=state.current_question.latitude,
                         longitude=state.current_question.longitude,
                         locality=state.current_question.locality,

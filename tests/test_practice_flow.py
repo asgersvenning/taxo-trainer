@@ -128,3 +128,28 @@ def test_undo_callback_remains_valid_in_its_original_ui_slot(quiz):
     with undo.parent_slot:
         next(e for e in undo._event_listeners.values() if e.type == 'click').handler(None)
     assert state.ignored_observation is None
+
+
+def test_photo_selection_survives_answer_and_settings_refresh(quiz):
+    app, user, state, controller, container = quiz
+    from taxo_trainer.ui.photo_canvas import PhotoCanvas
+
+    state.current_question.media_urls = ['https://photo.example/first.jpg', 'https://photo.example/second.jpg']
+    controller.refresh()
+    next_photo = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == 'Next Photo ▶')
+    next(e for e in next_photo._event_listeners.values() if e.type == 'click').handler(None)
+    assert state.photo_view.index == 1
+    key, generation = state.photo_view.cache_key, state.photo_view.generation
+    quiz_view.submit_guess(state, app, user, "default", "G1")
+    controller.refresh()
+    assert state.photo_view.index == 1
+    state.filters.language = 'en'
+    controller.refresh()
+    canvas = next(e for e in container.descendants() if isinstance(e, PhotoCanvas))
+    assert canvas._props['source'].endswith('/second.jpg')
+    assert canvas._props['cache_key'] == key
+    assert canvas._props['generation'] == generation
+    assert controller.practise(['A1'])
+    assert state.photo_view.index == 0
+    assert state.photo_view.generation == generation + 1
+    assert state.photo_view.cache_key == key

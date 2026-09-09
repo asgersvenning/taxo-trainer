@@ -17,6 +17,7 @@ except NameError:
 added_files = [
     (str(ROOT_DIR / "assets"), "assets"),
     (str(ROOT_DIR / "src" / "data"), "data"),
+    (str(ROOT_DIR / "src" / "taxo_trainer" / "ui" / "photo_canvas.js"), "taxo_trainer/ui"),
 ]
 
 hidden_imports = [
