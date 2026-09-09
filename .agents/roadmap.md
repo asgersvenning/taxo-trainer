@@ -210,9 +210,44 @@ from all three production enrichment phases. Browser rendering, actual GBIF
 requests, and sustained concurrent load were not tested. Matching/ranking policy
 and the existing 30-worker configuration remain unchanged.
 
-Suggested next step: show a concise enrichment summary separating cache hits,
-fresh requests, taxa without usable names, and incomplete lookups. Measure loading
-only where the user observes a delay; do not prioritize speculative optimization.
+The summary follow-up is completed below. Measure loading only where the user
+observes a delay; do not prioritize speculative optimization.
+
+### Progress update: expert-user feedback and configurable name language
+
+The user clarified that interface feedback should serve nontechnical biological
+experts, and that vernacular language is configurable, not limited to Danish.
+The name card now reports species coverage in the selected language and how many
+still lack names in that language. Another-language fallback does not count as
+coverage. Scientific-name mode describes vernacular lookup as optional; empty
+datasets prompt import. Absence is described as availability in the dataset, not
+proof that a species has no vernacular name.
+
+The existing language selector now persists its preference and refreshes coverage
+immediately. Old Danish-specific dataset badges and lookup labels were removed.
+All supported languages remain part of enrichment. Genus/family lookup no longer
+skips records merely because they have Danish names; updates preserve names in
+other languages. Successful rechecks of unchanged species names return zero
+updates rather than an inflated count. UI completion messages focus on current
+name availability instead of this developer-oriented write count.
+
+Run-level cache hits, HTTP requests, failures, cooldown skips, and cache-write
+failures are recorded through the taxonomy_builder logger at INFO level (enable
+that level in backend logging to view the summary). Exceptions/tracebacks go to
+backend logging; the UI gives a plain-language retry action and approximate wait
+after a GBIF pause. Later lookup phases use indeterminate progress instead of
+showing 100 percent while more work remains. Request concurrency is unchanged.
+
+Verification: 106 tests passed in 6.17s; Ruff and diff whitespace passed. New cases
+cover five selected languages, scientific/empty modes, plain-language errors,
+the actual settings language-selection callback and saved preference, multilingual
+species/higher-rank results, unchanged cached rechecks, and backend counters.
+Native/browser visual inspection and live GBIF calls were not performed. This
+change configures preferred taxon names; it does not translate the whole UI.
+
+Next useful step: have the user try the names card in their preferred language
+before adding more statistics or controls. Any remaining name-resolution examples
+can then guide focused fixes rather than speculative enrichment changes.
 
 Effort is relative: S = a focused patch; M = several related changes; L = split
 into multiple independently verified patches. These are not time estimates.

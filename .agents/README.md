@@ -116,6 +116,20 @@ Known discrepancies to account for:
   dependencies. Preserve user changes and existing datasets. Do not commit
   generated environments, caches, runtime databases, or build output.
 
+## Product communication and language
+
+Design interface feedback for a nontechnical biological expert: emphasize names
+available for training, meaningful gaps, completion state, and useful next actions.
+Keep cache statistics, request counts, HTTP details, and tracebacks in terminal or
+backend logs rather than the product interface. Do not interpret missing lookup
+results as proof that a vernacular name does not exist.
+
+Vernacular language is configurable; Danish is a default, not a product limit.
+Use the selected language in availability summaries and feedback, preserve the
+preference across sessions, and support scientific-name mode. Do not count a
+fallback in another language as coverage in the requested language. This does
+not itself imply that every interface label has been translated.
+
 ## Commands and verification
 
 Run commands from the repository root:
