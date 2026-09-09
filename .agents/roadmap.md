@@ -86,6 +86,19 @@ duplicate cutoff and overlapping statistics displays were removed. This complete
 the requested three-stage UX pass, without claiming universal accessibility or
 substituting packaging work for the user's priorities.
 
+### Completed: autocomplete, expanded themes, and focused practice
+
+The next authorized UX sequence is implemented: missing CoL hierarchy links are
+restored through ID-addressed GBIF classifications; autocomplete ranks exact
+aliases first, preserves lowest-unambiguous-rank behavior, and compares word edit
+distance. Four surface palettes (including High contrast) combine with six accents.
+Dashboard groups and confusion pairs lead directly to temporary practice, with a
+return to the usual selection. Settings and Quiz synchronize without replacing an
+ongoing question. Undo ignore restores exact removed history, including after
+advancing. Final verification: 168 tests passed, plus browser interaction and
+rendered contrast checks. See [implementation and verification notes](notes/2026-09-09-autocomplete-themes-and-focused-practice.md)
+for checkpoints, identity constraints, and scope details.
+
 ### Completed: README and onboarding refresh
 
 Follow-up after user review: restored the README's illustrated GBIF export sequence
