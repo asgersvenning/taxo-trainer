@@ -19,10 +19,10 @@ export default {
            @pointercancel="pointerUp" @keydown="key">
         <img :key="source + ':' + retry" ref="image" :src="source" :alt="label" draggable="false"
              @load="loaded" @error="failed"
-             :style="{position:'absolute', left:'50%', top:'50%', marginLeft:-width/2+'px', marginTop:-height/2+'px', width:width+'px', height:height+'px', maxWidth:'none', maxHeight:'none', flexShrink:0,
-                      visibility:status === 'loaded' ? 'visible' : 'hidden',
+             :style="{position:'absolute', left:width ? '50%' : '0', top:height ? '50%' : '0', marginLeft:-width/2+'px', marginTop:-height/2+'px', width:width ? width+'px' : '100%', height:height ? height+'px' : '100%', objectFit:'scale-down', maxWidth:'none', maxHeight:'none', flexShrink:0,
+                      visibility:status === 'error' ? 'hidden' : 'visible',
                       transform:'translate('+x+'px,'+y+'px) scale('+zoom+')', userSelect:'none'}" />
-        <div v-if="status === 'loading'" role="status" class="absolute text-tt-muted text-sm">Loading photo…</div>
+        <div v-if="status === 'loading'" role="status" class="absolute bottom-2 bg-tt-surface rounded px-2 py-1 text-tt-muted text-sm">Loading photo…</div>
         <div v-if="status === 'error'" role="alert" class="absolute flex flex-col items-center gap-2 text-tt-main p-3">
           <span>This photo couldn’t be loaded.</span>
           <div class="flex gap-2">
