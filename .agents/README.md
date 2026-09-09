@@ -126,6 +126,12 @@ names are display/input aliases attached to those IDs, never replacement identit
 keys or grounds for merging taxa by text equality. Local autocomplete and guess
 matching may use those aliases but must resolve to GBIF IDs.
 
+GBIF is migrating to Catalogue of Life (CoL) identifiers. Preserve numeric and
+alphanumeric IDs as strings, with checklist context where available. Never cast
+canonical IDs to integers or determine their checklist solely from their shape:
+a CoL identifier can contain only digits. Cross-checklist enrichment must follow
+explicit GBIF ID relationships while retaining the imported canonical ID.
+
 NEVER query free-text APIs. This includes GBIF name matching, search, and suggest
 endpoints, even as fallbacks for missing IDs. Use ID-addressed GBIF records and
 explicit ID relationships for taxonomy and vernacular enrichment. If a usable ID

@@ -7,6 +7,65 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Completed: ID-only taxonomy and CoL support
+
+The user explicitly clarified GBIF's migration to alphanumeric Catalogue of Life
+IDs. Canonical IDs remain strings. Their checklist is not inferred merely from
+whether an ID contains letters; missing namespace/relationship evidence remains
+unresolved. The earlier free-text matching proposals below are superseded.
+
+All taxonomy requests now pass an endpoint allowlist before cache access. Only
+ID-addressed species/vernacular and occurrence records are permitted; HTTP redirects
+are blocked. The independent name-matching request in hierarchy rendering was also
+removed. GBIF archive inputs reject non-download GBIF API endpoints. Cache reuse,
+rate-limit cooldowns, cancellation of queued work, and existing 30-worker limit
+remain; each enrichment worker closes its cache connection.
+
+The official [Species API schema](https://techdocs.gbif.org/openapi/checklistbank.json)
+documents numeric usage keys for the v1 record/vernacular endpoints. For CoL and
+unknown-checklist imports, enrichment reads an existing occurrence by its GBIF ID,
+requires exactly one matching source species ID/checklist classification, and uses
+the explicit legacy classification in that same GBIF occurrence for v1 name
+retrieval. It preserves the source species and hierarchy IDs. This is GBIF's
+classification of that occurrence, not a claim of universal concept equivalence
+between checklists. Missing/conflicting relationships are left unresolved. Known
+legacy-checklist numeric records can be retrieved directly by ID.
+
+Enrichment no longer merges or deletes species/observations. Accepted IDs are
+stored as relationships; original keys and history remain intact. Later lookup
+responses preserve languages they omit. Provider `taxonID` and
+`acceptedNameUsageID` are no longer fallback sources of canonical GBIF identity
+during import. Imports retain explicit genus/family/order/checklist keys and
+reject collisions between explicitly different checklist namespaces.
+
+Higher-rank storage, autocomplete selections, training scopes, multiple-choice
+submissions, and analytics grouping use IDs. Names remain labels and local input
+aliases; identical names no longer collapse distinct IDs. A recognized wrong
+higher-rank guess carries that rank's ID rather than an arbitrary species example.
+
+Migration: old name-keyed higher-rank records are retained in
+`legacy_higher_ranks`, but are not assigned inferred IDs. Reimport or an ID-linked
+lookup populates the new hierarchy. Old name-only include/exclude settings are
+retained under their original metadata keys; new filters use ID-specific keys.
+The UI asks affected users to reselect saved training groups. Existing species,
+observations, and progress are preserved. Archives without usable GBIF key fields
+cannot establish new canonical identities; no name-based fallback is provided.
+
+Verification: **127 tests passed in 5.27s**, changed-file Ruff and whitespace checks
+passed. Regressions cover blocked text endpoints/cache bypass/redirects, alphabetic
+and numeric CoL IDs, retained languages, mismatched occurrence identity, identical
+names with distinct IDs, filters, analytics, legacy schema migration, provider-ID
+rejection, namespace collision rollback, and network-free hierarchy rendering.
+Existing fixtures now explicitly supply hierarchy IDs. One live bundled observation
+(`6470788078`, CoL species `67S22`) enriched successfully using five ID-addressed
+requests, preserving genus `32BQ` and family `622TP`. This is a small compatibility
+check, not a completeness/performance claim. No native installer or browser visual
+check was performed. Real ambiguity and incomplete vernacular coverage remain.
+
+The language-preservation first patch proposed below is also complete. A useful
+independent follow-up is refreshing README/onboarding instructions for the current
+language-aware lookup and migration behavior.
+
 ### Hard boundary: GBIF identity, never free-text API resolution
 
 The user's clarification after the contribution review supersedes any proposal
