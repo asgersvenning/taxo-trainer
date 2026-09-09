@@ -100,7 +100,35 @@ def normalize_name(s: str) -> str:
     """
     if not s:
         return ""
-    return s.strip().lower().replace("-", "").replace(" ", "")
+    return "".join(s.casefold().replace("-", "").split())
+
+
+def word_distance(query: str, name: str) -> int:
+    """Sum word edit costs, ignoring word order and counting unmatched words.
+
+    Word boundaries cannot be used to hide missing letters. Hyphens are treated
+    as spaces, and reordered abbreviated names receive the same score.
+    """
+    def distance(left, right, substitution, size):
+        previous = [0]
+        for item in right:
+            previous.append(previous[-1] + size(item))
+        for a in left:
+            current = [previous[0] + size(a)]
+            for j, b in enumerate(right):
+                current.append(min(current[-1] + size(b),
+                                   previous[j + 1] + size(a),
+                                   previous[j] + substitution(a, b)))
+            previous = current
+        return previous[-1]
+
+    def letters(a, b):
+        return distance(a, b, lambda x, y: int(x != y), lambda _: 1)
+
+    def words(value):
+        return sorted(value.casefold().replace("-", " ").replace("/", " ").split())
+
+    return distance(words(query), words(name), letters, len)
 
 
 def is_multiword_prefix(name: str | None, q_words: list[str]) -> bool:
@@ -160,8 +188,8 @@ def autocomplete_taxa(
 ) -> list[dict[str, Any]]:
     """Autocomplete taxa query returning matching canonical, vernacular, genus, and family names.
 
-    Prioritizes exact matches first (Priority 0), followed by Genus/Family matches,
-    prefix matches, multi-word per-word prefix matches, and symmetric substring matches.
+    Prioritizes exact aliases at every rank, then the lowest unambiguous rank.
+    Remaining matches use combined word Levenshtein distance across local aliases.
     If parent rank constraints are passed, suggestions are strictly scoped to valid sub-taxa.
 
     Args:
@@ -180,10 +208,11 @@ def autocomplete_taxa(
     if not query or len(query.strip()) < 2:
         return []
 
-    q_strip = query.strip().lower()
+    q_strip = query.strip().casefold()
     q_clean = normalize_name(query)
     q_words = [w for w in q_strip.replace("-", " ").replace("/", " ").split() if w]
 
+    conn.create_function("normalize_taxon_name", 1, normalize_name, deterministic=True)
     sub_pat = f"%{q_strip}%"
     clean_sub_pat = f"%{q_clean}%"
 
@@ -217,7 +246,10 @@ def autocomplete_taxa(
         rank_str: str,
         primary_vernaculars: list[str | None],
         secondary_names: list[str | None],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int]:
+        aliases = [part.strip() for value in [canon, *primary_vernaculars, *secondary_names]
+                   if value for part in str(value).split("|") if part.strip()]
+        alias_distance = min((word_distance(query, alias) for alias in aliases), default=0)
         r = (rank_str or "").upper()
         rw = (
             1
@@ -278,7 +310,7 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if p_l == q_strip or p_c == q_clean:
-                    return 0, rw
+                    return 0, rw, alias_distance
                 for suf in (
                     "-slægten",
                     " slægten",
@@ -291,7 +323,7 @@ def autocomplete_taxa(
                         base_l = p_l[: -len(suf)].strip()
                         base_c = normalize_name(base_l)
                         if base_l == q_strip or base_c == q_clean:
-                            return 0, rw
+                            return 0, rw, alias_distance
 
         # 2. Exact match on secondary names
         for n in secondary_names:
@@ -301,31 +333,31 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if p_l == q_strip or p_c == q_clean:
-                    return 1, rw
+                    return 1, rw, alias_distance
 
         # 3. Title/Full-name prefix match or Multi-word per-word prefix match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
             if is_title_prefix(n, q_strip, q_clean):
-                return 2, rw
+                return 2, rw, alias_distance
             if len(q_words) > 1 and is_multiword_prefix(n, q_words):
-                return 2, rw
+                return 2, rw, alias_distance
 
         # 4. Title/Full-name prefix match or Multi-word per-word prefix match on secondary names
         for n in secondary_names:
             if is_title_prefix(n, q_strip, q_clean):
-                return 3, rw
+                return 3, rw, alias_distance
             if len(q_words) > 1 and is_multiword_prefix(n, q_words):
-                return 3, rw
+                return 3, rw, alias_distance
 
         # 5. Subword prefix match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
             if is_word_prefix(n, q_strip, q_clean):
-                return 4, rw
+                return 4, rw, alias_distance
 
         # 6. Subword prefix match on secondary names
         for n in secondary_names:
             if is_word_prefix(n, q_strip, q_clean):
-                return 5, rw
+                return 5, rw, alias_distance
 
         # 7. Substring match on canonical or primary vernaculars
         for n in [canon] + primary_vernaculars:
@@ -335,7 +367,7 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if q_strip in p_l or q_clean in p_c:
-                    return 6, rw
+                    return 6, rw, alias_distance
 
         # 8. Substring match on secondary names
         for n in secondary_names:
@@ -345,9 +377,9 @@ def autocomplete_taxa(
                 p_l = p.strip().lower()
                 p_c = normalize_name(p)
                 if q_strip in p_l or q_clean in p_c:
-                    return 7, rw
+                    return 7, rw, alias_distance
 
-        return 8, 4
+        return 8, 4, alias_distance
 
     # Build SQL queries (handling multi-word AND conditions when len(q_words) > 1)
     sp_where_extra = ""
@@ -383,13 +415,13 @@ def autocomplete_taxa(
             wk = f"w_{idx}"
             multi_params[wk] = f"%{w}%"
             sp_conds.append(
-                f"(LOWER(canonical_name) LIKE :{wk} OR LOWER(vernacular_da) LIKE :{wk} OR LOWER(vernacular_en) LIKE :{wk} OR LOWER(scientific_name) LIKE :{wk})"
+                f"(LOWER(canonical_name) LIKE :{wk} OR LOWER(vernacular_da) LIKE :{wk} OR LOWER(vernacular_en) LIKE :{wk} OR LOWER(scientific_name) LIKE :{wk} OR LOWER(json_extract(vernacular_json, '$.' || :lang_code)) LIKE :{wk})"
             )
             g_conds.append(
-                f"(LOWER(t.genus) LIKE :{wk} OR LOWER(h.vernacular_da) LIKE :{wk} OR LOWER(h.vernacular_en) LIKE :{wk})"
+                f"(LOWER(t.genus) LIKE :{wk} OR LOWER(h.vernacular_da) LIKE :{wk} OR LOWER(h.vernacular_en) LIKE :{wk} OR LOWER(json_extract(h.vernacular_json, '$.' || :lang_code)) LIKE :{wk})"
             )
             f_conds.append(
-                f"(LOWER(t.family) LIKE :{wk} OR LOWER(h.vernacular_da) LIKE :{wk} OR LOWER(h.vernacular_en) LIKE :{wk})"
+                f"(LOWER(t.family) LIKE :{wk} OR LOWER(h.vernacular_da) LIKE :{wk} OR LOWER(h.vernacular_en) LIKE :{wk} OR LOWER(json_extract(h.vernacular_json, '$.' || :lang_code)) LIKE :{wk})"
             )
 
         sp_sql = f"""
@@ -454,6 +486,24 @@ def autocomplete_taxa(
         """
         exec_params = params
 
+    exec_params["exact_query"] = q_clean
+    def exact_condition(columns):
+        return " OR ".join(f"normalize_taxon_name({column}) = :exact_query" for column in columns)
+
+    sp_sql = sp_sql.replace("AND (", "AND (" + exact_condition([
+        "canonical_name", "vernacular_da", "vernacular_en",
+        "json_extract(vernacular_json, '$.' || :lang_code)",
+    ]) + " OR ", 1)
+    for rank, sql in (("genus", g_sql), ("family", f_sql)):
+        sql = sql.replace("AND (", "AND (" + exact_condition([
+            f"t.{rank}", "h.vernacular_da", "h.vernacular_en",
+            "json_extract(h.vernacular_json, '$.' || :lang_code)",
+        ]) + " OR ", 1)
+        if rank == "genus":
+            g_sql = sql
+        else:
+            f_sql = sql
+
     # 1. Species matches
     for row in conn.execute(sp_sql, exec_params).fetchall():
         r_str = (row["rank"] or "SPECIES").upper()
@@ -488,7 +538,7 @@ def autocomplete_taxa(
                 secondary_v.append(row["vernacular_en"])
             elif lang != "da" and row["vernacular_da"]:
                 secondary_v.append(row["vernacular_da"])
-            prio, rw = calc_priority_and_rank_weight(canon, r_str, primary_v, secondary_v)
+            prio, rw, alias_distance = calc_priority_and_rank_weight(canon, r_str, primary_v, secondary_v)
             if prio >= 8:
                 continue
             label = f"{display} ({canon})" if display != canon else canon
@@ -501,6 +551,7 @@ def autocomplete_taxa(
                     "rank": r_str,
                     "taxon_key": row["taxon_key"],
                     "priority": prio,
+                    "distance": alias_distance,
                     "rank_order": rw,
                 }
             )
@@ -528,7 +579,7 @@ def autocomplete_taxa(
                 secondary_v = [
                     row["vernacular_en"] if lang == "da" else row["vernacular_da"]
                 ]
-                prio, rw = calc_priority_and_rank_weight(g_name, "GENUS", primary_v, secondary_v)
+                prio, rw, alias_distance = calc_priority_and_rank_weight(g_name, "GENUS", primary_v, secondary_v)
                 if prio >= 6:
                     continue
                 g_label = (
@@ -545,6 +596,7 @@ def autocomplete_taxa(
                         "rank": "GENUS",
                         "taxon_key": row["taxon_key"],
                         "priority": prio,
+                    "distance": alias_distance,
                         "rank_order": rw,
                     }
                 )
@@ -572,7 +624,7 @@ def autocomplete_taxa(
                 secondary_v = [
                     row["vernacular_en"] if lang == "da" else row["vernacular_da"]
                 ]
-                prio, rw = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
+                prio, rw, alias_distance = calc_priority_and_rank_weight(f_name, "FAMILY", primary_v, secondary_v)
                 if prio >= 6:
                     continue
                 f_label = (
@@ -589,6 +641,7 @@ def autocomplete_taxa(
                         "rank": "FAMILY",
                         "taxon_key": row["taxon_key"],
                         "priority": prio,
+                    "distance": alias_distance,
                         "rank_order": rw,
                     }
                 )
@@ -613,17 +666,19 @@ def autocomplete_taxa(
             if r_upper in ("SPECIES", "SUBSPECIES", "VARIETY", "FORM")
             else r_upper
         )
-        # 1. Exact species match (priority 0 on species rank) always at the very top
-        is_exact_species = 0 if (c["priority"] == 0 and r_grp == "SPECIES") else 1
+        # 1. Exact aliases at every rank always come first
+        is_exact = 0 if c["priority"] <= 1 else 1
         # 2. Unambiguous rank level first (only 1 distinct display name matched at this rank level)
         distinct_cnt = len(rank_distinct_names.get(r_grp, set()))
         is_unambiguous = 0 if distinct_cnt == 1 else 1
 
         return (
-            is_exact_species,
+            is_exact,
+            c["priority"] if is_exact == 0 else 0,
+            c["rank_order"] if is_exact == 0 else 0,
             is_unambiguous,
-            c["priority"],
-            c["rank_order"],
+            c["rank_order"] if is_unambiguous == 0 else 0,
+            c["distance"],
             len(c["display_name"]),
             c["display_name"],
         )

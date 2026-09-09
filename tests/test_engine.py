@@ -941,3 +941,25 @@ def test_accuracy_over_time_ema(setup_engine_dbs) -> None:
     assert points[0].ema_accuracy == 100.0
     assert points[1].ema_accuracy == 87.5
     assert points[2].ema_accuracy == 89.1
+
+
+def test_exact_genus_precedes_single_matching_species(setup_engine_dbs):
+    """An exact genus must beat a single descendant, even in another language."""
+    conn, _ = setup_engine_dbs
+    for query in ("Fagus", " FAGUS ", "Fa gus", "Fa\tgus"):
+        matches = autocomplete_taxa(conn, query)
+        assert matches[0]["taxon_key"] == "80000002"
+        assert matches[0]["rank"] == "GENUS"
+
+
+def test_autocomplete_word_distance_beats_display_length(setup_engine_dbs):
+    """Rank by matching aliases, not the length of unrelated display names."""
+    conn, _ = setup_engine_dbs
+    conn.executemany(
+        """INSERT INTO taxa
+        (taxon_key,scientific_name,canonical_name,accepted_name,rank,vernacular_da)
+        VALUES (?,?,?,?, 'SPECIES',?)""",
+        [("A1", "Carex acuta", "Carex acuta", "Carex acuta", "Very long display name"),
+         ("A2", "Carex acutiformis", "Carex acutiformis", "Carex acutiformis", "Short")],
+    )
+    assert [m["taxon_key"] for m in autocomplete_taxa(conn, "carex acut")] == ["A1", "A2"]
