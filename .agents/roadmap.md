@@ -28,7 +28,29 @@ Regression tests reproduced both failures before their fixes. Latest verificatio
 Tests invoke production submission logic with SQLite; browser interaction and
 next-question UI wiring were inspected but not browser-tested. Item 1's two
 concrete accounting fixes are complete; broader UI lifecycle coverage remains
-under item 5. The next recommended target is item 2's reproducible sampling cap.
+under item 5. The sampling-cap follow-up is recorded below.
+
+### Progress update: full observation coverage
+
+Removed the normal-mode `LIMIT 200` from candidate lookup. Stage 2 now considers
+every eligible observation for the selected species before resetting its eligible
+seen pool. Weight formulas and filtered Stage 1 retry behavior are unchanged.
+
+A regression fixture with 201 eligible observations reproduced early repetition
+in normal and month-filtered modes before the fix. It now verifies complete
+coverage before any repeat and preserves seen entries for another species and
+observations outside the active filter during exhaustion reset. The same test
+covers review-only mode, which already used the full pool.
+
+Verification: 56 tests passed in 2.77s with isolated application data, Ruff passed
+for changed Python files, and diff whitespace passed. Candidate rows are still
+materialized for the selected species; memory and query cost therefore scale
+with its eligible observation count. Large-dataset performance was not measured
+and remains item 6 work, rather than a reason to silently truncate coverage.
+
+Item 2's coverage/reset fix is complete. Sparse filtered-sampling retries and
+large review-history parameter lists remain separate work. The next recommended
+independent patch is item 3's interrupted-download/cache recovery.
 
 Prioritize trustworthy training results, complete observation coverage, and
 recoverable dataset operations. These directly support the README's emphasis
