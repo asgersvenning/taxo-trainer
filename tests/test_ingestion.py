@@ -1,11 +1,15 @@
 """Unit tests for DarwinCore ingestion and taxonomy building modules."""
 
+import io
 import sqlite3
+
+import pytest
 
 from taxo_trainer.ingestion.dwc_parser import (
     extract_canonical_name,
     ingest_dwc_file,
     parse_month,
+    resolve_dwc_source_path,
 )
 from taxo_trainer.ingestion.taxonomy_builder import load_custom_vernacular_json
 
@@ -220,7 +224,7 @@ def test_resolve_dwc_source_path_remote_url(tmp_path, monkeypatch):
 
     class MockHTTPResponse:
         def __init__(self):
-            self.headers = {"Content-Length": "100"}
+            self.headers = {"Content-Length": str(len(b"PK\x03\x04MockZipData"))}
             self.read_count = 0
 
 
@@ -246,3 +250,85 @@ def test_resolve_dwc_source_path_remote_url(tmp_path, monkeypatch):
     assert resolved.name == "0010181-260806074905277.zip"
     assert len(progress_msgs) >= 1
     assert "Downloading" in progress_msgs[-1] or "Connecting" in progress_msgs[0]
+
+
+class DownloadResponse(io.BytesIO):
+    """Offline streaming response with optional length and injected failure."""
+
+    def __init__(self, data, length=None, fail_after_chunk=False):
+        super().__init__(data)
+        self.headers = {} if length is None else {"Content-Length": str(length)}
+        self.fail_after_chunk = fail_after_chunk
+
+    def read(self, size=-1):
+        if self.fail_after_chunk and self.tell():
+            raise OSError("Connection interrupted")
+        return super().read(size)
+
+
+@pytest.mark.parametrize("failure", ["connection", "short", "empty", "callback"])
+def test_failed_download_is_not_cached_and_can_retry(tmp_path, monkeypatch, failure):
+    """A failed transfer never publishes a cache entry and a retry starts fresh."""
+    url = "https://example.com/dataset.txt"
+    payload = b"gbifID\ttaxonKey\n1\t2\n"
+    monkeypatch.setattr("taxo_trainer.db.DATA_DIR", tmp_path)
+    first = DownloadResponse(
+        b"" if failure == "empty" else payload,
+        length=len(payload) + 1 if failure == "short" else None,
+        fail_after_chunk=failure == "connection",
+    )
+    responses = iter([first, DownloadResponse(payload, len(payload))])
+    calls = []
+
+    def open_response(req, timeout):
+        calls.append(req.full_url)
+        return next(responses)
+
+    def progress(message):
+        if message.startswith("Downloading"):
+            # Only a private temporary file may exist while the transfer runs.
+            assert not list(tmp_path.rglob("dataset.txt"))
+            if failure == "callback":
+                raise RuntimeError("Progress callback failed")
+
+    monkeypatch.setattr("urllib.request.urlopen", open_response)
+    with pytest.raises((OSError, ValueError, RuntimeError)):
+        resolve_dwc_source_path(url, progress)
+    assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+
+    resolved = resolve_dwc_source_path(url)
+    assert resolved.read_bytes() == payload
+    assert resolve_dwc_source_path(url) == resolved
+    assert calls == [url, url]
+    assert not list(tmp_path.rglob("*.part"))
+
+
+def test_url_cache_isolates_basenames_and_query_strings(tmp_path, monkeypatch):
+    """Distinct URLs cannot reuse each other's files or legacy partial entries."""
+    monkeypatch.setattr("taxo_trainer.db.DATA_DIR", tmp_path)
+    legacy = tmp_path / "datasets" / "dataset.txt"
+    legacy.parent.mkdir()
+    legacy.write_bytes(b"old partial download")
+    urls = [
+        "https://first.example/dataset.txt?id=1",
+        "https://second.example/dataset.txt?id=1",
+        "https://first.example/dataset.txt?id=2",
+    ]
+    payloads = {url: f"dataset {i}".encode() for i, url in enumerate(urls)}
+    calls = []
+
+    def open_response(req, timeout):
+        calls.append(req.full_url)
+        # EOF without Content-Length is supported for successful transfers.
+        return DownloadResponse(payloads[req.full_url])
+
+    monkeypatch.setattr("urllib.request.urlopen", open_response)
+    paths = [resolve_dwc_source_path(url) for url in urls]
+    assert len(set(paths)) == len(urls)
+    for url, path in zip(urls, paths):
+        assert path.name == "dataset.txt"
+        assert path.read_bytes() == payloads[url]
+        assert resolve_dwc_source_path(url) == path
+    assert calls == urls
+    assert legacy.read_bytes() == b"old partial download"
+    assert resolve_dwc_source_path(str(legacy)) == legacy

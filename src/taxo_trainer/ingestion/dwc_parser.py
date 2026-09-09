@@ -6,9 +6,11 @@ Supports both direct associatedMedia columns and external multimedia.txt files.
 """
 
 import csv
+import hashlib
 import io
 import re
 import sqlite3
+import tempfile
 import zipfile
 from collections import defaultdict
 from collections.abc import Callable
@@ -218,7 +220,7 @@ def resolve_dwc_source_path(
     source_str: str,
     progress_callback: Callable[[str], None] | None = None,
 ) -> Path:
-    """Resolve local path or download remote URL to local datasets directory.
+    """Resolve a local path or atomically cache a complete download by URL.
 
     Args:
         source_str: Local file path string or HTTP(S) URL.
@@ -243,7 +245,10 @@ def resolve_dwc_source_path(
 
     from taxo_trainer.db import DATA_DIR
 
-    datasets_dir = DATA_DIR / "datasets"
+    # Keep the original filename/extension, but never share entries across URLs.
+    # Legacy basename-only files are not trusted: they may be partial downloads.
+    url_key = hashlib.sha256(s_clean.encode("utf-8")).hexdigest()
+    datasets_dir = DATA_DIR / "datasets" / "downloads" / url_key
     datasets_dir.mkdir(parents=True, exist_ok=True)
     dest_path = datasets_dir / filename
 
@@ -256,28 +261,47 @@ def resolve_dwc_source_path(
         progress_callback(f"Connecting to remote URL: {filename}...")
 
     req = urllib.request.Request(s_clean, headers={"User-Agent": "taxo-trainer/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        total_bytes = int(resp.headers.get("Content-Length", 0))
-        downloaded = 0
-        chunk_size = 64 * 1024
+    temporary_path = None
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            length_header = resp.headers.get("Content-Length")
+            total_bytes = int(length_header) if length_header is not None else None
+            downloaded = 0
+            chunk_size = 64 * 1024
 
-        with open(dest_path, "wb") as f_out:
-            while True:
-                chunk = resp.read(chunk_size)
-                if not chunk:
-                    break
-                f_out.write(chunk)
-                downloaded += len(chunk)
-                if progress_callback:
-                    dl_mb = downloaded / (1024 * 1024)
-                    if total_bytes > 0:
-                        tot_mb = total_bytes / (1024 * 1024)
-                        pct = int((downloaded / total_bytes) * 100)
-                        progress_callback(
-                            f"Downloading {filename}... {dl_mb:.1f} MB / {tot_mb:.1f} MB ({pct}%)"
-                        )
-                    else:
-                        progress_callback(f"Downloading {filename}... {dl_mb:.1f} MB")
+            with tempfile.NamedTemporaryFile(
+                dir=datasets_dir, suffix=".part", delete=False
+            ) as f_out:
+                temporary_path = Path(f_out.name)
+                while True:
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        dl_mb = downloaded / (1024 * 1024)
+                        if total_bytes is not None and total_bytes > 0:
+                            tot_mb = total_bytes / (1024 * 1024)
+                            pct = int((downloaded / total_bytes) * 100)
+                            progress_callback(
+                                f"Downloading {filename}... {dl_mb:.1f} MB / {tot_mb:.1f} MB ({pct}%)"
+                            )
+                        else:
+                            progress_callback(f"Downloading {filename}... {dl_mb:.1f} MB")
+
+            if downloaded == 0:
+                raise ValueError("Downloaded dataset is empty.")
+            if total_bytes is not None and downloaded != total_bytes:
+                raise ValueError(
+                    f"Incomplete dataset download: expected {total_bytes} bytes, received {downloaded}."
+                )
+
+        # Close both handles before replacing for compatibility with Windows.
+        temporary_path.replace(dest_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
     return dest_path
 
