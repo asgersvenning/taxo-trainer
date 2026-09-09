@@ -47,7 +47,7 @@ def render_dashboard_view(on_practise: Callable[[list[str]], None] | None = None
     selected_range = ["ALL"]
     selected_rank = ["SPECIES"]
     selected_ema_window = [25]
-    table_pagination = {"rowsPerPage": 5, "page": 1}
+    table_pagination = {"rowsPerPage": 5, "page": 1, "sortBy": "accuracy", "descending": False}
 
     active_ds = get_active_data_source(app_conn)
     ds_display_name = (
@@ -358,17 +358,18 @@ def render_dashboard_view(on_practise: Callable[[list[str]], None] | None = None
                             refresh_dashboard()
 
                         rank_select.on_value_change(lambda e: update_rank(e.value))
-                    ui.label("Practice priorities first. Sort columns to compare strengths; few attempts give less reliable results.").classes("text-xs text-tt-muted")
+                    ui.label("Practice order balances accuracy with the number of attempts. Click accuracy to reverse the order.").classes("text-xs text-tt-muted")
                     if not ranked_taxa:
                         ui.label("No unassisted results with this group information in this period.").classes("text-sm text-tt-muted")
                     else:
                         columns = [
                             {"name": "name", "label": "Taxon", "field": "display_name", "align": "left", "sortable": True},
-                            {"name": "accuracy", "label": "Unassisted accuracy", "field": "accuracy", "align": "right", "sortable": True, ":format": "value => `${value}%`"},
+                            {"name": "accuracy", "label": "Unassisted accuracy", "field": "accuracy", "align": "right", "sortable": True, ":format": "value => `${value}%`",
+                             ":sort": "(a, b, rowA, rowB) => rowA.bayesian_score - rowB.bayesian_score"},
                             {"name": "attempts", "label": "Attempts", "field": "attempts", "align": "right", "sortable": True},
                         ]
-                        rows = [{"taxon_key": item.taxon_key, "taxon_keys": [str(item.taxon_key)], "display_name": item.display_name, "accuracy": item.accuracy_pct, "attempts": item.total_attempts} for item in ranked_taxa]
-                        group_table = ui.table(columns=columns, rows=rows, row_key="taxon_key", pagination=table_pagination.copy(), on_pagination_change=lambda e: table_pagination.update(e.value)).classes("w-full bg-tt-surface text-tt-main").props("flat bordered dense")
+                        rows = [{"taxon_key": item.taxon_key, "taxon_keys": [str(item.taxon_key)], "display_name": item.display_name, "accuracy": item.accuracy_pct, "bayesian_score": item.bayesian_score, "attempts": item.total_attempts} for item in ranked_taxa]
+                        group_table = ui.table(columns=columns, rows=rows, row_key="taxon_key", pagination=table_pagination.copy(), on_pagination_change=lambda e: table_pagination.update(e.value)).classes("w-full bg-tt-surface text-tt-main").props("flat bordered dense binary-state-sort")
 
                         add_practice_action(group_table)
 

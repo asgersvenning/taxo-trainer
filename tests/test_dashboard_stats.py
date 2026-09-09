@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 from nicegui import ui
@@ -80,5 +81,33 @@ def test_dashboard_empty_accuracy_and_refresh(history, monkeypatch):
         rows = [r for e in container.descendants() if isinstance(e, ui.table) for r in e.rows]
         assert any(r.get('taxon_key') == 'A1' and r['display_name'] == 'English alpha' for r in rows)
         assert not any(isinstance(e, ui.label) and e.text.startswith('Trouble Taxa') for e in container.descendants())
+    finally:
+        container.delete()
+
+
+def test_group_table_sorts_by_existing_bayesian_score(history, monkeypatch):
+    """One failure must not outrank a well-established low success rate."""
+    app, user = history
+    log_attempt(user, 'a', 'A1', 'B2', False, False, app_conn=app)
+    for attempt in range(10):
+        log_attempt(user, 'b', 'B2', 'B2', attempt == 0, False, app_conn=app)
+    monkeypatch.setattr(dashboard_view, 'get_db_connection', lambda path: user if path == dashboard_view.USER_DB_PATH else app)
+    with ui.column() as container:
+        refresh = dashboard_view.render_dashboard_view()
+    try:
+        table = next(e for e in container.descendants() if isinstance(e, ui.table) and e.row_key == 'taxon_key')
+        assert [row['taxon_key'] for row in table.rows] == ['B2', 'A1']
+        assert [row['accuracy'] for row in table.rows] == [10.0, 0.0]
+        assert [row['bayesian_score'] for row in table.rows] == pytest.approx([2 / 12, 1 / 3])
+        accuracy = next(c for c in table.columns if c['name'] == 'accuracy')
+        assert 'bayesian_score' in accuracy[':sort']
+        assert table.pagination['sortBy'] == 'accuracy'
+        assert table.pagination['descending'] is False
+        assert table._props['binary-state-sort'] is True
+        listener = next(e for e in table._event_listeners.values() if e.type == 'update:pagination')
+        listener.handler(SimpleNamespace(args={**table.pagination, 'descending': True}))
+        refresh()
+        table = next(e for e in container.descendants() if isinstance(e, ui.table) and e.row_key == 'taxon_key')
+        assert table.pagination['descending'] is True
     finally:
         container.delete()
