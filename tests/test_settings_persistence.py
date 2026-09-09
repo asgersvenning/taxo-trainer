@@ -41,12 +41,7 @@ def settings(tmp_path, monkeypatch):
     user.close()
 
 
-@pytest.mark.parametrize(
-    "first_label", ["Minimum Occurrence Threshold", "Minimum Occurrence Cutoff (C_min)"]
-)
-def test_sampling_settings_sync_and_restore_after_reopening(
-    settings, monkeypatch, first_label
-):
+def test_single_sampling_cutoff_and_mode_restore_after_reopening(settings, monkeypatch):
     conn, user, path, filters, container, changes = settings
     elements = list(container.descendants())
     cutoffs = [
@@ -54,9 +49,10 @@ def test_sampling_settings_sync_and_restore_after_reopening(
         for e in elements
         if isinstance(e, ui.number)
         and e._props.get("label")
-        in ("Minimum Occurrence Threshold", "Minimum Occurrence Cutoff (C_min)")
+        == "Minimum observations per taxon"
     ]
-    first = next(e for e in cutoffs if e._props["label"] == first_label)
+    assert len(cutoffs) == 1
+    first = cutoffs[0]
     mode = next(
         e for e in elements if isinstance(e, ui.radio) and "natural" in e.options
     )
@@ -64,13 +60,13 @@ def test_sampling_settings_sync_and_restore_after_reopening(
     first.set_value(7)
     assert filters.mode == "natural"
     assert filters.min_count == 7
-    assert [e.value for e in cutoffs] == [7, 7]
+    assert [e.value for e in cutoffs] == [7]
     assert changes == [("natural", 1), ("natural", 7)]
     assert any(
-        isinstance(e, ui.chip) and e.text == "1 Active (1 Discarded)" for e in elements
+        isinstance(e, ui.chip) and e.text == "1 Meet minimum (1 Below minimum)" for e in elements
     )
     assert any(
-        isinstance(e, ui.label) and "fewer than 7 occurrences" in e.text
+        isinstance(e, ui.label) and "fewer than 7 observations" in e.text
         for e in container.descendants()
     )
     assert dict(
@@ -128,7 +124,7 @@ def test_incomplete_or_invalid_cutoff_does_not_replace_saved_choice(settings, in
         e
         for e in container.descendants()
         if isinstance(e, ui.number)
-        and e._props.get("label") == "Minimum Occurrence Threshold"
+        and e._props.get("label") == "Minimum observations per taxon"
     )
     cutoff.set_value(7)
     cutoff.set_value(invalid)
@@ -152,3 +148,28 @@ def test_accent_preference_applies_and_survives_dataset_clear(settings, monkeypa
     listener = next(e for e in button._event_listeners.values() if e.type == "click")
     listener.handler(None)
     assert conn.execute("SELECT val FROM app_metadata WHERE key='theme_accent'").fetchone()[0] == "forest"
+
+
+def test_training_group_suggestions_use_selected_language(settings, monkeypatch):
+    from taxo_trainer.engine import validator
+    from taxo_trainer.ui.components import render_taxa_filter_controls
+
+    conn, _, _, filters, _, _ = settings
+    requested_languages = []
+
+    def autocomplete(*args, **kwargs):
+        requested_languages.append(kwargs['lang'])
+        return []
+
+    monkeypatch.setattr(validator, 'autocomplete_taxa', autocomplete)
+    filters.language = 'en'
+    with ui.column() as container:
+        render_taxa_filter_controls(conn, filters, lambda: None)
+    try:
+        inputs = [e for e in container.descendants() if isinstance(e, ui.input)]
+        assert len(inputs) == 2
+        for field in inputs:
+            field.set_value('oak')
+        assert requested_languages == ['en', 'en']
+    finally:
+        container.delete()

@@ -104,7 +104,7 @@ def render_settings_view(
     if taxa_cnt > 0:
         active_path = saved_dwc_path if saved_dwc_path else default_path_str
     else:
-        active_path = "None (No dataset ingested. Ingest a DarwinCore file below to get started)"
+        active_path = "No dataset loaded. Import a GBIF archive below."
 
 
     # Query discarded vs active taxa based on active min_count cutoff
@@ -154,7 +154,7 @@ def render_settings_view(
                         color="primary",
                     ).props("dense ")
                     active_count_chip = ui.chip(
-                        f"{active_taxa_cnt:,} Active ({discarded_taxa_cnt:,} Discarded)",
+                        f"{active_taxa_cnt:,} Meet minimum ({discarded_taxa_cnt:,} Below minimum)",
                         icon="filter_alt",
                         color="warning",
                     ).props("dense ")
@@ -283,20 +283,20 @@ def render_settings_view(
 
             lang_select.on_value_change(lambda e: update_language(e.value))
 
-        # 1.2 Minimum Occurrences per Taxon Card
+        # 1.2 Training pool Card
         with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
-            ui.label("Minimum Occurrences per Taxon").classes(
+            ui.label("Training pool").classes(
                 "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
-                "Set the minimum occurrence limit per taxon used in the quiz. Taxa with fewer occurrences than this threshold are omitted from quiz sampling, autocomplete suggestions, and input interpolation to filter out spurious/rare taxa."
+                "Taxa with fewer observations are left out of the quiz and suggestions. This does not delete data."
             ).classes("text-xs text-tt-muted mb-4")
 
             with ui.column().classes("w-full space-y-3"):
                 with ui.row().classes("w-full gap-4 items-center flex-wrap"):
                     cutoff_input_main = (
                         ui.number(
-                            label="Minimum Occurrence Threshold",
+                            label="Minimum observations per taxon",
                             value=active_filters.min_count,
                             min=1,
                             step=1,
@@ -313,28 +313,27 @@ def render_settings_view(
                         "SELECT COUNT(*) FROM taxa WHERE occurrence_count >= ?;", (mc,)
                     ).fetchone()[0]
                     disc_c = taxa_cnt - act_c
-                    active_count_chip.set_text(f"{act_c:,} Active ({disc_c:,} Discarded)")
+                    active_count_chip.set_text(f"{act_c:,} Meet minimum ({disc_c:,} Below minimum)")
                     pct_act = (act_c / taxa_cnt * 100) if taxa_cnt else 0
                     pct_disc = (disc_c / taxa_cnt * 100) if taxa_cnt else 0
 
                     with stats_row:
                         ui.chip(
-                            f"✓ {act_c:,} Taxa Retained ({pct_act:.1f}%)",
+                            f"✓ {act_c:,} Taxa Meeting Minimum ({pct_act:.1f}%)",
                             icon="check_circle",
                             color="positive",
                         ).props("dense ")
                         ui.chip(
-                            f"🚫 {disc_c:,} Taxa Discarded ({pct_disc:.1f}%)",
+                            f"🚫 {disc_c:,} Taxa Below Minimum ({pct_disc:.1f}%)",
                             icon="block",
                             color="negative" if disc_c > 0 else "secondary",
                         ).props("dense ")
                         ui.label(
-                            f"Taxa with fewer than {mc} occurrences are omitted."
+                            f"Taxa with fewer than {mc} observations are left out of training."
                         ).classes("text-xs text-tt-muted italic flex-align-center")
 
                 refresh_cutoff_stats(active_filters.min_count)
 
-                cutoff_controls = [cutoff_input_main]
 
                 def update_cutoff(val: float | None) -> None:
                     if val is None:
@@ -346,11 +345,9 @@ def render_settings_view(
                     if count < 1 or count != val:
                         return
                     if count == active_filters.min_count:
-                        return  # Synchronizing the other control must not fire twice.
+                        return  # Do not notify twice for an unchanged value.
                     set_app_metadata("min_count", str(count), conn=app_conn)
                     active_filters.min_count = count
-                    for control in cutoff_controls:
-                        control.set_value(count)
                     refresh_cutoff_stats(count)
                     on_filters_changed()
                     ui.notify(f"Minimum occurrence limit set to {count} per taxon", type="positive")
@@ -417,13 +414,13 @@ def render_settings_view(
             accent_select.on_value_change(lambda e: update_accent(e.value))
             theme_select.move(theme_controls)
             accent_select.move(theme_controls)
-        # 2. DarwinCore (DwC) Occurrence Ingestion Card
+        # 2. Import observation data Card
         with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
-            ui.label("DarwinCore (DwC) Occurrence Ingestion").classes(
+            ui.label("Import observation data").classes(
                 "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
-                "Ingest DarwinCore .zip (ZIP-file) or occurrence.txt (TSV) file into SQLite database app_data.db."
+                "Use a GBIF Darwin Core ZIP, or occurrence.txt with photo links. Imports add or update observations."
             ).classes("text-xs text-tt-muted mb-4")
 
             saved_max_occ = get_app_metadata("max_occurrences_per_taxon", "1000", conn=app_conn)
@@ -435,7 +432,7 @@ def render_settings_view(
             with ui.row().classes("w-full gap-4 items-center flex-wrap mb-3"):
                 max_occ_input = (
                     ui.number(
-                        label="Max Occurrences Per Taxon",
+                        label="Import limit per taxon",
                         value=init_max_occ,
                         min=0,
                         step=100,
@@ -444,7 +441,7 @@ def render_settings_view(
                     .props("outlined dense")
                 )
                 ui.label(
-                    "Threshold cap per raw taxon during ingestion (default: 1000). Set to 0 for unlimited."
+                    "Maximum observations to retain per taxon during import; 0 means unlimited."
                 ).classes("text-xs text-tt-muted italic")
 
             def save_max_occ(val: float | None) -> None:
@@ -496,13 +493,13 @@ def render_settings_view(
             path_input_element.on_value_change(update_path_autocomplete)
 
             if taxa_cnt > 0:
-                init_ingest_text = f"✓ Ingestion Active — {occ_cnt:,} occurrences loaded across {taxa_cnt:,} taxa."
+                init_ingest_text = f"✓ Dataset ready — {occ_cnt:,} occurrences loaded across {taxa_cnt:,} taxa."
                 init_ingest_class = "text-sm text-tt-positive font-bold mb-3"
-                ingest_btn_label = "Re-Ingest Dataset"
+                ingest_btn_label = "Import again"
             else:
                 init_ingest_text = "Ready for DarwinCore ingestion."
                 init_ingest_class = "text-sm text-tt-main font-semibold mb-3"
-                ingest_btn_label = "Start Ingestion"
+                ingest_btn_label = "Start import"
 
             with ui.row().classes("items-center gap-2 mb-3"):
                 ingest_spinner = ui.spinner("dots", size="md", color="primary").classes("hidden")
@@ -526,7 +523,7 @@ def render_settings_view(
                 ingest_btn.disable()
                 ingest_spinner.classes(remove="hidden")
                 status_label.set_text(
-                    "Downloading dataset..." if is_remote else "Ingesting DarwinCore TSV stream..."
+                    "Downloading dataset..." if is_remote else "Importing observations..."
                 )
                 ui.notify("Started dataset ingestion process...", type="info")
 
@@ -707,9 +704,9 @@ def render_settings_view(
 
 
 
-        # 4. Advanced Features Dropdown (Hidden by default at bottom of page)
+        # 4. Training preferences Dropdown (Hidden by default at bottom of page)
         exp = ui.expansion(
-            "Advanced Features", icon="settings_suggest", value=False
+            "Training preferences", icon="settings_suggest", value=False
         ).classes(
             "w-full bg-tt-raised rounded-lg shadow-md border border-tt-border text-tt-warning font-bold mb-6"
         )
@@ -718,7 +715,7 @@ def render_settings_view(
             with ui.card().classes(
                 "w-full bg-tt-surface p-6 rounded-lg border border-tt-border"
             ):
-                ui.label("Stage 1 Sampling & Probability Weights").classes(
+                ui.label("How often taxa appear").classes(
                     "text-lg font-bold text-tt-main mb-2"
                 )
 
@@ -730,10 +727,10 @@ def render_settings_view(
                     mode_radio = (
                         ui.radio(
                             options={
-                                "flat": "Flat (Equal 1.0 probability)",
-                                "natural": "Natural (Raw occurrence count)",
-                                "log": "Log Transformed (log(1 + count)) [Recommended]",
-                                "sqrt": "Square-Root Transformed (sqrt(count))",
+                                "flat": "Equal chance across taxa",
+                                "natural": "Follow observation counts",
+                                "log": "Reduce differences strongly (log)",
+                                "sqrt": "Reduce differences moderately (square root)",
                             },
                             value=active_filters.mode,
                         )
@@ -750,27 +747,11 @@ def render_settings_view(
 
                     mode_radio.on_value_change(lambda e: update_mode(e.value))
 
-                with ui.row().classes("w-full gap-6 mt-4 items-center"):
-                    cutoff_input = (
-                        ui.number(
-                            label="Minimum Occurrence Cutoff (C_min)",
-                            value=active_filters.min_count,
-                            min=1,
-                            step=1,
-                        )
-                        .classes("w-64 text-tt-main")
-                        .props("outlined ")
-                    )
-
-                    cutoff_controls.append(cutoff_input)
-
-                    cutoff_input.on_value_change(lambda e: update_cutoff(e.value))
-
             # Taxonomic Scope & Filters Card
             with ui.card().classes(
                 "w-full bg-tt-surface p-6 rounded-lg border border-tt-border"
             ):
-                ui.label("Taxonomic Scope & Practice Filters").classes(
+                ui.label("Focus your practice").classes(
                     "text-lg font-bold text-tt-main mb-2"
                 )
 

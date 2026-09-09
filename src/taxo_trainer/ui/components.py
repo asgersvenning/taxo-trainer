@@ -292,7 +292,7 @@ def render_taxa_filter_controls(
 
     with card:
         with ui.row().classes("w-full justify-between items-center"):
-            ui.label("Taxa Scope: Whitelist & Blacklist").classes(
+            ui.label("Training groups").classes(
                 "text-xs font-bold text-tt-warning uppercase tracking-wider"
             )
             active_cnt = len(filters.include_taxa) + len(filters.exclude_taxa)
@@ -303,13 +303,13 @@ def render_taxa_filter_controls(
 
         # 1. Whitelist (Include) Input & Badges
         with ui.column().classes("w-full space-y-1"):
-            ui.label("Whitelist (Include Taxa Only):").classes(
+            ui.label("Include only:").classes(
                 "text-xs font-semibold text-tt-positive"
             )
 
             inc_input = (
                 ui.input(
-                    placeholder="Type species, genus, or family to whitelist...",
+                    placeholder="Species, genus, or family",
                 )
                 .classes("w-full text-xs text-tt-main")
                 .props("outlined dense clearable")
@@ -325,7 +325,7 @@ def render_taxa_filter_controls(
                     inc_suggestions.classes(add="hidden")
                     return
                 matches = autocomplete_taxa(
-                    app_conn, txt, limit=5, min_count=filters.min_count
+                    app_conn, txt, limit=5, min_count=filters.min_count, lang=filters.language
                 )
                 inc_suggestions.clear()
                 if matches:
@@ -351,7 +351,7 @@ def render_taxa_filter_controls(
             # Active Include Taxa Badges
             with ui.row().classes("w-full gap-1 flex-wrap items-center mt-1"):
                 if not filters.include_taxa:
-                    ui.label("All taxa included (no active whitelist)").classes(
+                    ui.label("All groups, except exclusions").classes(
                         "text-xs text-tt-muted italic"
                     )
                 else:
@@ -370,19 +370,19 @@ def render_taxa_filter_controls(
                         filters.include_taxa.clear()
                         save_scope()
 
-                    ui.button("Clear Whitelist", on_click=clear_inc).props(
+                    ui.button("Include all groups", on_click=clear_inc).props(
                         "flat dense color=warning"
-                    ).classes("text-[9px]")
+                    ).classes("text-xs")
 
         # 2. Blacklist (Exclude) Input & Badges
         with ui.column().classes("w-full space-y-1 mt-2"):
-            ui.label("Blacklist (Exclude Taxa):").classes(
+            ui.label("Exclude:").classes(
                 "text-xs font-semibold text-tt-negative"
             )
 
             exc_input = (
                 ui.input(
-                    placeholder="Type species, genus, or family to exclude...",
+                    placeholder="Species, genus, or family",
                 )
                 .classes("w-full text-xs text-tt-main")
                 .props("outlined dense clearable")
@@ -398,7 +398,7 @@ def render_taxa_filter_controls(
                     exc_suggestions.classes(add="hidden")
                     return
                 matches = autocomplete_taxa(
-                    app_conn, txt, limit=5, min_count=filters.min_count
+                    app_conn, txt, limit=5, min_count=filters.min_count, lang=filters.language
                 )
                 exc_suggestions.clear()
                 if matches:
@@ -443,9 +443,9 @@ def render_taxa_filter_controls(
                         filters.exclude_taxa.clear()
                         save_scope()
 
-                    ui.button("Clear Blacklist", on_click=clear_exc).props(
+                    ui.button("Clear exclusions", on_click=clear_exc).props(
                         "flat dense color=warning"
-                    ).classes("text-[9px]")
+                    ).classes("text-xs")
 
     return card
 

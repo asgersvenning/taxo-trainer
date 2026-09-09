@@ -315,7 +315,7 @@ def render_quiz_view(
         state.solved = True
         state.last_feedback = {
             "type": "warning",
-            "message": "Flagged observation as misidentified. Omitted from user statistics and excluded from future sessions.",
+            "message": "Saved attempts for this observation were removed. It may appear again in a later session.",
         }
         refresh_quiz_ui()
 
@@ -630,16 +630,16 @@ def render_quiz_view(
                             ui.label("Identify Taxon:").classes(
                                 "font-bold text-xs text-tt-main"
                             )
-                            ui.label("Focus: / or Esc | Blur: Esc").classes(
+                            ui.label("Esc: focus / defocus").classes(
                                 "text-xs text-tt-warning font-mono"
                             )
 
                         input_field = (
                             ui.input(
-                                placeholder="Type species, genus, family... (/ to focus, Esc to blur)",
+                                placeholder="Species, genus, or family",
                             )
                             .classes("w-full text-xs text-tt-main")
-                            .props("outlined dense clearable")
+                            .props('outlined dense clearable aria-label="Identify Taxon"')
                         )
 
                         active_input[0] = input_field
@@ -727,29 +727,29 @@ def render_quiz_view(
                     with ui.card().classes(
                         "w-full p-2 bg-tt-raised text-tt-main rounded-md shadow-sm border border-tt-border"
                     ):
-                        ui.label("Hints & Feedback").classes(
+                        ui.label("Hints & Feedback").tooltip("Hints mark the observation as assisted and exclude it from unassisted accuracy.").classes(
                             "text-xs font-bold text-tt-muted mb-1"
                         )
                         with ui.row().classes("w-full justify-between gap-1"):
                             ui.button(
-                                "Higher-Order Rank",
+                                "Reveal next rank",
                                 on_click=handle_higher_order_hint,
                                 color="warning",
                             ).props("flat dense").classes("text-xs")
                             ui.button(
-                                "1/5 Choice",
+                                "Multiple choice",
                                 on_click=handle_multiple_choice_hint,
                                 color="warning",
                             ).props("flat dense").classes("text-xs")
 
                         ui.button(
-                            "Report Misidentified Obs",
+                            "Ignore observation",
                             on_click=handle_report_bad_observation,
                             color="negative",
                             icon="report_problem",
                         ).props("flat dense").classes(
                             "text-xs w-full text-tt-negative mt-1"
-                        )
+                        ).tooltip("Remove this observation's saved attempts from your statistics. No report is sent to GBIF.")
 
                     # Feedback Message Banner & Multi-Rank Hierarchy Breakdown
                     if state.last_feedback:
@@ -838,7 +838,7 @@ def render_quiz_view(
 
                     # Taxa Whitelist / Blacklist Filter Drawer
                     with ui.expansion(
-                        "Taxa Scope (Whitelist / Blacklist)", icon="filter_alt"
+                        "Training groups", icon="filter_alt"
                     ).classes(
                         "w-full bg-tt-raised text-xs text-tt-warning rounded-md border border-tt-border p-0"
                     ):

@@ -9,37 +9,37 @@
       "step_number": 1,
       "title": "Photo Inspection Canvas & Map Toggle",
       "description": "Inspect the observation photographs and use the map when coordinates are available. Use Left/Right Arrow or A/D to change photos while the identification input is not selected. Observation details and the GBIF link provide context and attribution.",
-      "image_filename": "step1_photo_canvas_map.webp"
+      "image_filename": "current_photo.jpg"
     },
     {
       "step_number": 2,
       "title": "Interactive Multi-Word Autocomplete",
       "description": "Press Esc to toggle focus on 'Identify Taxon': it focuses the field when unfocused and defocuses it when focused. You can also click the field, or use /, F2, or Ctrl+K to focus it. Enter a scientific name or an available vernacular name for a species, genus, or family. Choose your display language in Settings & Data. Autocomplete matches name prefixes; select a suggestion or press Enter to choose the first result. With no result shown, Enter submits the typed guess.",
-      "image_filename": "step2_autocomplete_input.webp"
+      "image_filename": "current_identification.png"
     },
     {
       "step_number": 3,
       "title": "Multi-Rank Taxonomic Hierarchy Feedback",
       "description": "Guesses can be submitted at any rank (Family, Genus, Species). The visual hierarchy feedback tree highlights correct rank matches (green), incorrect guesses (red), and unrevealed scope.",
-      "image_filename": "step3_hierarchy_feedback.webp"
+      "image_filename": "current_hierarchy.png"
     },
     {
       "step_number": 4,
       "title": "Structured Hints & Diagnostic Comparisons",
-      "description": "Reveal the next higher-order rank or request up to five multiple-choice candidates within the revealed scope. Fewer choices may appear in a small training pool. Hints and diagnostic comparison photos, including comparisons revealed after a wrong guess, mark the attempt as assisted and exclude it from unassisted success metrics.",
-      "image_filename": "step4_hints_diagnostic.webp"
+      "description": "Use 'Reveal next rank' or 'Multiple choice' for help. Multiple choice offers up to five species within the revealed scope. Hints and diagnostic comparison photos mark the attempt as assisted and exclude it from unassisted accuracy.",
+      "image_filename": "current_hints.png"
     },
     {
       "step_number": 5,
       "title": "Streak & Record Tracking",
-      "description": "Track your current streak and personal best. GBIF photographs may be ambiguous or incorrectly labelled, so you can manually override how an observation is counted. This is for your own training and judgment. You can also skip an observation you do not want to practise.",
-      "image_filename": "step5_streak_record.webp"
+      "description": "Track your streak and personal best. GBIF photographs can be ambiguous or incorrectly labelled, so you control how your own training is counted. 'Ignore observation' removes that observation's saved attempts from your statistics. It sends no report to GBIF and does not permanently block the observation.",
+      "image_filename": "current_identification.png"
     },
     {
       "step_number": 6,
       "title": "Next observation",
       "description": "Click 'Next Observation', or press Ctrl+Right Arrow or N while the identification input is not selected. Press Esc to leave the input before using navigation shortcuts.",
-      "image_filename": "step6_next_observation.webp"
+      "image_filename": "current_next.png"
     }
   ]
 }

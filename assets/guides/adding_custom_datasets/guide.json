@@ -55,7 +55,7 @@
     {
       "step_number": 9,
       "title": "Import Archive & Enrich Names",
-      "description": "Paste the ZIP URL or local path into 'Path or URL to DarwinCore dataset (.zip / occurrence.txt)' and click 'Start Ingestion' or 'Re-Ingest Dataset'. 'Max Occurrences Per Taxon' caps retained observations during import; 0 means unlimited. After completion, choose your display language and use 'Look Up Names' under 'Species Names' if desired."
+      "description": "Paste the ZIP URL or local path into 'Path or URL to DarwinCore dataset (.zip / occurrence.txt)' and click 'Start import' or 'Import again'. 'Import limit per taxon' caps retained observations during import; 0 means unlimited. After completion, choose your display language and use 'Look Up Names' under 'Species Names' if desired."
     }
   ]
 }

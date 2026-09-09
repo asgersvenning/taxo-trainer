@@ -30,8 +30,8 @@ Photo and observation navigation shortcuts work when the identification input is
 
 ### Guided Hints & Assistance
 
-- **Higher-Order Rank Hint**: Reveals the next unrevealed taxonomic rank (Order $\rightarrow$ Family $\rightarrow$ Genus $\rightarrow$ Species), updating the hierarchy display and scoping autocomplete choices.
-- **1/5 Multiple Choice Hint**: Displays up to five candidate species choices strictly sampled from within the currently revealed taxonomic scope.
+- **Reveal Next Rank**: Reveals the next unrevealed taxonomic rank (Order $\rightarrow$ Family $\rightarrow$ Genus $\rightarrow$ Species), updating the hierarchy display and scoping autocomplete choices.
+- **Multiple Choice Hint**: Displays up to five candidate species choices strictly sampled from within the currently revealed taxonomic scope.
 - **Unassisted Metric Enforcement**: Using any hint marks the attempt as assisted so it is excluded from unassisted accuracy metrics.
 
 ### Analytics & Mastery Dashboard
@@ -118,7 +118,7 @@ The output executable directory will be created under `dist/taxo-trainer`.
 ## First session
 
 1. Open **Settings & Data**. If observations are already available, you can go straight to **Quiz**.
-2. In **DarwinCore (DwC) Occurrence Ingestion**, select a local archive or paste a direct download URL. A bundled dataset path is prefilled when that file is available; otherwise, supply your own file or URL. Click **Start Ingestion** or **Re-Ingest Dataset** and wait for completion.
+2. In **Import observation data**, select a local archive or paste a direct download URL. A bundled dataset path is prefilled when that file is available; otherwise, supply your own file or URL. Click **Start import** or **Import again** and wait for completion.
 3. Choose **Primary Display Language**. Danish is the default; English, German, Swedish, Norwegian, Finnish, Polish, Czech, French, Spanish, Italian, Portuguese, and Dutch are also supported. Choose **Scientific Binomial (Latin)** for scientific names. This changes taxon names, not the English interface labels.
 4. Under **Species Names**, click **Look Up Names** to retrieve available vernacular names. You can continue training during lookup, or skip it when using scientific names.
 5. Open **Quiz**, inspect a photo, and enter a species, genus, or family name. Select an autocomplete suggestion to submit it. The **Guides** tab explains the quiz, dashboard, datasets, and training preferences.
@@ -135,17 +135,16 @@ After upgrading from older versions, reselect saved training groups if prompted.
 
 | Setting | Effect |
 | --- | --- |
-| **Minimum Occurrence Threshold** | Omit taxa with fewer retained observations from training and autocomplete. Raising it narrows the pool; it does not delete data. |
-| **Minimum Occurrence Cutoff (C_min)** | The same threshold, also shown under **Stage 1 Sampling & Probability Weights**. Both controls stay synchronized. |
-| **Flat** sampling | Give each eligible taxon equal weight. |
-| **Natural** sampling | Favour taxa in proportion to their retained observation counts. These counts describe the imported data, not biological abundance. |
-| **Log Transformed** / **Square-Root Transformed** | Soften the influence of observation counts compared with Natural sampling. |
+| **Minimum observations per taxon** | Omit taxa with fewer retained observations from training and autocomplete. Raising it narrows the pool; it does not delete data. |
+| **Equal chance across taxa** | Give each eligible taxon equal weight. |
+| **Follow observation counts** | Favour taxa in proportion to their retained observation counts. These counts describe the imported data, not biological abundance. |
+| **Reduce differences strongly (log)** / **Reduce differences moderately (square root)** | Soften the influence of observation counts compared with Natural sampling. |
 | Family and taxon filters | Focus on selected groups, or exclude groups you choose. |
 | **Practice Misidentified Photos Only** | Revisit photos you previously misidentified. |
 
 Choose light, dark, or system appearance and a Blue, Forest, or Plum accent under **Theme & Appearance**. Display language, theme, accent, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls.
 
-GBIF photographs can be ambiguous or incorrectly labelled. You can manually override how an observation is counted for your own training. Hints and diagnostic comparisons mark an attempt as assisted and exclude it from unassisted success metrics.
+GBIF photographs can be ambiguous or incorrectly labelled. You can manually override how an observation is counted for your own training. **Ignore observation** removes its saved attempts from your statistics; it does not send a report to GBIF or permanently block the observation. Hints and diagnostic comparisons mark an attempt as assisted and exclude it from unassisted success metrics.
 
 ## Custom Datasets
 
@@ -167,9 +166,9 @@ The screenshots illustrate the download sequence; the website layout may change.
 
 ### Import into Taxo-Trainer
 
-Once the export is ready, download the ZIP or copy its direct archive download link. In **Settings & Data**, paste the local file path or direct URL into **Path or URL to DarwinCore dataset (.zip / occurrence.txt)**, then click **Start Ingestion** or **Re-Ingest Dataset**. Prefer the complete ZIP so its multimedia information stays with the observations. The in-app **Adding Custom GBIF Datasets** guide includes example GBIF screens; website layouts can change.
+Once the export is ready, download the ZIP or copy its direct archive download link. In **Settings & Data**, paste the local file path or direct URL into **Path or URL to DarwinCore dataset (.zip / occurrence.txt)**, then click **Start import** or **Import again**. Prefer the complete ZIP so its multimedia information stays with the observations. The in-app **Adding Custom GBIF Datasets** guide includes example GBIF screens; website layouts can change.
 
-**Max Occurrences Per Taxon** limits the number of observations retained per taxon during import (`0` means unlimited). It is separate from the minimum-occurrence threshold used to choose taxa for training.
+**Import limit per taxon** limits the number of observations retained per taxon during import (`0` means unlimited). It is separate from the minimum-occurrence threshold used to choose taxa for training.
 
 Imports **add or update records** in the current data source. They do not automatically replace it. To start with only a new dataset, use **Clear Current Data Source** first. Clearing removes the current observation data, while retaining user progress and the preferences listed above. A failed import leaves the data present immediately before that import intact; it does not undo a separate clearing action.
 

@@ -18,12 +18,12 @@
     {
       "step_number": 3,
       "title": "Choose Your Training Pool",
-      "description": "Set 'Minimum Occurrence Threshold' to omit taxa with fewer retained observations. The 'Minimum Occurrence Cutoff (C_min)' control under 'Stage 1 Sampling & Probability Weights' changes the same saved value. This does not delete observations. 'Max Occurrences Per Taxon' is a separate cap applied during import."
+      "description": "Under 'Training pool', set 'Minimum observations per taxon' to leave taxa with fewer observations out of training. This does not delete data. 'Import limit per taxon' is a separate maximum applied when importing data."
     },
     {
       "step_number": 4,
       "title": "Choose How Often Taxa Appear",
-      "description": "Under 'Stage 1 Sampling & Probability Weights', Flat gives eligible taxa equal weight; Natural follows their retained observation counts. Log Transformed and Square-Root Transformed soften the influence of those counts. Counts describe the imported data, not biological abundance. Sampling mode, minimum threshold, language, and theme are saved across launches and dataset clearing."
+      "description": "Expand 'Training preferences' and find 'How often taxa appear'. Choose equal chance, follow observation counts, or reduce the differences using log or square root. These counts describe the imported data, not biological abundance. Sampling mode, minimum threshold, language, theme, and accent are saved across launches and dataset clearing."
     },
     {
       "step_number": 5,

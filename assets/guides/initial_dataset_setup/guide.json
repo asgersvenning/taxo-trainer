@@ -19,7 +19,7 @@
     {
       "step_number": 3,
       "title": "Import Observation Data",
-      "description": "In 'DarwinCore (DwC) Occurrence Ingestion', use the prefilled local dataset path if the bundled archive is available, or supply your own ZIP path or direct download URL. Click 'Start Ingestion' or 'Re-Ingest Dataset' and wait for completion. Imports add or update records; they do not automatically replace existing data."
+      "description": "In 'Import observation data', use the prefilled local dataset path if the bundled archive is available, or supply your own ZIP path or direct download URL. Click 'Start import' or 'Import again' and wait for completion. Imports add or update records; they do not automatically replace existing data."
     },
     {
       "step_number": 4,
@@ -35,7 +35,7 @@
       "step_number": 6,
       "title": "Practice with High-Resolution Photos",
       "description": "Inspect a photo and enter a species, genus, or family name. Select an autocomplete suggestion to submit it. Hints mark the attempt as assisted. Open the Quiz walkthrough for shortcuts and the Settings walkthrough to adjust your training pool.",
-      "image_filename": "step6_practice_identification.webp"
+      "image_filename": "../quiz_page_walkthrough/current_photo.jpg"
     }
   ]
 }

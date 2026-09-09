@@ -202,7 +202,7 @@ def render_dashboard_view() -> Callable[[], None]:
                             )
                             if ema_points:
                                 latest_ema = ema_points[-1].ema_accuracy
-                                ui.label(f"Recent trend: {latest_ema}%").classes("text-xs font-bold text-tt-positive ml-2")
+                                ui.label(f"Recent trend: {latest_ema}%").classes("text-xs font-bold text-tt-main ml-2")
 
                         # Window Size Controls
                         with ui.row().classes("items-center gap-2"):
@@ -269,14 +269,14 @@ def render_dashboard_view() -> Callable[[], None]:
                                     "borderColor": "var(--tt-border)",
                                     "fillerColor": "var(--tt-primary-soft)",
                                     "handleStyle": {"color": "var(--tt-primary)"},
-                                    "textStyle": {"color": "var(--tt-muted)", "fontSize": 10},
+                                    "textStyle": {"color": "var(--tt-muted)", "fontSize": 12},
                                 },
                             ],
                             "xAxis": {
                                 "type": "category",
                                 "boundaryGap": False,
                                 "data": x_labels,
-                                "axisLabel": {"color": "var(--tt-muted)", "fontSize": 10},
+                                "axisLabel": {"color": "var(--tt-muted)", "fontSize": 12},
                                 "axisLine": {"lineStyle": {"color": "var(--tt-border)"}},
                             },
                             "yAxis": {
@@ -284,7 +284,7 @@ def render_dashboard_view() -> Callable[[], None]:
                                 "min": 0,
                                 "max": 100,
                                 "interval": 20,
-                                "axisLabel": {"formatter": "{value}%", "color": "var(--tt-muted)", "fontSize": 10},
+                                "axisLabel": {"formatter": "{value}%", "color": "var(--tt-muted)", "fontSize": 12},
                                 "splitLine": {"lineStyle": {"color": "var(--tt-border)"}},
                             },
                             "series": [
@@ -302,18 +302,10 @@ def render_dashboard_view() -> Callable[[], None]:
                                             "formatter": f"Period average ({avg_acc}%)",
                                             "position": "insideEndTop",
                                             "color": "var(--tt-positive)",
-                                            "fontSize": 10,
+                                            "fontSize": 12,
                                         },
                                         "lineStyle": {"color": "var(--tt-positive)", "type": "dashed", "width": 1.5},
                                         "data": [{"yAxis": avg_acc}],
-                                    },
-                                    "markPoint": {
-                                        "symbolSize": 32,
-                                        "label": {"fontSize": 9, "color": "#ffffff"},
-                                        "data": [
-                                            {"type": "max", "name": "Peak", "itemStyle": {"color": "var(--q-positive)"}},
-                                            {"type": "min", "name": "Trough", "itemStyle": {"color": "var(--q-negative)"}},
-                                        ],
                                     },
                                     "areaStyle": {"color": "var(--tt-primary)", "opacity": 0.12},
                                 }
