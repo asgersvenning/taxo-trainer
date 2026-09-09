@@ -117,3 +117,14 @@ def test_undo_after_advancing_preserves_new_question_and_attempts(quiz):
     assert state.current_question is current
     assert user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0] == 2
     assert not state.solved
+
+
+def test_undo_callback_remains_valid_in_its_original_ui_slot(quiz):
+    _, _, state, _, container = quiz
+    ignore = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == 'Ignore observation')
+    with ignore.parent_slot:
+        next(e for e in ignore._event_listeners.values() if e.type == 'click').handler(None)
+    undo = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == 'Undo ignore')
+    with undo.parent_slot:
+        next(e for e in undo._event_listeners.values() if e.type == 'click').handler(None)
+    assert state.ignored_observation is None

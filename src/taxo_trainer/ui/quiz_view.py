@@ -416,8 +416,8 @@ def render_quiz_view(
 
     def handle_undo_ignore() -> None:
         if undo_ignore_observation(state, user_conn):
-            refresh_quiz_ui()
             ui.notify("Removed attempts restored.", type="info")
+            refresh_quiz_ui()
 
     def get_target_order(question) -> str:
         if not question:
