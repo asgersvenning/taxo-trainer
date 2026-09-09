@@ -7,6 +7,35 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Active UX sequence (supersedes packaging recommendations)
+
+The user explicitly prioritizes: (1) readability/contrast and generalizable,
+customizable themes; (2) useful statistics; (3) self-explanatory interactions.
+Improve existing features without content bloat. New controls must fit existing
+workflows rather than compete with them. Packaging is not the current target.
+
+Theme stage implemented in `87f2182`: semantic palette roles replace scattered
+dark colors and the large light-mode override block. Central palettes cover
+surfaces, text, borders, feedback, and chart colors. One accent selector (Blue,
+Forest, Plum) sits alongside the existing mode selector; it updates in place,
+persists across reloads, and survives dataset clearing. Feedback colors remain
+independent of the accent. Small 10/11px UI labels use the existing 12px size.
+ECharts uses SVG and CSS variables so theme changes retain chart interaction.
+
+Verification: 141 tests passed in 14.60s, Ruff and whitespace checks passed.
+Palette tests check 4.5:1 text contrast, 3:1 control boundaries, feedback surfaces,
+and all accent choices. Production settings callbacks verify accent persistence
+and clearing. Headless Chromium on isolated copied application data checked the
+four main screens in six mode/accent combinations: sampled visible HTML text
+passed a 4.5:1 computed-color check with no page errors. This is not a comprehensive
+accessibility certification. Additional checks covered system light/dark changes,
+reload restoration, SVG text colors, chart wheel interaction, guide navigation,
+and screenshots at 1440x1000 and 1280x820. Browser checks exposed and corrected
+Quasar important-layer precedence and contrast problems in filled guide buttons.
+
+Statistics and self-explanatory interaction work remain outstanding under the
+active user goal; theme completion is not completion of the full sequence.
+
 ### Completed: README and onboarding refresh
 
 Follow-up after user review: restored the README's illustrated GBIF export sequence
