@@ -352,6 +352,77 @@ class DownloadResponse(io.BytesIO):
         return super().read(size)
 
 
+@pytest.mark.parametrize("failure", ["batch", "activation", "empty", "bad_zip"])
+def test_failed_import_preserves_live_dataset_and_retries(tmp_path, monkeypatch, failure):
+    """Staging and publication failures preserve data visible to open readers."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    old_source = tmp_path / "old.txt"
+    header = "gbifID\ttaxonKey\tassociatedMedia\n"
+    old_source.write_text(header + "old\t101\thttps://example.com/old.jpg\n")
+    target = tmp_path / "app.db"
+    ingest_dwc_file(old_source, db_path=target)
+    reader = sqlite3.connect(target)
+    try:
+        reader.execute("INSERT INTO app_metadata VALUES ('theme_preference', 'dark')")
+        reader.commit()
+        old_dump = list(reader.iterdump())
+        new_source = tmp_path / "new.txt"
+        new_source.write_text(
+            header + "new1\t202\thttps://example.com/1.jpg\n"
+            "new2\t202\thttps://example.com/2.jpg\n"
+        )
+        attempted_source = new_source
+        if failure == "activation":
+            reader.execute("""
+                CREATE TRIGGER fail_import BEFORE INSERT ON occurrences
+                WHEN NEW.occurrence_id = 'new2'
+                BEGIN SELECT RAISE(ABORT, 'Injected activation failure'); END
+            """)
+            reader.commit()
+        elif failure == "empty":
+            attempted_source = tmp_path / "empty.txt"
+            attempted_source.write_text(header)
+        elif failure == "bad_zip":
+            attempted_source = tmp_path / "broken.zip"
+            attempted_source.write_bytes(b"not a zip")
+
+        prepared = []
+
+        def progress(value):
+            if isinstance(value, int):
+                prepared.append(value)
+                assert reader.execute("SELECT occurrence_id FROM occurrences").fetchall() == [("old",)]
+                assert reader.execute(
+                    "SELECT val FROM app_metadata WHERE key = 'active_dwc_path'"
+                ).fetchone() == (str(old_source.resolve()),)
+                if failure == "batch":
+                    raise RuntimeError("Injected failure after staged batch")
+
+        with pytest.raises((RuntimeError, sqlite3.IntegrityError, ValueError, zipfile.BadZipFile)):
+            ingest_dwc_file(attempted_source, db_path=target, batch_size=1, progress_callback=progress)
+        if failure == "activation":
+            assert prepared and prepared[-1] == 2
+            reader.execute("DROP TRIGGER fail_import")
+            reader.commit()
+        assert list(reader.iterdump()) == old_dump
+
+        assert ingest_dwc_file(new_source, db_path=target, batch_size=1) == (2, 1)
+        # The same reader sees the committed import, with previous add/update semantics.
+        assert reader.execute("SELECT occurrence_id FROM occurrences ORDER BY occurrence_id").fetchall() == [
+            ("new1",), ("new2",), ("old",)
+        ]
+        assert reader.execute(
+            "SELECT val FROM app_metadata WHERE key = 'active_dwc_path'"
+        ).fetchone() == (str(new_source.resolve()),)
+        assert reader.execute(
+            "SELECT val FROM app_metadata WHERE key = 'theme_preference'"
+        ).fetchone() == ("dark",)
+        assert reader.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert reader.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        reader.close()
+
+
 @pytest.mark.parametrize("failure", ["connection", "short", "empty", "callback"])
 def test_failed_download_is_not_cached_and_can_retry(tmp_path, monkeypatch, failure):
     """A failed transfer never publishes a cache entry and a retry starts fresh."""

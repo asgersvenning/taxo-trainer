@@ -349,6 +349,88 @@ def ingest_dwc_file(
     max_occurrences_per_taxon: int | None = 1000,
     progress_callback: Callable[[int | str], None] | None = None,
 ) -> tuple[int, int]:
+    """Prepare an import separately and publish it in one database transaction.
+
+    Existing records retain the importer's add/update semantics. Failed parsing
+    or activation leaves existing records and active-source metadata unchanged.
+
+    Args:
+        file_path: Local DarwinCore TSV/ZIP path or remote URL.
+        db_path: Destination application database.
+        batch_size: Number of rows committed per staging transaction.
+        max_occurrences_per_taxon: Optional per-taxon import cap.
+        progress_callback: Receives preparation counts and status messages.
+
+    Returns:
+        Tuple of prepared occurrence and taxon counts.
+    """
+    with tempfile.TemporaryDirectory(prefix="taxo-import-") as temporary_dir:
+        staged_path = Path(temporary_dir) / "staged.db"
+        counts = _ingest_to_database(
+            file_path, staged_path, batch_size, max_occurrences_per_taxon,
+            progress_callback,
+        )
+        if counts[0] == 0:
+            raise ValueError("Dataset contains no usable photo observations.")
+        if progress_callback:
+            progress_callback("Activating prepared dataset...")
+        _activate_import(staged_path, db_path)
+        return counts
+
+
+def _activate_import(staged_path: Path, db_path: Path) -> None:
+    """Publish prepared rows and metadata atomically into the live SQLite file.
+
+    Args:
+        staged_path: Successfully prepared database, no longer being written.
+        db_path: Destination application database, potentially open in other views.
+    """
+    conn = get_db_connection(db_path)
+    try:
+        init_app_db(conn)
+        conn.execute("ATTACH DATABASE ? AS staged", (str(staged_path),))
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("""
+                INSERT INTO taxa (
+                    taxon_key, scientific_name, canonical_name, accepted_name,
+                    rank, kingdom, phylum, class, order_name, family, genus,
+                    vernacular_da, vernacular_en, occurrence_count
+                ) SELECT taxon_key, scientific_name, canonical_name, accepted_name,
+                    rank, kingdom, phylum, class, order_name, family, genus,
+                    vernacular_da, vernacular_en, occurrence_count
+                  FROM staged.taxa WHERE 1
+                ON CONFLICT(taxon_key) DO UPDATE SET
+                    occurrence_count = excluded.occurrence_count,
+                    vernacular_da = COALESCE(NULLIF(excluded.vernacular_da, ''), taxa.vernacular_da),
+                    vernacular_en = COALESCE(NULLIF(excluded.vernacular_en, ''), taxa.vernacular_en)
+            """)
+            conn.execute("""
+                INSERT OR REPLACE INTO occurrences (
+                    occurrence_id, taxon_key, latitude, longitude, locality,
+                    event_date, month, media_urls, coordinate_uncertainty_m,
+                    recorded_by, references_url
+                ) SELECT occurrence_id, taxon_key, latitude, longitude, locality,
+                    event_date, month, media_urls, coordinate_uncertainty_m,
+                    recorded_by, references_url FROM staged.occurrences
+            """)
+            conn.execute("""
+                INSERT OR REPLACE INTO app_metadata (key, val)
+                SELECT key, val FROM staged.app_metadata WHERE key = 'active_dwc_path'
+            """)
+            conn.execute("REINDEX")
+            conn.execute("ANALYZE")
+    finally:
+        conn.close()
+
+
+def _ingest_to_database(
+    file_path: Path | str,
+    db_path: Path = APP_DB_PATH,
+    batch_size: int = 10000,
+    max_occurrences_per_taxon: int | None = 1000,
+    progress_callback: Callable[[int | str], None] | None = None,
+) -> tuple[int, int]:
     """Ingest a GBIF DarwinCore occurrence.txt TSV or ZIP archive into SQLite app_data.db.
 
     Supports local file paths or direct HTTP(S) download URLs. Extracts both occurrence
@@ -375,26 +457,26 @@ def ingest_dwc_file(
     )
 
     conn = get_db_connection(db_path)
-    init_app_db(conn)
-
-    # Record active ingestion file path or URL metadata
-    active_meta_val = (
-        raw_source_str
-        if is_url(raw_source_str)
-        else str(resolved_path.resolve())
-    )
-    set_app_metadata("active_dwc_path", active_meta_val, conn)
-
-    # Pre-index multimedia.txt if available in the same directory/ZIP
-    multimedia_index = load_multimedia_index(resolved_path)
-
-    occurrence_batch: list[tuple] = []
-    taxa_accumulator: dict[str, dict[str, Any]] = {}
-    taxon_occ_counts: dict[str, int] = defaultdict(int)
-
-    inserted_occurrences = 0
-
     try:
+        init_app_db(conn)
+
+        # Record active ingestion file path or URL metadata
+        active_meta_val = (
+            raw_source_str
+            if is_url(raw_source_str)
+            else str(resolved_path.resolve())
+        )
+        set_app_metadata("active_dwc_path", active_meta_val, conn)
+
+        # Pre-index multimedia.txt if available in the same directory/ZIP
+        multimedia_index = load_multimedia_index(resolved_path)
+
+        occurrence_batch: list[tuple] = []
+        taxa_accumulator: dict[str, dict[str, Any]] = {}
+        taxon_occ_counts: dict[str, int] = defaultdict(int)
+
+        inserted_occurrences = 0
+
         for row in stream_occurrence_tsv(resolved_path):
             occ_id = row.get("gbifID") or row.get("occurrenceID") or row.get("id")
             taxon_key_raw = (

@@ -498,7 +498,7 @@ def render_settings_view(
                     if isinstance(info, str):
                         status_label.set_text(info)
                     else:
-                        status_label.set_text(f"Ingested {info:,} occurrences...")
+                        status_label.set_text(f"Prepared {info:,} occurrences...")
 
                 try:
                     occ_cnt, taxa_cnt = await run.io_bound(
@@ -509,7 +509,6 @@ def render_settings_view(
                         max_occ_val,
                         on_progress,
                     )
-                    await run.io_bound(rebuild_indices)
                     status_label.set_text(
                         f"Complete! Ingested {occ_cnt:,} occurrences across {taxa_cnt:,} taxa."
                     )
