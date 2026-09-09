@@ -50,7 +50,33 @@ and remains item 6 work, rather than a reason to silently truncate coverage.
 
 Item 2's coverage/reset fix is complete. Sparse filtered-sampling retries and
 large review-history parameter lists remain separate work. The next recommended
-independent patch is item 3's interrupted-download/cache recovery.
+independent patch was item 3's interrupted-download/cache recovery, now completed
+as recorded below.
+
+### Progress update: download-cache recovery
+
+Remote downloads now use SHA-256 of the full trimmed URL (including query
+parameters) to isolate cache directories while retaining the original filename
+and extension. They stream to unique `.part` files in the destination directory,
+check for nonempty content and matching Content-Length when supplied, close file
+and response handles, then atomically replace the final cache entry. Exceptions
+clean up temporary files; retries start fresh and completed entries are reused.
+Legacy basename-only files remain untouched but are not reused for URL requests,
+because their URL identity and completeness cannot be established. Explicit
+local-file inputs still resolve as before.
+
+Verification: 61 tests passed; Ruff passed for changed files; diff whitespace
+passed. Offline tests cover a transfer interrupted after receiving bytes, short
+responses, empty responses, callback failure, retry and cache reuse, no-length
+responses, matching basenames across hosts/query strings, and legacy-cache
+isolation. Native Windows and live GBIF downloads were not exercised. Without
+Content-Length, transfer completion relies on normal EOF; this is not validation
+of archive contents or DarwinCore semantics. A forcibly terminated process may
+leave an unused `.part` file, which is never considered a cache entry.
+
+Item 3's download portion is complete. Next: malformed-row/media validation and
+usable-observation cap accounting, followed separately by recoverable dataset
+activation. Partial database imports are not addressed by this download fix.
 
 Prioritize trustworthy training results, complete observation coverage, and
 recoverable dataset operations. These directly support the README's emphasis
