@@ -1,6 +1,8 @@
 """Offline cache, failure, and rate-limit regression tests for GBIF lookups."""
 
 import io
+import json
+import logging
 import sqlite3
 import urllib.error
 from email.utils import formatdate
@@ -80,6 +82,7 @@ def test_rate_limit_cooldown_allows_cache_and_delays_retry(cache, monkeypatch, r
     cache.execute("INSERT INTO gbif_api_cache VALUES ('https://api.gbif.org/cached', '{}', 1700000000)")
     cache.commit()
     calls = []
+    diagnostics = builder.LookupDiagnostics()
 
     def request(req, **kwargs):
         calls.append(req.full_url)
@@ -90,14 +93,72 @@ def test_rate_limit_cooldown_allows_cache_and_delays_retry(cache, monkeypatch, r
 
     monkeypatch.setattr("urllib.request.urlopen", request)
     with pytest.raises(builder.GBIFRequestError, match="429"):
-        builder.fetch_gbif_raw_api("https://api.gbif.org/first", cache)
+        builder.fetch_gbif_raw_api("https://api.gbif.org/first", cache, diagnostics=diagnostics)
     with pytest.raises(builder.GBIFRequestError, match="paused"):
-        builder.fetch_gbif_raw_api("https://api.gbif.org/second", cache)
-    assert builder.fetch_gbif_raw_api("https://api.gbif.org/cached", cache) == {}
+        builder.fetch_gbif_raw_api("https://api.gbif.org/second", cache, diagnostics=diagnostics)
+    assert builder.fetch_gbif_raw_api("https://api.gbif.org/cached", cache, diagnostics=diagnostics) == {}
+    assert diagnostics.counts == {"requests": 1, "failed_requests": 1, "cooldown_skips": 1, "cache_hits": 1}
     assert len(calls) == 1
     monkeypatch.setattr(builder.time, "monotonic", lambda: 1000.0 + delay + 1)
     assert builder.fetch_gbif_raw_api("https://api.gbif.org/first", cache) == {}
     assert len(calls) == 2
+
+
+def test_multilingual_lookup_reports_actual_changes_and_logs_cache_use(tmp_path, monkeypatch, cache, caplog):
+    """An unchanged cached re-check must not claim that names were updated."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+    calls = []
+
+    def response(req, **kwargs):
+        calls.append(req.full_url)
+        data = {"results": [{"language": "deu", "vernacularName": "Stieleiche"}]} if "vernacularNames" in req.full_url else {"usageKey": 1, "rank": "SPECIES", "status": "ACCEPTED"}
+        return Response(json.dumps(data).encode())
+
+    monkeypatch.setattr("urllib.request.urlopen", response)
+    caplog.set_level(logging.INFO, logger=builder.__name__)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_app_db(conn)
+    conn.execute("""INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank)
+        VALUES ('1', 'Quercus robur', 'Quercus robur', 'Quercus robur', 'SPECIES')""")
+    conn.commit()
+    try:
+        assert builder.enrich_vernacular_names_from_gbif(conn) == 1
+        assert json.loads(conn.execute("SELECT vernacular_json FROM taxa").fetchone()[0]) == {"de": "Stieleiche"}
+        caplog.clear()
+        assert builder.enrich_vernacular_names_from_gbif(conn) == 0
+        assert len(calls) == 2
+        assert "'cache_hits': 3" in caplog.text
+        assert "'requests'" not in caplog.text
+    finally:
+        conn.close()
+
+
+def test_existing_danish_higher_rank_does_not_block_other_languages(tmp_path, monkeypatch, cache):
+    """Re-checking a named genus adds German without removing existing French."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+
+    def response(req, **kwargs):
+        data = {"results": [{"language": "deu", "vernacularName": "Eichen"}]} if "vernacularNames" in req.full_url else {"genusKey": 1}
+        return Response(json.dumps(data).encode())
+
+    monkeypatch.setattr("urllib.request.urlopen", response)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_app_db(conn)
+    conn.execute("""INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank, genus)
+        VALUES ('1', 'Quercus robur', 'Quercus robur', 'Quercus robur', 'SPECIES', 'Quercus')""")
+    conn.execute("""INSERT INTO higher_ranks VALUES ('Quercus', 'GENUS', 'Eg', NULL, '{"fr":"Chênes"}')""")
+    conn.commit()
+    try:
+        builder.enrich_higher_ranks_vernacular_names(conn)
+        row = conn.execute("SELECT vernacular_da, vernacular_json FROM higher_ranks").fetchone()
+        assert row["vernacular_da"] == "Eg"
+        assert json.loads(row["vernacular_json"]) == {"fr": "Chênes", "de": "Eichen"}
+    finally:
+        conn.close()
 
 
 @pytest.mark.parametrize("phase", ["enrich_vernacular_names_from_gbif", "enrich_higher_ranks_vernacular_names", "consolidate_synonyms_with_gbif"])

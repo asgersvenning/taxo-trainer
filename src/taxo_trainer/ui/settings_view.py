@@ -5,6 +5,7 @@ taxonomic filters, and DwC occurrence.txt file ingestion.
 """
 
 import asyncio
+import logging
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -25,6 +26,12 @@ from taxo_trainer.ingestion.taxonomy_builder import (
     rebuild_indices,
 )
 from taxo_trainer.ui.components import render_taxa_filter_controls
+from taxo_trainer.ui.name_status import (
+    name_coverage_summary,
+    name_lookup_failure_message,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def get_path_suggestions(input_str: str, limit: int = 8) -> list[tuple[str, str, bool]]:
@@ -89,9 +96,6 @@ def render_settings_view(
     )
     taxa_cnt = app_conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
     occ_cnt = app_conn.execute("SELECT COUNT(*) FROM occurrences;").fetchone()[0]
-    da_cnt = app_conn.execute(
-        "SELECT COUNT(*) FROM taxa WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
-    ).fetchone()[0]
 
     saved_dwc_path = get_app_metadata("active_dwc_path", "", conn=app_conn)
     ingest_input_path = saved_dwc_path if saved_dwc_path else default_path_str
@@ -134,10 +138,6 @@ def render_settings_view(
                 ui.label("Current Active Data Source").classes(
                     "text-xs font-bold text-yellow-400 uppercase tracking-wider"
                 )
-                pct_da = int(da_cnt / taxa_cnt * 100) if taxa_cnt else 0
-                ui.label(
-                    f"Danish Vernacular Names: {da_cnt:,} / {taxa_cnt:,} ({pct_da}%)"
-                ).classes("text-xs text-green-400 font-semibold")
 
             ui.label(f"📁 {active_path}").classes(
                 "text-sm font-mono !text-black dark:!text-white break-all mb-3 bg-gray-800 p-2 rounded border border-gray-700"
@@ -161,9 +161,6 @@ def render_settings_view(
                         f"{occ_cnt:,} Occurrences Loaded",
                         icon="photo_library",
                         color="teal",
-                    ).props("dense dark")
-                    ui.chip(
-                        f"{da_cnt:,} Danish Names", icon="translate", color="green"
                     ).props("dense dark")
 
                 def clear_data_source() -> None:
@@ -264,6 +261,8 @@ def render_settings_view(
 
             def update_language(val: str) -> None:
                 active_filters.language = val
+                set_app_metadata("language_preference", val, conn=app_conn)
+                coverage_label.set_text(name_coverage_summary(app_conn, val))
                 on_filters_changed()
                 ui.notify(
                     f"Display language set to {lang_options.get(val, val)}", type="info"
@@ -532,29 +531,34 @@ def render_settings_view(
 
         # 3. Vernacular Name Enrichment Engine Card
         with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
-            ui.label("GBIF Vernacular Name Enrichment").classes(
+            ui.label("Species Names").classes(
                 "text-lg font-bold text-yellow-300 mb-2"
             )
             ui.label(
-                "Query the GBIF Species API (api.gbif.org) to fetch missing Danish and English vernacular names for taxa and higher taxonomic ranks (Genera & Families) with persistent disk caching."
+                "Look up vernacular names from GBIF in all supported languages, including genus and family names. "
+                "Your preferred language determines which names are displayed. "
+                "Not every species has a name available in every language."
             ).classes("text-xs text-gray-400 mb-4")
+            coverage_label = ui.label(
+                name_coverage_summary(app_conn, active_filters.language)
+            ).classes("text-sm mb-3")
 
 
             saved_enrich_status = get_app_metadata("gbif_enrichment_status", "", conn=app_conn)
             saved_enrich_error = get_app_metadata("gbif_enrichment_error", "", conn=app_conn)
 
             if saved_enrich_error:
-                init_enrich_text = f"GBIF enrichment incomplete — {saved_enrich_error}"
+                init_enrich_text = "The last name lookup did not finish. Names already saved are kept. Please try again later."
                 init_enrich_class = "text-sm text-amber-400 font-bold mb-3"
-                enrich_btn_label = "Retry GBIF Name Enrichment"
+                enrich_btn_label = "Retry Name Lookup"
             elif saved_enrich_status:
-                init_enrich_text = f"✓ GBIF Vernacular Name Enrichment Active — {saved_enrich_status}"
+                init_enrich_text = "The last name lookup completed."
                 init_enrich_class = "text-sm text-green-400 font-bold mb-3"
-                enrich_btn_label = "Re-Fetch Danish Names from GBIF API"
+                enrich_btn_label = "Check for Names Again"
             else:
-                init_enrich_text = "Ready for GBIF API enrichment."
+                init_enrich_text = "Ready to look up names."
                 init_enrich_class = "text-sm text-gray-300 font-semibold mb-3"
-                enrich_btn_label = "Fetch Danish Names from GBIF API"
+                enrich_btn_label = "Look Up Names"
 
             enrich_status = ui.label(init_enrich_text).classes(init_enrich_class)
             progress_bar = (
@@ -576,6 +580,7 @@ def render_settings_view(
                     tot = progress_state["total"]
                     st = progress_state.get("status")
                     if tot > 0:
+                        progress_bar.props(remove="indeterminate")
                         pct = min(curr / tot, 1.0)
                         pct_str = f"{pct * 100:.1f}%"
                         progress_bar.set_value(pct)
@@ -583,21 +588,25 @@ def render_settings_view(
                             enrich_status.set_text(f"{st} ({pct_str})")
                         else:
                             enrich_status.set_text(f"Checked {curr}/{tot} taxa ({pct_str})...")
+                    else:
+                        progress_bar.props("indeterminate")
+                        if st:
+                            enrich_status.set_text(st)
                 safe_ui_update(_do_tick)
 
             async def run_enrichment() -> None:
                 safe_ui_update(enrich_button.disable)
                 progress_state["curr"] = 0
                 progress_state["total"] = 0
-                progress_state["status"] = "Fetching Danish vernacular names from GBIF API..."
+                progress_state["status"] = "Looking up species names..."
                 safe_ui_update(lambda: progress_bar.set_value(0.0))
                 safe_ui_update(lambda: progress_bar.classes(remove="hidden"))
                 safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-gray-300 font-semibold mb-3"))
                 safe_ui_update(lambda: enrich_status.set_text(
-                    "Fetching Danish vernacular names from GBIF Species API..."
+                    "Looking up species names..."
                 ))
                 safe_ui_update(lambda: ui.notify(
-                    "Starting GBIF API enrichment in background thread...", type="info"
+                    "Looking up names. You can continue training while this runs.", type="info"
                 ))
 
                 timer = ui.timer(0.1, tick_progress)
@@ -614,13 +623,9 @@ def render_settings_view(
                     )
 
                 try:
-                    updated = await run.io_bound(sync_worker)
-                    t_cnt = app_conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
-                    d_cnt = app_conn.execute(
-                        "SELECT COUNT(*) FROM taxa WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
-                    ).fetchone()[0]
-                    c_pct = int(d_cnt / t_cnt * 100) if t_cnt else 0
-                    status_summary = f"{d_cnt:,}/{t_cnt:,} taxa populated with Danish vernacular names ({c_pct}%)."
+                    await run.io_bound(sync_worker)
+                    status_summary = name_coverage_summary(app_conn, active_filters.language)
+                    coverage_label.set_text(status_summary)
                     set_app_metadata("gbif_enrichment_status", status_summary, conn=app_conn)
                     set_app_metadata("gbif_enrichment_error", "", conn=app_conn)
 
@@ -628,10 +633,10 @@ def render_settings_view(
                     safe_ui_update(lambda: progress_bar.set_value(1.0))
                     safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-green-400 font-bold mb-3"))
                     safe_ui_update(lambda: enrich_status.set_text(
-                        f"✓ GBIF Enrichment Complete! Updated {updated} species — {status_summary}"
+                        "Name lookup complete."
                     ))
                     safe_ui_update(lambda: ui.notify(
-                        f"✓ GBIF API Enrichment Complete! Updated {updated} species names.",
+                        status_summary,
                         type="positive",
                         timeout=5000,
                     ))
@@ -642,14 +647,17 @@ def render_settings_view(
                 except (sqlite3.Error, OSError, RuntimeError, ValueError) as ex:
 
                     safe_ui_update(timer.cancel)
-                    err_msg = str(ex)
+                    _LOGGER.exception("GBIF name lookup did not finish")
+                    err_msg = name_lookup_failure_message(ex)
                     set_app_metadata("gbif_enrichment_error", err_msg, conn=app_conn)
-                    safe_ui_update(lambda: enrich_button.set_text("Retry GBIF Name Enrichment"))
+                    safe_ui_update(lambda: coverage_label.set_text(name_coverage_summary(app_conn, active_filters.language)))
+                    safe_ui_update(lambda: enrich_button.set_text("Retry Name Lookup"))
                     safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-red-400 font-bold mb-3"))
-                    safe_ui_update(lambda: enrich_status.set_text(f"Enrichment Error: {err_msg}"))
-                    safe_ui_update(lambda: ui.notify(f"Enrichment failed: {err_msg}", type="negative"))
+                    safe_ui_update(lambda: enrich_status.set_text(err_msg))
+                    safe_ui_update(lambda: ui.notify(err_msg, type="warning"))
                 finally:
                     safe_ui_update(timer.cancel)
+                    safe_ui_update(lambda: progress_bar.classes(add="hidden"))
                     safe_ui_update(enrich_button.enable)
 
             enrich_button = ui.button(

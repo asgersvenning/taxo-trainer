@@ -9,6 +9,7 @@ import logging
 import sqlite3
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -262,8 +263,25 @@ _GBIF_COOLDOWN_UNTIL = 0.0
 _LOGGER = logging.getLogger(__name__)
 
 
+class LookupDiagnostics:
+    """Thread-safe request counters for backend diagnostics, not user progress."""
+
+    def __init__(self) -> None:
+        self.counts: Counter[str] = Counter()
+        self.lock = threading.Lock()
+
+    def record(self, event: str) -> None:
+        """Count a request/cache event under the shared worker lock."""
+        with self.lock:
+            self.counts[event] += 1
+
+
 class GBIFRequestError(RuntimeError):
     """A lookup failed; this does not mean the taxon has no vernacular names."""
+
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _decode_gbif_json(payload: str) -> dict:
@@ -304,6 +322,7 @@ def fetch_gbif_raw_api(
     url: str,
     cache_conn: sqlite3.Connection,
     max_age_days: int = 7,
+    diagnostics: LookupDiagnostics | None = None,
 ) -> dict:
     """Fetch raw REST API response JSON from URL with 7-day raw HTTP response caching.
 
@@ -311,6 +330,7 @@ def fetch_gbif_raw_api(
         url: Full GBIF REST API endpoint URL string.
         cache_conn: Dedicated connection to gbif_cache.db.
         max_age_days: Cache TTL in days (default: 7).
+        diagnostics: Optional shared backend counters for this lookup run.
 
     Returns:
         dict: Parsed JSON response, including valid empty/no-match results.
@@ -337,7 +357,10 @@ def fetch_gbif_raw_api(
             cached_json, cached_at = row["response_json"], row["cached_at"]
             if (now_ts - cached_at) < one_week_sec:
                 try:
-                    return _decode_gbif_json(cached_json)
+                    data = _decode_gbif_json(cached_json)
+                    if diagnostics is not None:
+                        diagnostics.record("cache_hits")
+                    return data
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
     except sqlite3.Error:
@@ -347,30 +370,42 @@ def fetch_gbif_raw_api(
     with _GBIF_COOLDOWN_LOCK:
         remaining = _GBIF_COOLDOWN_UNTIL - time.monotonic()
     if remaining > 0:
+        if diagnostics is not None:
+            diagnostics.record("cooldown_skips")
         raise GBIFRequestError(
             f"GBIF requests are paused after rate limiting. Retry in {int(remaining) + 1} seconds. "
-            "Previously cached responses remain available."
+            "Previously cached responses remain available.",
+            retry_after_seconds=remaining,
         )
 
     # 2. Fetch raw response over HTTP
     req = urllib.request.Request(url, headers={"User-Agent": "taxo-trainer/1.0"})
+    if diagnostics is not None:
+        diagnostics.record("requests")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status != 200:
+                if diagnostics is not None:
+                    diagnostics.record("failed_requests")
                 raise GBIFRequestError(f"GBIF returned HTTP {resp.status}; retry the incomplete enrichment later.")
             raw_str = resp.read().decode("utf-8")
             parsed_json = _decode_gbif_json(raw_str)
     except urllib.error.HTTPError as exc:
+        if diagnostics is not None:
+            diagnostics.record("failed_requests")
         if exc.code == 429:
             delay = _retry_after_seconds(exc.headers.get("Retry-After") if exc.headers else None)
             with _GBIF_COOLDOWN_LOCK:
                 _GBIF_COOLDOWN_UNTIL = max(_GBIF_COOLDOWN_UNTIL, time.monotonic() + delay)
             raise GBIFRequestError(
                 f"GBIF rate limited requests (HTTP 429). Retry in {int(delay) + 1} seconds; "
-                "completed lookups are cached."
+                "completed lookups are cached.",
+                retry_after_seconds=delay,
             ) from exc
         raise GBIFRequestError(f"GBIF returned HTTP {exc.code}; enrichment is incomplete.") from exc
     except (OSError, http.client.HTTPException, TypeError, ValueError) as exc:
+        if diagnostics is not None:
+            diagnostics.record("failed_requests")
         raise GBIFRequestError("GBIF lookup failed; enrichment is incomplete. Retry when the service is available.") from exc
 
     try:
@@ -381,6 +416,8 @@ def fetch_gbif_raw_api(
             )
     except sqlite3.Error:
         # A cache write failure must not discard an otherwise successful lookup.
+        if diagnostics is not None:
+            diagnostics.record("cache_write_failures")
         _LOGGER.warning("GBIF lookup succeeded but could not be cached", exc_info=True)
     return parsed_json
 
@@ -391,7 +428,7 @@ def enrich_vernacular_names_from_gbif(
     progress_callback: Callable[[int, int, str], None] | None = None,
     force_all: bool = False,
 ) -> int:
-    """Fetch missing Danish (and English) vernacular names from GBIF Species API.
+    """Look up vernacular names in all supported languages from GBIF.
 
     Resolves canonical names via GBIF match API and fetches backbone vernacular names
     with 1-week persistent disk caching:
@@ -400,7 +437,7 @@ def enrich_vernacular_names_from_gbif(
     Args:
         conn: Optional SQLite connection.
         limit: Max number of taxa to enrich in one call.
-        progress_callback: Optional callback receiving (processed_count, total_count).
+        progress_callback: Optional callback receiving counts and a phase message.
         force_all: If True, re-fetch all taxa even if vernacular names are already present.
 
     Returns:
@@ -414,9 +451,10 @@ def enrich_vernacular_names_from_gbif(
         should_close = True
 
     cache_conn = get_gbif_cache_connection()
-    prune_gbif_cache(cache_conn, max_size_mb=100.0, max_age_days=7)
+    diagnostics = LookupDiagnostics()
 
     try:
+        prune_gbif_cache(cache_conn, max_size_mb=100.0, max_age_days=7)
         cursor = conn.execute(
             "SELECT taxon_key, canonical_name, vernacular_da, vernacular_en FROM taxa"
         )
@@ -452,7 +490,7 @@ def enrich_vernacular_names_from_gbif(
 
             # 1. Match target canonical name via GBIF Backbone Match API
             match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canonical)}"
-            match_data = fetch_gbif_raw_api(match_url, t_cache_conn)
+            match_data = fetch_gbif_raw_api(match_url, t_cache_conn, diagnostics=diagnostics)
 
             if match_data:
                 for k_field in (
@@ -479,7 +517,7 @@ def enrich_vernacular_names_from_gbif(
                 if sname == canonical:
                     continue
                 p_match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(sname)}"
-                p_data = fetch_gbif_raw_api(p_match_url, t_cache_conn)
+                p_data = fetch_gbif_raw_api(p_match_url, t_cache_conn, diagnostics=diagnostics)
                 if p_data:
                     for k_field in (
                         "usageKey",
@@ -493,7 +531,7 @@ def enrich_vernacular_names_from_gbif(
             # 3. Fetch vernacular names exclusively via GBIF taxon keys
             for k in list(keys_to_fetch):
                 v_url = f"https://api.gbif.org/v1/species/{k}/vernacularNames?limit=1000"
-                v_data = fetch_gbif_raw_api(v_url, t_cache_conn)
+                v_data = fetch_gbif_raw_api(v_url, t_cache_conn, diagnostics=diagnostics)
                 if v_data and "results" in v_data:
                     all_vernacular_items.extend(v_data.get("results", []))
 
@@ -549,15 +587,19 @@ def enrich_vernacular_names_from_gbif(
                     tkey, new_da, new_en, v_json_str = future.result()
                     if v_json_str or new_da or new_en:
                         with conn:
-                            conn.execute(
+                            update = conn.execute(
                                 """UPDATE taxa 
                                    SET vernacular_da = COALESCE(?, vernacular_da),
                                        vernacular_en = COALESCE(?, vernacular_en),
                                        vernacular_json = ? 
-                                   WHERE taxon_key = ?""",
-                                (new_da, new_en, v_json_str, tkey),
+                                   WHERE taxon_key = ? AND (
+                                       vernacular_da IS NOT COALESCE(?, vernacular_da)
+                                       OR vernacular_en IS NOT COALESCE(?, vernacular_en)
+                                       OR vernacular_json IS NOT ?
+                                   )""",
+                                (new_da, new_en, v_json_str, tkey, new_da, new_en, v_json_str),
                             )
-                        updated_count += 1
+                        updated_count += update.rowcount
                 except (sqlite3.Error, OSError, ValueError, RuntimeError) as exc:
                     for pending in future_map:
                         pending.cancel()
@@ -571,26 +613,30 @@ def enrich_vernacular_names_from_gbif(
 
         # Consolidate synonym species into accepted species via GBIF
         if progress_callback:
-            progress_callback(total, total, "Consolidating synonym species via GBIF API...")
-        consolidate_synonyms_with_gbif(conn)
+            progress_callback(0, 0, "Checking accepted scientific names...")
+        consolidate_synonyms_with_gbif(conn, diagnostics=diagnostics)
 
         # Enrich higher rank (Genus & Family) vernacular names
         if progress_callback:
-            progress_callback(total, total, "Enriching Genus & Family vernacular names...")
-        enrich_higher_ranks_vernacular_names(conn)
+            progress_callback(0, 0, "Looking up genus and family names...")
+        enrich_higher_ranks_vernacular_names(conn, diagnostics=diagnostics)
 
         if progress_callback:
-            progress_callback(total, total, "Enrichment Complete!")
+            progress_callback(total, total, "Name lookup complete.")
 
         return updated_count
     finally:
+        _LOGGER.info("GBIF name lookup diagnostics: %s", dict(diagnostics.counts))
         cache_conn.close()
         if should_close:
             conn.close()
 
 
 
-def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None) -> int:
+def enrich_higher_ranks_vernacular_names(
+    conn: sqlite3.Connection | None = None,
+    diagnostics: LookupDiagnostics | None = None,
+) -> int:
     """Fetch and cache vernacular names for distinct Genus and Family ranks present in taxa.
 
     Args:
@@ -629,7 +675,7 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
             t_cache = get_thread_cache_conn()
 
             match_url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(r_name)}&rank={urllib.parse.quote(r_level)}"
-            mdata = fetch_gbif_raw_api(match_url, t_cache)
+            mdata = fetch_gbif_raw_api(match_url, t_cache, diagnostics=diagnostics)
 
             if mdata:
                 gbif_key = None
@@ -646,7 +692,7 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
 
                 if gbif_key:
                     v_url = f"https://api.gbif.org/v1/species/{gbif_key}/vernacularNames?limit=100"
-                    vdata = fetch_gbif_raw_api(v_url, t_cache)
+                    vdata = fetch_gbif_raw_api(v_url, t_cache, diagnostics=diagnostics)
                     if vdata:
                         by_lang: dict[str, list[str]] = {}
                         for item in vdata.get("results", []):
@@ -688,14 +734,8 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
 
             return r_name, r_level, None, None, None
 
-        # Filter out targets already present in higher_ranks table with Danish names
-        existing_rows = conn.execute(
-            "SELECT rank_name FROM higher_ranks WHERE vernacular_da IS NOT NULL AND vernacular_da != '';"
-        ).fetchall()
-
-
-        existing_names = {r["rank_name"] for r in existing_rows}
-        pending_targets = [t for t in targets if t[0] not in existing_names]
+        # Language coverage can change; check all targets using the shared cache.
+        pending_targets = targets
 
         with ThreadPoolExecutor(max_workers=30) as executor:
             futures = [executor.submit(process_single_target, t) for t in pending_targets]
@@ -705,7 +745,16 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
                     if v_da or v_en or v_json_str:
                         with conn:
                             conn.execute(
-                                "INSERT OR REPLACE INTO higher_ranks (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json) VALUES (?, ?, ?, ?, ?)",
+                                """INSERT INTO higher_ranks
+                                   (rank_name, rank_level, vernacular_da, vernacular_en, vernacular_json)
+                                   VALUES (?, ?, ?, ?, ?)
+                                   ON CONFLICT(rank_name) DO UPDATE SET
+                                       vernacular_da = COALESCE(excluded.vernacular_da, higher_ranks.vernacular_da),
+                                       vernacular_en = COALESCE(excluded.vernacular_en, higher_ranks.vernacular_en),
+                                       vernacular_json = json_patch(
+                                           COALESCE(higher_ranks.vernacular_json, '{}'),
+                                           COALESCE(excluded.vernacular_json, '{}')
+                                       )""",
                                 (r_name, r_level, v_da, v_en, v_json_str),
                             )
                         updated += 1
@@ -725,7 +774,10 @@ def enrich_higher_ranks_vernacular_names(conn: sqlite3.Connection | None = None)
 
 
 
-def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> int:
+def consolidate_synonyms_with_gbif(
+    conn: sqlite3.Connection | None = None,
+    diagnostics: LookupDiagnostics | None = None,
+) -> int:
     """Query GBIF Backbone Match API to resolve synonym species and merge into accepted species.
 
     Args:
@@ -763,7 +815,7 @@ def consolidate_synonyms_with_gbif(conn: sqlite3.Connection | None = None) -> in
             canon = r["canonical_name"]
             url = f"https://api.gbif.org/v1/species/match?name={urllib.parse.quote(canon)}"
             t_cache = get_thread_cache_conn()
-            data = fetch_gbif_raw_api(url, t_cache)
+            data = fetch_gbif_raw_api(url, t_cache, diagnostics=diagnostics)
             if not data:
                 return r, None
 
