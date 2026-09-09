@@ -24,6 +24,7 @@ You are an expert Python systems architect and software engineer implementing th
 2. **NO ALTERNATIVE FRAMEWORKS:** Do not use Streamlit, Dash, Gradio, FastHTML, or Shiny. The web framework **must be NiceGUI**.
 3. **NO GLOBAL STATE IN UI WRAPPERS:** Do not store session-specific play state in global module-level variables. Wrap user session state cleanly within NiceGUI state objects or class instances.
 4. **NO DESTRUCTIVE AGENT MODIFICATIONS:** Do not alter or delete `DESIGN_SPEC.md` or files inside `old_reference/`.
+5. **GBIF IDs ONLY; NO FREE-TEXT APIs:** The user explicitly requires GBIF IDs as the sole canonical class/species identity throughout the app and all GBIF queries. Names are display/input aliases only. Never query name matching, search, suggest, or other free-text APIs, including fallback lookups. Follow explicit GBIF ID relationships; preserve unresolved cases rather than inferring identities from names. See [the canonical identity rule](../README.md#canonical-identity-and-api-boundary-hard-user-requirement). This user requirement overrides conflicting older guidance.
 
 ### ✅ MANDATORY STACK REQUIREMENTS
 * **Python 3.12+** managed exclusively with **`uv`**.

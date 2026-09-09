@@ -118,6 +118,28 @@ Known discrepancies to account for:
 
 ## Product communication and language
 
+### Canonical identity and API boundary (hard user requirement)
+
+Use ONLY GBIF taxon IDs as canonical class/species reference labels throughout
+the app, persistence, analytics, and GBIF API queries. Scientific and vernacular
+names are display/input aliases attached to those IDs, never replacement identity
+keys or grounds for merging taxa by text equality. Local autocomplete and guess
+matching may use those aliases but must resolve to GBIF IDs.
+
+NEVER query free-text APIs. This includes GBIF name matching, search, and suggest
+endpoints, even as fallbacks for missing IDs. Use ID-addressed GBIF records and
+explicit ID relationships for taxonomy and vernacular enrichment. If a usable ID
+or relationship is unavailable, retain that uncertainty; do not infer an ID from
+a name or invent an alternative canonical label. Audit legacy name-keyed rank
+records and imports when bringing existing code into compliance.
+
+Taxonomic ambiguity and delays in integrating local vernacular names are inherent
+and cannot be completely solved by the app. Improve consistent handling of
+GBIF-linked data without promising complete naming coverage or universal taxonomic
+agreement. This explicit user requirement supersedes conflicting older roadmap,
+specification, or implementation assumptions. Existing violations are technical
+debt, not exceptions permitting further free-text requests.
+
 Design interface feedback for a nontechnical biological expert: emphasize names
 available for training, meaningful gaps, completion state, and useful next actions.
 Keep cache statistics, request counts, HTTP details, and tracebacks in terminal or

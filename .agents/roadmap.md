@@ -7,6 +7,32 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Hard boundary: GBIF identity, never free-text API resolution
+
+The user's clarification after the contribution review supersedes any proposal
+below to improve free-text matching: canonical class/species references must be
+GBIF IDs everywhere in the app and in API queries. NEVER query free-text APIs,
+including GBIF name match/search/suggest endpoints. Names remain display/input
+aliases. Taxonomic ambiguity and delayed local-name integration are inherent;
+complete resolution or coverage is not an acceptance criterion. See the
+[canonical identity rule](README.md#canonical-identity-and-api-boundary-hard-user-requirement).
+
+Source inspection confirms the existing code violates this boundary:
+`taxonomy_builder.py` calls `/species/match?name=...` for species, derived base
+names, higher ranks, and synonym consolidation. Consolidation also finds the
+accepted local record by canonical-name equality. These paths must be replaced
+with GBIF-ID-based retrieval and explicit ID relationships, not improved text
+matching. Review ingestion, higher-rank storage, local validation, and history
+identity together so the restriction applies inside the app as well as on the
+network. Missing IDs must remain unresolved without free-text fallback.
+
+This compliance work takes precedence within the proposed taxonomy target;
+preserving existing language entries remains useful within that boundary.
+Regression coverage should reject free-text request paths and name-derived
+canonical identities while preserving local alias-based user input. This update
+records the rule and source findings only; existing application paths have not
+yet been changed, and no API requests were made during the review.
+
 ### Current priorities: README contribution review
 
 Re-reviewed against `274123b` on 2026-09-09. This section supersedes the original
