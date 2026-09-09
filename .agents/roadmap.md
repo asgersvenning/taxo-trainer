@@ -7,6 +7,29 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Completed: sampling preference persistence and control consistency
+
+Implemented in `5a4686e`. Sampling mode now saves to the metadata key already read
+by quiz initialization. Both minimum-occurrence controls share one callback that
+validates and persists the cutoff, synchronizes both controls, and refreshes the
+retained/discarded counts. Synchronization does not emit duplicate change callbacks.
+Temporarily empty, nonpositive, and fractional values do not replace the last saved
+valid cutoff. Clearing a dataset preserves sampling mode alongside the previously
+preserved preferences.
+
+The two original cutoff callbacks reproduced stale companion-control values in
+regression tests before the fix. Six new cases exercise actual NiceGUI callbacks,
+both editing directions, counts, persisted metadata, restoration through production
+quiz initialization with a fresh state/database connection, dataset clearing, and
+invalid edits. **133 tests passed in 10.45s**; changed-file Ruff and whitespace checks
+passed. This verifies application callbacks and database restoration, not a native
+application restart or browser visual inspection.
+
+This closes the concrete mode/cutoff issues in the contribution review. It does
+not add new persistence policy for family/review-only filters or redesign session
+lifecycle. The next suggested independent target is the README/onboarding guide
+refresh already identified below, including current language-aware lookup labels.
+
 ### Completed: ID-only taxonomy and CoL support
 
 The user explicitly clarified GBIF's migration to alphanumeric Catalogue of Life
