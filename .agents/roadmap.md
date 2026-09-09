@@ -102,9 +102,40 @@ application-data directories were cleaned before the successful rerun.
 These checks establish syntactic media eligibility, not remote availability or
 actual image content. Invalid-coordinate/rejected-row summary diagnostics,
 duplicate-record accounting, and atomic dataset activation remain separate work.
-The next recommended target is recoverable dataset activation: a later import
-failure must not leave a partially replaced dataset or misleading active-source
-metadata. Keep that separate from user scoring and taxonomy-policy changes.
+The recoverable activation follow-up is recorded below. Keep it separate from
+user scoring and taxonomy-policy changes.
+
+### Progress update: recoverable import publication
+
+The public importer now parses into a disposable SQLite database using the
+existing transaction batches. Only a nonempty prepared import reaches activation.
+A single transaction copies prepared taxa/observations and active-source metadata
+into the live database and runs index maintenance. Publication uses SQLite with
+the existing live file, not a file replacement that could strand open connections
+or WAL files. Setup and multimedia-loading failures also close the staging
+connection. The UI reports preparation counts and no longer performs separate
+post-publication index maintenance.
+
+This deliberately retains the existing add/update behavior: importing another
+source does not automatically delete old records, and the explicit clear action
+remains separate. It is not a dataset-replacement policy or multi-dataset storage
+redesign. Existing preferences and the separate user database are preserved.
+Dataset identity and the consequences of mixing sources remain item 4 work.
+
+Four injected-failure scenarios cover a callback error after a staging batch,
+a SQLite trigger abort midway through live publication, an empty import, and a
+malformed ZIP. Tests compare the live database dump before/after failure, retry
+successfully, and use the same open reader connection to verify committed data,
+metadata, preferences, integrity, and foreign keys. Final verification: 76 tests
+passed in 6.15s; Ruff and diff whitespace passed. Native UI behavior, concurrent
+writers, process termination, and large-import performance were not exercised.
+Staging requires additional temporary disk space and activation holds a write
+transaction while publishing; those costs need representative measurements.
+
+Next recommended target: dataset-isolation tests around overlapping occurrence
+IDs and the report-misidentified action, followed by a narrowly scoped fix for
+cross-dataset history deletion. Stable dataset identity and replace-versus-merge
+semantics should be settled explicitly before broader migration work.
 
 Prioritize trustworthy training results, complete observation coverage, and
 recoverable dataset operations. These directly support the README's emphasis
