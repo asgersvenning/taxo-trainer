@@ -185,3 +185,19 @@ def test_surface_palette_persists_and_survives_clear(settings, monkeypatch):
     button = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == "Clear Current Data Source")
     next(e for e in button._event_listeners.values() if e.type == "click").handler(None)
     assert conn.execute("SELECT val FROM app_metadata WHERE key='surface_theme'").fetchone()[0] == "contrast"
+
+
+def test_settings_group_chips_refresh_after_quiz_selection(settings):
+    _, _, _, filters, _, _ = settings
+    with ui.column() as container:
+        refresh = settings_view.render_settings_view(filters, lambda: None, ui.dark_mode())
+    try:
+        filters.include_taxa = ['67S22']
+        refresh()
+        assert any(isinstance(e, ui.chip) and 'Fixture species' in e.text for e in container.descendants())
+        clear = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == 'Include all groups')
+        next(e for e in clear._event_listeners.values() if e.type == 'click').handler(None)
+        assert filters.include_taxa == []
+        assert not any(isinstance(e, ui.chip) and 'Fixture species' in e.text for e in container.descendants())
+    finally:
+        container.delete()

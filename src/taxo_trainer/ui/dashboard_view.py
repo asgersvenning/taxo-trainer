@@ -25,10 +25,24 @@ from taxo_trainer.engine.analytics import (
 )
 
 
-def render_dashboard_view() -> Callable[[], None]:
+def render_dashboard_view(on_practise: Callable[[list[str]], None] | None = None) -> Callable[[], None]:
     """Render user analytics dashboard with time-range filtering, data source scope, and EMA chart."""
     app_conn = get_db_connection(APP_DB_PATH)
     user_conn = get_db_connection(USER_DB_PATH)
+
+    def add_practice_action(table) -> None:
+        if on_practise is None:
+            return
+        table.columns.append({"name": "practice", "label": "", "field": "taxon_keys", "align": "right"})
+        table.add_slot("body-cell-practice", """
+            <q-td :props="props">
+                <q-btn flat dense label="Practise" color="primary"
+                    :aria-label="'Practise ' + (props.row.display_name || props.row.target_display + ' / ' + props.row.guessed_display)"
+                    @click="$parent.$emit('practise', props.row.taxon_keys)" />
+            </q-td>
+        """)
+        table.on("practise", lambda e: on_practise([str(key) for key in e.args]))
+        table.update()
 
     selected_range = ["ALL"]
     selected_rank = ["SPECIES"]
@@ -353,8 +367,10 @@ def render_dashboard_view() -> Callable[[], None]:
                             {"name": "accuracy", "label": "Unassisted accuracy", "field": "accuracy", "align": "right", "sortable": True, ":format": "value => `${value}%`"},
                             {"name": "attempts", "label": "Attempts", "field": "attempts", "align": "right", "sortable": True},
                         ]
-                        rows = [{"taxon_key": item.taxon_key, "display_name": item.display_name, "accuracy": item.accuracy_pct, "attempts": item.total_attempts} for item in ranked_taxa]
-                        ui.table(columns=columns, rows=rows, row_key="taxon_key", pagination=table_pagination.copy(), on_pagination_change=lambda e: table_pagination.update(e.value)).classes("w-full bg-tt-surface text-tt-main").props("flat bordered dense")
+                        rows = [{"taxon_key": item.taxon_key, "taxon_keys": [str(item.taxon_key)], "display_name": item.display_name, "accuracy": item.accuracy_pct, "attempts": item.total_attempts} for item in ranked_taxa]
+                        group_table = ui.table(columns=columns, rows=rows, row_key="taxon_key", pagination=table_pagination.copy(), on_pagination_change=lambda e: table_pagination.update(e.value)).classes("w-full bg-tt-surface text-tt-main").props("flat bordered dense")
+
+                        add_practice_action(group_table)
 
                 # 6. Pairwise Lookalikes (Confusion Matrix) Table Card
                 with ui.card().classes(
@@ -400,6 +416,7 @@ def render_dashboard_view() -> Callable[[], None]:
                         ]
                         rows = [
                             {
+                                "taxon_keys": [str(c.target_taxon_key), str(c.guessed_taxon_key)],
                                 "pair_key": json.dumps([str(c.target_taxon_key), str(c.guessed_taxon_key)]),
                                 "target_display": c.target_display,
                                 "target_canonical": c.target_canonical,
@@ -414,6 +431,8 @@ def render_dashboard_view() -> Callable[[], None]:
                         ).classes("w-full bg-tt-surface text-tt-main rounded-md").props(
                             "flat bordered dense"
                         )
+
+                        add_practice_action(pair_table)
 
                         for column, field, scientific in [("target", "target_display", "target_canonical"), ("guessed", "guessed_display", "guessed_canonical")]:
                             pair_table.add_slot("body-cell-" + column, f"""

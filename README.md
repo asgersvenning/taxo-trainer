@@ -38,7 +38,7 @@ Photo and observation navigation shortcuts work when the identification input is
 
 - **Time-Range Filters**: View performance statistics over 1 Hour, 24 Hours, 7 Days, 30 Days, 1 Year, or All Time.
 - **Core Performance Metrics**: Tracks total attempts, unassisted accuracy percentage, active/best streaks, and mastered species counts ($\ge 90\%$ accuracy over $\ge 5$ unassisted attempts). Streaks and species coverage show all-time progress; accuracy summaries refresh when you return to Dashboard.
-- **Accuracy by Group**: Compare species, genera, families, or orders in one sortable table, with unassisted accuracy and attempt counts. Practice priorities appear first; names follow your selected language.
+- **Accuracy by Group**: Compare species, genera, families, or orders in one sortable table, with unassisted accuracy and attempt counts. Practice priorities appear first; names follow your selected language. Choose **Practise** on a group or confusion pair to open a temporary quiz selection, then **Return to previous practice** to resume your normal selection.
 - **Frequently Confused Taxa**: Compare recorded taxa with your guesses and counts of recurring mistakes, including assisted attempts.
 
 ### Dataset Ingestion & Filtering
@@ -142,7 +142,7 @@ After upgrading from older versions, reselect saved training groups if prompted.
 | Family and taxon filters | Focus on selected groups, or exclude groups you choose. |
 | **Practice Misidentified Photos Only** | Revisit photos you previously misidentified. |
 
-Choose light, dark, or system appearance under **Theme & Appearance**, with a Standard, Warm paper, Neutral, or High contrast palette. Accent choices are Blue, Forest, Plum, Amber, Rose, and Slate. High contrast strengthens text and control boundaries in both light and dark mode. Display language, palette, theme, accent, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls.
+Choose light, dark, or system appearance under **Theme & Appearance**, with a Standard, Warm paper, Neutral, or High contrast palette. Accent choices are Blue, Forest, Plum, Amber, Rose, and Slate. High contrast strengthens text and control boundaries in both light and dark mode. Display language, palette, theme, accent, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls. Training changes apply to the next observation; the current question and typed input stay in place. Temporary dashboard practice keeps your normal training groups saved.
 
 GBIF photographs can be ambiguous or incorrectly labelled. You can manually override how an observation is counted for your own training. **Ignore observation** removes its saved attempts from your statistics; it does not send a report to GBIF or permanently block the observation. Hints and diagnostic comparisons mark an attempt as assisted and exclude it from unassisted success metrics.
 

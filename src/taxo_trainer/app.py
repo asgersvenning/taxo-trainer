@@ -49,6 +49,7 @@ def index_page() -> None:
     quiz_state = QuizViewState()
     guides_state = GuidesViewState()
     refresh_dashboard = None
+    refresh_settings = None
 
     # Dark mode configuration (defaults to system preference "auto")
     app_conn = get_db_connection()
@@ -104,6 +105,8 @@ def index_page() -> None:
                     conn.close()
                     if e.value == "dashboard" and refresh_dashboard:
                         refresh_dashboard()
+                    if e.value == "settings" and refresh_settings:
+                        refresh_settings()
 
             tabs.on_value_change(on_tab_change)
 
@@ -114,10 +117,17 @@ def index_page() -> None:
             with ui.tab_panel("quiz").classes(
                 "w-full h-full p-0 flex flex-col overflow-hidden flex-1 min-h-0"
             ):
-                render_quiz_view(state=quiz_state, on_navigate_tab=navigate_to_tab)
+                quiz_controller = render_quiz_view(
+                    state=quiz_state, on_navigate_tab=navigate_to_tab,
+                    is_active=lambda: tabs.value == "quiz",
+                )
 
             with ui.tab_panel("dashboard").classes("w-full h-full p-4 overflow-y-auto"):
-                refresh_dashboard = render_dashboard_view()
+                def practise_from_dashboard(keys: list[str]) -> None:
+                    if quiz_controller.practise(keys):
+                        navigate_to_tab("quiz")
+
+                refresh_dashboard = render_dashboard_view(on_practise=practise_from_dashboard)
 
             with ui.tab_panel("guides").classes("w-full h-full p-4 overflow-y-auto"):
                 render_guides_view(state=guides_state, on_navigate_tab=navigate_to_tab)
@@ -125,9 +135,9 @@ def index_page() -> None:
             with ui.tab_panel("settings").classes(
                 "w-full h-full p-4 overflow-y-auto"
             ):
-                render_settings_view(
+                refresh_settings = render_settings_view(
                     active_filters=quiz_state.filters,
-                    on_filters_changed=lambda: None,
+                    on_filters_changed=quiz_controller.refresh,
                     dark_mode=dark_mode,
                 )
 

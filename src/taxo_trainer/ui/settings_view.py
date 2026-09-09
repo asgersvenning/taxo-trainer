@@ -79,7 +79,7 @@ def render_settings_view(
     active_filters: SamplingFilter,
     on_filters_changed: Callable[[], None],
     dark_mode: ui.dark_mode,
-) -> None:
+) -> Callable[[], None]:
     """Render application settings, sampling controls, and dataset ingestion view.
 
     Args:
@@ -87,6 +87,18 @@ def render_settings_view(
         on_filters_changed: Callback to notify quiz view when filters change.
     """
     app_conn = get_db_connection(APP_DB_PATH)
+
+    group_container = None
+
+    def refresh_training_groups() -> None:
+        if group_container is None:
+            return
+        def changed() -> None:
+            refresh_training_groups()
+            on_filters_changed()
+        group_container.clear()
+        with group_container:
+            render_taxa_filter_controls(app_conn, active_filters, on_changed=changed)
 
     # Query active dataset metadata & stats
     default_dataset_zip = DATA_DIR / "datasets" / "danske_planter_2026.zip"
@@ -279,6 +291,7 @@ def render_settings_view(
                 active_filters.language = val
                 set_app_metadata("language_preference", val, conn=app_conn)
                 coverage_label.set_text(name_coverage_summary(app_conn, val))
+                refresh_training_groups()
                 on_filters_changed()
                 ui.notify(
                     f"Display language set to {lang_options.get(val, val)}", type="info"
@@ -807,8 +820,7 @@ def render_settings_view(
 
                 ui.separator().classes("bg-tt-raised my-4")
 
-                render_taxa_filter_controls(
-                    app_conn,
-                    active_filters,
-                    on_changed=on_filters_changed,
-                )
+                group_container = ui.column().classes("w-full")
+                refresh_training_groups()
+
+    return refresh_training_groups

@@ -103,14 +103,14 @@ def sample_stage1_taxon(
     if filters.include_taxa:
         inc_conditions = []
         for inc_item in filters.include_taxa:
-            inc_conditions.append("(taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ?)")
-            params.extend([inc_item, inc_item, inc_item])
+            inc_conditions.append("(taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ? OR COALESCE(order_key, '') = ?)")
+            params.extend([inc_item] * 4)
         query += " AND (" + " OR ".join(inc_conditions) + ")"
 
     if filters.exclude_taxa:
         for exc_item in filters.exclude_taxa:
-            query += " AND NOT (taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ?)"
-            params.extend([exc_item, exc_item, exc_item])
+            query += " AND NOT (taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ? OR COALESCE(order_key, '') = ?)"
+            params.extend([exc_item] * 4)
 
 
     cursor = app_conn.execute(query, params)

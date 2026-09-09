@@ -6,6 +6,9 @@ and hint options with strict penalty enforcement.
 
 import random
 import sqlite3
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass, replace
 
 from nicegui import ui
 
@@ -59,6 +62,25 @@ class QuizViewState:
         self.best_streak: int = 0
         self.streak_initialized: bool = False
         self.is_incorrect: bool = False
+        self.practice_taxa: list[str] = []
+        self.question_filters: SamplingFilter | None = None
+        self.draft_guess = ""
+
+    def effective_filters(self) -> SamplingFilter:
+        """Apply a temporary dashboard scope without changing saved preferences."""
+        if not self.practice_taxa:
+            return deepcopy(self.filters)
+        return replace(self.filters, include_taxa=list(self.practice_taxa),
+                       exclude_taxa=[], family=None, genus=None, misidentified_only=False)
+
+
+@dataclass
+class QuizController:
+    """Client-local actions shared by Settings, Dashboard, and Quiz."""
+
+    refresh: Callable[[], None]
+    practise: Callable[[list[str]], bool]
+
 
 
 def submit_guess(
@@ -85,7 +107,7 @@ def submit_guess(
         guess_text,
         state.current_question.taxon_key,
         lang=state.filters.language,
-        min_count=state.filters.min_count,
+        min_count=(state.question_filters or state.filters).min_count,
     )
     state.last_validation_result = res
 
@@ -205,7 +227,8 @@ def submit_guess(
 def render_quiz_view(
     state: QuizViewState,
     on_navigate_tab: callable | None = None,
-) -> None:
+    is_active: Callable[[], bool] | None = None,
+) -> QuizController:
     """Render core quiz identification view.
 
     Layout structure:
@@ -271,7 +294,7 @@ def render_quiz_view(
 
         state.streak_initialized = True
 
-    def load_new_question() -> None:
+    def set_new_question(question: TargetObservation | None = None) -> None:
         """Sample next target observation question and refresh UI."""
         if state.is_incorrect and not state.solved:
             state.current_streak = 0
@@ -288,13 +311,44 @@ def render_quiz_view(
         state.matched_genus = None
         state.matched_family = None
         state.matched_order = None
-        state.current_question = sample_next_question(
-            app_conn, user_conn, state.filters, state.seen_set
+        state.draft_guess = ""
+        state.question_filters = state.effective_filters()
+        state.current_question = question or sample_next_question(
+            app_conn, user_conn, state.question_filters, state.seen_set
         )
         refresh_quiz_ui()
 
+    def load_new_question() -> None:
+        set_new_question()
+
+    def practise(keys: list[str]) -> bool:
+        previous = state.practice_taxa
+        state.practice_taxa = list(dict.fromkeys(str(key) for key in keys))
+        if not state.practice_taxa:
+            return False
+        next_seen = set(state.seen_set)
+        question = sample_next_question(app_conn, user_conn, state.effective_filters(), next_seen)
+        if question is None:
+            state.practice_taxa = previous
+            ui.notify("No observations available for this selection at your current minimum observation count.", type="info")
+            return False
+        state.seen_set = next_seen
+        set_new_question(question)
+        return True
+
+    def end_practice() -> None:
+        state.practice_taxa = []
+        load_new_question()
+
+    def settings_changed() -> None:
+        if state.current_question is None:
+            load_new_question()
+        else:
+            refresh_quiz_ui()
+
     def handle_submit_guess(guess_text: str) -> None:
         """Apply the submission and refresh the quiz view."""
+        state.draft_guess = ""
         submit_guess(state, app_conn, user_conn, active_ds, guess_text)
         refresh_quiz_ui()
 
@@ -460,7 +514,7 @@ def render_quiz_view(
 
     def handle_key_event(e) -> None:
         """Global keyboard shortcut handler for observation and photo navigation."""
-        if not e.action.keydown:
+        if (is_active is not None and not is_active()) or not e.action.keydown:
             return
 
         ctrl = getattr(e.modifiers, "ctrl", False)
@@ -515,6 +569,18 @@ def render_quiz_view(
         is_input_focused[0] = False
         main_container.clear()
         with main_container:
+            if state.practice_taxa:
+                names = []
+                for key in state.practice_taxa:
+                    row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (key,)).fetchone()
+                    if row is None:
+                        row = app_conn.execute("SELECT * FROM higher_ranks WHERE taxon_key=?", (key,)).fetchone()
+                    names.append(get_display_name(row, state.filters.language))
+                with ui.row().classes("w-full items-center justify-between bg-tt-raised p-2"):
+                    ui.label("Practising: " + " / ".join(names)).classes("text-sm text-tt-main")
+                    ui.button("Return to previous practice", on_click=end_practice).props("flat dense")
+            if state.current_question and state.question_filters and replace(state.question_filters, language=state.filters.language) != state.effective_filters():
+                ui.label("Training changes apply to your next observation.").classes("text-sm text-tt-muted")
             if not state.current_question:
                 with (
                     ui.column().classes(
@@ -525,14 +591,15 @@ def render_quiz_view(
                     ),
                 ):
                     ui.icon("nature_people", size="xl").classes("text-tt-positive")
-                    ui.label("Welcome to Taxo-Trainer! 🌿").classes(
+                    has_data = app_conn.execute("SELECT 1 FROM taxa LIMIT 1").fetchone() is not None
+                    ui.label("No matching observations" if has_data else "Welcome to Taxo-Trainer! 🌿").classes(
                         "text-3xl font-extrabold text-tt-main tracking-tight"
                     )
                     ui.label(
-                        "No species observation dataset is currently loaded in your database."
+                        "Your current training settings do not match any available observations." if has_data else "No species observation dataset is currently loaded in your database."
                     ).classes("text-base text-tt-main font-medium")
                     ui.label(
-                        "Taxo-Trainer requires species observation data from GBIF DarwinCore archives to generate identification flashcards. Get started quickly by following the initial setup guide!"
+                        "Adjust your training groups or minimum observations per taxon in Settings & Data." if has_data else "Taxo-Trainer requires species observation data from GBIF DarwinCore archives to generate identification flashcards. Get started quickly by following the initial setup guide!"
                     ).classes("text-sm text-tt-muted max-w-xl leading-relaxed")
 
                     with ui.row().classes("gap-4 pt-4 justify-center items-center"):
@@ -636,6 +703,7 @@ def render_quiz_view(
 
                         input_field = (
                             ui.input(
+                                value=state.draft_guess,
                                 placeholder="Species, genus, or family",
                             )
                             .classes("w-full text-xs text-tt-main")
@@ -663,6 +731,7 @@ def render_quiz_view(
 
                         def update_suggestions(e) -> None:
                             text = e.value
+                            state.draft_guess = text or ""
                             if not text or len(text.strip()) < 2:
                                 suggestions_container.classes(add="hidden")
                                 return
@@ -670,6 +739,7 @@ def render_quiz_view(
                                 app_conn,
                                 text,
                                 limit=5,
+                                min_count=(state.question_filters or state.filters).min_count,
                                 lang=state.filters.language,
                                 parent_genus=scope_key("genus") if state.matched_genus else None,
                                 parent_family=scope_key("family") if state.matched_family else None,
@@ -836,20 +906,23 @@ def render_quiz_view(
                         state.current_question.locality,
                     )
 
-                    # Taxa Whitelist / Blacklist Filter Drawer
-                    with ui.expansion(
-                        "Training groups", icon="filter_alt"
-                    ).classes(
-                        "w-full bg-tt-raised text-xs text-tt-warning rounded-md border border-tt-border p-0"
-                    ):
-                        render_taxa_filter_controls(
-                            app_conn,
-                            state.filters,
-                            on_changed=load_new_question,
-                        )
+                    if not state.practice_taxa:
+                        # Taxa Whitelist / Blacklist Filter Drawer
+                        with ui.expansion(
+                            "Training groups", icon="filter_alt"
+                        ).classes(
+                            "w-full bg-tt-raised text-xs text-tt-warning rounded-md border border-tt-border p-0"
+                        ):
+                            render_taxa_filter_controls(
+                                app_conn,
+                                state.filters,
+                                on_changed=load_new_question,
+                            )
 
     # Initial render load
     if not state.current_question:
         load_new_question()
     else:
         refresh_quiz_ui()
+
+    return QuizController(refresh=settings_changed, practise=practise)
