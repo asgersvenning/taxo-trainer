@@ -144,7 +144,7 @@ After upgrading from older versions, reselect saved training groups if prompted.
 | Family and taxon filters | Focus on selected groups, or exclude groups you choose. |
 | **Practice Misidentified Photos Only** | Revisit photos you previously misidentified. |
 
-Display language, theme, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls.
+Choose light, dark, or system appearance and a Blue, Forest, or Plum accent under **Theme & Appearance**. Display language, theme, accent, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls.
 
 GBIF photographs can be ambiguous or incorrectly labelled. You can manually override how an observation is counted for your own training. Hints and diagnostic comparisons mark an attempt as assisted and exclude it from unassisted success metrics.
 

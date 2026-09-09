@@ -34,13 +34,13 @@ def render_photo_viewer(
         ui.column: Column container holding image/map canvas and controls.
     """
     container = ui.column().classes(
-        "w-full h-full bg-white text-black dark:!bg-black dark:!text-white rounded-lg p-2 flex flex-col justify-between relative shadow-2xl border border-gray-800"
+        "w-full h-full bg-tt-surface text-tt-main rounded-lg p-2 flex flex-col justify-between relative shadow-2xl border border-tt-border"
     )
 
     if not media_urls:
         with container:
             ui.label("No image available for this observation.").classes(
-                "text-gray-400 italic m-auto text-center w-full text-lg"
+                "text-tt-muted italic m-auto text-center w-full text-lg"
             )
         return container
 
@@ -69,13 +69,13 @@ def render_photo_viewer(
     with container:
         # Top toolbar over image
         with ui.row().classes(
-            "w-full justify-between items-center dark:!bg-gray-900/80 dark:!bg-gray-900/5 backdrop-blur-md p-2 rounded-t-md z-10 border-b border-gray-800"
+            "w-full justify-between items-center backdrop-blur-md p-2 rounded-t-md z-10 border-b border-tt-border"
         ):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("photo_library", color="primary", size="sm")
                 photo_count_label = ui.label(
                     f"Photo {state['index'] + 1} of {len(media_urls)}"
-                ).classes("text-xs font-semibold text-gray-200")
+                ).classes("text-xs font-semibold text-tt-main")
 
             with ui.row().classes("gap-2 items-center"):
                 photo_tab_btn = (
@@ -119,7 +119,7 @@ def render_photo_viewer(
                     else:
                         ui.label(
                             "Geographic coordinates unavailable for this observation."
-                        ).classes("text-sm text-gray-400 italic m-auto")
+                        ).classes("text-sm text-tt-muted italic m-auto")
 
         def switch_to_photo():
             state["view"] = "photo"
@@ -152,23 +152,23 @@ def render_photo_viewer(
 
             # Metadata info container: Locality, Photo Credit, and Observation Source Link
             with ui.row().classes(
-                "items-center gap-3 text-xs text-gray-300 mx-auto flex-wrap justify-center"
+                "items-center gap-3 text-xs text-tt-main mx-auto flex-wrap justify-center"
             ):
                 loc_txt = locality or "Field Observation"
                 ui.label(f"📍 {loc_txt}").classes(
-                    "font-medium truncate max-w-xs text-gray-400"
+                    "font-medium truncate max-w-xs text-tt-muted"
                 )
 
                 if recorded_by:
                     ui.label(f"👤 Photo: {recorded_by}").classes(
-                        "font-medium text-gray-300 bg-gray-800 px-2 py-0.5 rounded border border-gray-700"
+                        "font-medium text-tt-main bg-tt-raised px-2 py-0.5 rounded border border-tt-border"
                     )
 
                 if references:
                     ui.link(
                         "🔗 View Source / GBIF Obs ↗", references, new_tab=True
                     ).classes(
-                        "font-bold text-yellow-400 hover:text-yellow-200 underline text-xs"
+                        "font-bold text-tt-warning underline text-xs"
                     )
 
             if len(media_urls) > 1:
@@ -200,7 +200,7 @@ def render_satellite_map(
         ui.card: Card container holding satellite Leaflet view.
     """
     card = ui.card().classes(
-        "w-full shadow-md p-2 bg-gray-900 text-white rounded-lg border border-gray-800"
+        "w-full shadow-md p-2 bg-tt-surface text-tt-main rounded-lg border border-tt-border"
     )
 
     with card:
@@ -218,7 +218,7 @@ def render_satellite_map(
             map_widget.marker(latlng=(latitude, longitude))
         else:
             ui.label("Coordinates unavailable.").classes(
-                "text-[10px] text-gray-500 italic py-4 text-center w-full"
+                "text-xs text-tt-muted italic py-4 text-center w-full"
             )
 
     return card
@@ -287,36 +287,36 @@ def render_taxa_filter_controls(
         on_changed()
 
     card = ui.card().classes(
-        "w-full bg-gray-900/90 p-3 rounded-lg border border-gray-700 space-y-3 shadow-md"
+        "w-full bg-tt-surface p-3 rounded-lg border border-tt-border space-y-3 shadow-md"
     )
 
     with card:
         with ui.row().classes("w-full justify-between items-center"):
             ui.label("Taxa Scope: Whitelist & Blacklist").classes(
-                "text-xs font-bold text-yellow-400 uppercase tracking-wider"
+                "text-xs font-bold text-tt-warning uppercase tracking-wider"
             )
             active_cnt = len(filters.include_taxa) + len(filters.exclude_taxa)
             if active_cnt > 0:
                 ui.badge(f"{active_cnt} active filters", color="primary").classes(
-                    "text-[10px]"
+                    "text-xs"
                 )
 
         # 1. Whitelist (Include) Input & Badges
         with ui.column().classes("w-full space-y-1"):
             ui.label("Whitelist (Include Taxa Only):").classes(
-                "text-[11px] font-semibold text-green-400"
+                "text-xs font-semibold text-tt-positive"
             )
 
             inc_input = (
                 ui.input(
                     placeholder="Type species, genus, or family to whitelist...",
                 )
-                .classes("w-full text-xs text-white")
-                .props("outlined dark dense clearable")
+                .classes("w-full text-xs text-tt-main")
+                .props("outlined dense clearable")
             )
 
             inc_suggestions = ui.column().classes(
-                "w-full gap-1 hidden max-h-28 overflow-y-auto bg-gray-800 p-1 rounded border border-gray-700 z-10"
+                "w-full gap-1 hidden max-h-28 overflow-y-auto bg-tt-raised p-1 rounded border border-tt-border z-10"
             )
 
             def update_inc_suggestions(e) -> None:
@@ -344,7 +344,7 @@ def render_taxa_filter_controls(
 
                             ui.button(f"+ {lbl_name}", on_click=add_inc).props(
                                 "flat dense color=positive"
-                            ).classes("text-[10px] w-full text-left truncate")
+                            ).classes("text-xs w-full text-left truncate")
 
             inc_input.on_value_change(update_inc_suggestions)
 
@@ -352,7 +352,7 @@ def render_taxa_filter_controls(
             with ui.row().classes("w-full gap-1 flex-wrap items-center mt-1"):
                 if not filters.include_taxa:
                     ui.label("All taxa included (no active whitelist)").classes(
-                        "text-[10px] text-gray-500 italic"
+                        "text-xs text-tt-muted italic"
                     )
                 else:
                     for inc_t in list(filters.include_taxa):
@@ -364,7 +364,7 @@ def render_taxa_filter_controls(
 
                         ui.chip(
                             f"✓ {scope_label(inc_t)}", color="positive", on_click=remove_inc
-                        ).props("removable dense dark").classes("text-[10px]")
+                        ).props("removable dense ").classes("text-xs")
 
                     def clear_inc():
                         filters.include_taxa.clear()
@@ -377,19 +377,19 @@ def render_taxa_filter_controls(
         # 2. Blacklist (Exclude) Input & Badges
         with ui.column().classes("w-full space-y-1 mt-2"):
             ui.label("Blacklist (Exclude Taxa):").classes(
-                "text-[11px] font-semibold text-red-400"
+                "text-xs font-semibold text-tt-negative"
             )
 
             exc_input = (
                 ui.input(
                     placeholder="Type species, genus, or family to exclude...",
                 )
-                .classes("w-full text-xs text-white")
-                .props("outlined dark dense clearable")
+                .classes("w-full text-xs text-tt-main")
+                .props("outlined dense clearable")
             )
 
             exc_suggestions = ui.column().classes(
-                "w-full gap-1 hidden max-h-28 overflow-y-auto bg-gray-800 p-1 rounded border border-gray-700 z-10"
+                "w-full gap-1 hidden max-h-28 overflow-y-auto bg-tt-raised p-1 rounded border border-tt-border z-10"
             )
 
             def update_exc_suggestions(e) -> None:
@@ -417,7 +417,7 @@ def render_taxa_filter_controls(
 
                             ui.button(f"- {lbl_name}", on_click=add_exc).props(
                                 "flat dense color=negative"
-                            ).classes("text-[10px] w-full text-left truncate")
+                            ).classes("text-xs w-full text-left truncate")
 
             exc_input.on_value_change(update_exc_suggestions)
 
@@ -425,7 +425,7 @@ def render_taxa_filter_controls(
             with ui.row().classes("w-full gap-1 flex-wrap items-center mt-1"):
                 if not filters.exclude_taxa:
                     ui.label("No taxa excluded").classes(
-                        "text-[10px] text-gray-500 italic"
+                        "text-xs text-tt-muted italic"
                     )
                 else:
                     for exc_t in list(filters.exclude_taxa):
@@ -437,7 +437,7 @@ def render_taxa_filter_controls(
 
                         ui.chip(
                             f"✕ {scope_label(exc_t)}", color="negative", on_click=remove_exc
-                        ).props("removable dense dark").classes("text-[10px]")
+                        ).props("removable dense ").classes("text-xs")
 
                     def clear_exc():
                         filters.exclude_taxa.clear()
@@ -486,7 +486,7 @@ def render_taxonomic_hierarchy_feedback(
     from taxo_trainer.engine.validator import get_display_name
 
     card = ui.card().classes(
-        "w-full p-3 bg-gray-900 text-white rounded-md shadow-md border border-gray-700 space-y-1.5"
+        "w-full p-3 bg-tt-surface text-tt-main rounded-md shadow-md border border-tt-border space-y-1.5"
     )
 
     with card:
@@ -637,15 +637,15 @@ def render_taxonomic_hierarchy_feedback(
             if is_hidden:
                 # Yellow "???" unrevealed row (not a link)
                 with ui.row().classes(
-                    "w-full justify-between items-center text-xs p-1.5 rounded font-medium bg-yellow-950 text-yellow-300 border border-yellow-700"
+                    "w-full justify-between items-center text-xs p-1.5 rounded font-medium bg-tt-warning-soft text-tt-warning border border-tt-warning"
                 ):
                     with ui.row().classes("items-center gap-1 overflow-hidden"):
                         ui.icon("help_outline", color="warning", size="xs")
                         ui.label(f"[{rank_lvl}] ???").classes(
-                            "truncate font-bold text-[11px]"
+                            "truncate font-bold text-xs"
                         )
                     ui.label("? Unknown").classes(
-                        "text-[10px] font-mono px-1 py-0.5 rounded bg-yellow-900 text-yellow-200"
+                        "text-xs font-mono px-1 py-0.5 rounded bg-tt-warning-soft text-tt-warning"
                     )
             else:
                 gbif_key = resolve_gbif_key(rank_lvl, raw_name)
@@ -660,9 +660,9 @@ def render_taxonomic_hierarchy_feedback(
                 box_cls = (
                     "w-full flex flex-row items-center justify-between text-xs p-1.5 rounded font-medium no-underline transition-all "
                     + (
-                        "bg-green-950 text-green-300 border border-green-700 hover:bg-green-900 hover:border-green-500"
+                        "bg-tt-positive-soft text-tt-positive border border-tt-positive hover:bg-tt-positive-soft hover:border-tt-positive"
                         if is_ok
-                        else "bg-red-950 text-red-300 border border-red-800 hover:bg-red-900 hover:border-red-600"
+                        else "bg-tt-negative-soft text-tt-negative border border-tt-negative hover:bg-tt-negative-soft hover:border-tt-negative"
                     )
                 )
 
@@ -678,18 +678,18 @@ def render_taxonomic_hierarchy_feedback(
                         icon_color = "positive" if is_ok else "negative"
                         ui.icon(icon_str, color=icon_color, size="xs")
                         ui.label(f"[{rank_lvl}] {disp_name}").classes(
-                            "truncate font-bold text-[11px]"
+                            "truncate font-bold text-xs"
                         )
                         if gbif_url:
                             ui.icon("open_in_new", size="xs").classes(
-                                "text-[10px] opacity-70 ml-0.5"
+                                "text-xs opacity-70 ml-0.5"
                             )
                     ui.label("✓ Correct" if is_ok else "✕ Incorrect").classes(
-                        "text-[10px] font-mono px-1 py-0.5 rounded "
+                        "text-xs font-mono px-1 py-0.5 rounded "
                         + (
-                            "bg-green-900 text-green-200"
+                            "bg-tt-positive-soft text-tt-positive"
                             if is_ok
-                            else "bg-red-900 text-red-200"
+                            else "bg-tt-negative-soft text-tt-negative"
                         )
                     )
 

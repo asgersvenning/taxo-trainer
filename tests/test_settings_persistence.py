@@ -138,3 +138,17 @@ def test_incomplete_or_invalid_cutoff_does_not_replace_saved_choice(settings, in
         == "7"
     )
     assert changes == [("log", 7)]
+
+
+def test_accent_preference_applies_and_survives_dataset_clear(settings, monkeypatch):
+    conn, _, _, _, container, _ = settings
+    applied = []
+    monkeypatch.setattr(settings_view, "set_accent", applied.append)
+    accent = next(e for e in container.descendants() if isinstance(e, ui.select) and e._props.get("label") == "Accent color")
+    accent.set_value("forest")
+    assert applied == ["forest"]
+    assert conn.execute("SELECT val FROM app_metadata WHERE key='theme_accent'").fetchone()[0] == "forest"
+    button = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == "Clear Current Data Source")
+    listener = next(e for e in button._event_listeners.values() if e.type == "click")
+    listener.handler(None)
+    assert conn.execute("SELECT val FROM app_metadata WHERE key='theme_accent'").fetchone()[0] == "forest"

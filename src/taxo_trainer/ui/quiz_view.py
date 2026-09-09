@@ -521,25 +521,25 @@ def render_quiz_view(
                         "w-full h-full items-center justify-center p-6 max-w-3xl mx-auto text-center my-auto"
                     ),
                     ui.card().classes(
-                        "w-full p-8 bg-gradient-to-br from-gray-900 via-slate-900 to-gray-950 border border-blue-800/80 rounded-2xl shadow-2xl space-y-6 items-center"
+                        "w-full p-8     border border-tt-primary rounded-2xl shadow-2xl space-y-6 items-center"
                     ),
                 ):
-                    ui.icon("nature_people", size="xl").classes("text-green-400")
+                    ui.icon("nature_people", size="xl").classes("text-tt-positive")
                     ui.label("Welcome to Taxo-Trainer! 🌿").classes(
-                        "text-3xl font-extrabold text-white tracking-tight"
+                        "text-3xl font-extrabold text-tt-main tracking-tight"
                     )
                     ui.label(
                         "No species observation dataset is currently loaded in your database."
-                    ).classes("text-base text-gray-300 font-medium")
+                    ).classes("text-base text-tt-main font-medium")
                     ui.label(
                         "Taxo-Trainer requires species observation data from GBIF DarwinCore archives to generate identification flashcards. Get started quickly by following the initial setup guide!"
-                    ).classes("text-sm text-gray-400 max-w-xl leading-relaxed")
+                    ).classes("text-sm text-tt-muted max-w-xl leading-relaxed")
 
                     with ui.row().classes("gap-4 pt-4 justify-center items-center"):
                         if on_navigate_tab:
                             ui.button(
                                 "📖 Start Initial Setup Guide",
-                                color="amber-600",
+                                color="warning",
                                 on_click=lambda: on_navigate_tab(
                                     "guides", "initial_dataset_setup"
                                 ),
@@ -549,7 +549,7 @@ def render_quiz_view(
                                 color="primary",
                                 on_click=lambda: on_navigate_tab("settings"),
                             ).classes(
-                                "font-bold text-sm px-6 py-2 border border-blue-600/50"
+                                "font-bold text-sm px-6 py-2 border border-tt-primary"
                             )
                         else:
                             ui.button(
@@ -581,18 +581,18 @@ def render_quiz_view(
                 # RIGHT COLUMN (U): 25% Width User Interface Controls Sidebar
                 # =========================================================
                 with ui.column().classes(
-                    "w-[25%] min-w-[280px] h-full bg-gray-900 rounded-lg p-3 space-y-3 overflow-y-auto shadow-xl border border-gray-800"
+                    "w-[25%] min-w-[280px] h-full bg-tt-surface rounded-lg p-3 space-y-3 overflow-y-auto shadow-xl border border-tt-border"
                 ):
                     # Phenology & Context Info
                     with ui.row().classes(
-                        "w-full justify-between items-center bg-gray-800 p-2 rounded-md"
+                        "w-full justify-between items-center bg-tt-raised p-2 rounded-md"
                     ):
                         render_phenology_badge(
                             state.current_question.month,
                             state.current_question.event_date,
                         )
                         ui.label(f"Rank: {state.filters.rank}").classes(
-                            "text-xs text-gray-300 font-bold"
+                            "text-xs text-tt-main font-bold"
                         )
 
                     # Next Observation
@@ -607,39 +607,39 @@ def render_quiz_view(
 
                     # Input & Guess Submission Box
                     with ui.card().classes(
-                        "w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700 space-y-2"
+                        "w-full p-3 bg-tt-raised text-tt-main rounded-md shadow-sm border border-tt-border space-y-2"
                     ):
                         # Streak Info
                         with ui.row().classes("w-full justify-between items-center"):
                             with ui.row().classes("items-center gap-1.5"):
-                                ui.icon("whatshot", color="amber-500").classes(
+                                ui.icon("whatshot", color="warning").classes(
                                     "text-sm"
                                 )
                                 ui.label(f"Streak: {state.current_streak}").classes(
-                                    "text-xs font-bold text-amber-400"
+                                    "text-xs font-bold text-tt-warning"
                                 )
                             with ui.row().classes("items-center gap-1.5"):
-                                ui.icon("emoji_events", color="yellow-400").classes(
+                                ui.icon("emoji_events", color="warning").classes(
                                     "text-sm"
                                 )
                                 ui.label(f"Record: {state.best_streak}").classes(
-                                    "text-xs font-bold text-yellow-300"
+                                    "text-xs font-bold text-tt-warning"
                                 )
 
                         with ui.row().classes("w-full justify-between items-center"):
                             ui.label("Identify Taxon:").classes(
-                                "font-bold text-xs text-gray-200"
+                                "font-bold text-xs text-tt-main"
                             )
                             ui.label("Focus: / or Esc | Blur: Esc").classes(
-                                "text-[10px] text-yellow-400 font-mono"
+                                "text-xs text-tt-warning font-mono"
                             )
 
                         input_field = (
                             ui.input(
                                 placeholder="Type species, genus, family... (/ to focus, Esc to blur)",
                             )
-                            .classes("w-full text-xs text-white")
-                            .props("outlined dark dense clearable")
+                            .classes("w-full text-xs text-tt-main")
+                            .props("outlined dense clearable")
                         )
 
                         active_input[0] = input_field
@@ -688,7 +688,7 @@ def render_quiz_view(
                                                 handle_submit_guess(v)
                                             ),
                                         ).props("outline dense color=accent").classes(
-                                            "text-[10px] w-full text-left truncate"
+                                            "text-xs w-full text-left truncate"
                                         )
 
                         input_field.on_value_change(update_suggestions)
@@ -725,22 +725,22 @@ def render_quiz_view(
 
                     # Hints Controls Card & Misidentification Flag
                     with ui.card().classes(
-                        "w-full p-2 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700"
+                        "w-full p-2 bg-tt-raised text-tt-main rounded-md shadow-sm border border-tt-border"
                     ):
                         ui.label("Hints & Feedback").classes(
-                            "text-xs font-bold text-gray-400 mb-1"
+                            "text-xs font-bold text-tt-muted mb-1"
                         )
                         with ui.row().classes("w-full justify-between gap-1"):
                             ui.button(
                                 "Higher-Order Rank",
                                 on_click=handle_higher_order_hint,
                                 color="warning",
-                            ).props("flat dense").classes("text-[11px]")
+                            ).props("flat dense").classes("text-xs")
                             ui.button(
                                 "1/5 Choice",
                                 on_click=handle_multiple_choice_hint,
                                 color="warning",
-                            ).props("flat dense").classes("text-[11px]")
+                            ).props("flat dense").classes("text-xs")
 
                         ui.button(
                             "Report Misidentified Obs",
@@ -748,22 +748,22 @@ def render_quiz_view(
                             color="negative",
                             icon="report_problem",
                         ).props("flat dense").classes(
-                            "text-[10px] w-full text-red-400 hover:text-red-200 mt-1"
+                            "text-xs w-full text-tt-negative mt-1"
                         )
 
                     # Feedback Message Banner & Multi-Rank Hierarchy Breakdown
                     if state.last_feedback:
                         fb_type = state.last_feedback.get("type", "info")
                         bg_cls = (
-                            "bg-green-900 text-white"
+                            "bg-tt-positive-soft text-tt-main"
                             if fb_type == "success"
                             else (
-                                "bg-red-900 text-white"
+                                "bg-tt-negative-soft text-tt-main"
                                 if fb_type == "error"
                                 else (
-                                    "bg-blue-900 text-white"
+                                    "bg-tt-primary-soft text-tt-main"
                                     if fb_type == "info"
-                                    else "bg-yellow-900 text-white"
+                                    else "bg-tt-warning-soft text-tt-main"
                                 )
                             )
                         )
@@ -789,7 +789,7 @@ def render_quiz_view(
                                             ),
                                             color="secondary",
                                         ).props("outline dense").classes(
-                                            "bg-gray-800 text-white font-medium text-xs w-full"
+                                            "bg-tt-raised text-tt-main font-medium text-xs w-full"
                                         )
 
                         # Multi-Level Taxonomic Hierarchy Feedback (Order, Family, Genus, Species)
@@ -812,7 +812,7 @@ def render_quiz_view(
                     # Diagnostic Reference Photo (on wrong guess)
                     if state.diagnostic_photo_url:
                         with ui.card().classes(
-                            "w-full p-3 bg-gray-800 text-white rounded-md shadow-sm border border-gray-700"
+                            "w-full p-3 bg-tt-raised text-tt-main rounded-md shadow-sm border border-tt-border"
                         ):
                             diag_label = (
                                 f"Diagnostic Reference (Guessed '{state.diagnostic_guessed_name}'):"
@@ -820,7 +820,7 @@ def render_quiz_view(
                                 else "Diagnostic Reference (Guessed Species):"
                             )
                             ui.label(diag_label).classes(
-                                "font-bold text-[11px] text-yellow-300 mb-1"
+                                "font-bold text-xs text-tt-warning mb-1"
                             )
 
                             ui.element("img").props(
@@ -840,7 +840,7 @@ def render_quiz_view(
                     with ui.expansion(
                         "Taxa Scope (Whitelist / Blacklist)", icon="filter_alt"
                     ).classes(
-                        "w-full bg-gray-800 text-xs text-yellow-300 rounded-md border border-gray-700 p-0"
+                        "w-full bg-tt-raised text-xs text-tt-warning rounded-md border border-tt-border p-0"
                     ):
                         render_taxa_filter_controls(
                             app_conn,

@@ -30,6 +30,7 @@ from taxo_trainer.ui.name_status import (
     name_coverage_summary,
     name_lookup_failure_message,
 )
+from taxo_trainer.ui.theme import ACCENTS, set_accent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ def render_settings_view(
     families = {"All Families": "All Families"} | {r["family_key"]: r["family"] for r in fam_cursor.fetchall()}
 
     container = ui.column().classes(
-        "w-full max-w-5xl mx-auto p-4 spacing-y-6 text-white"
+        "w-full max-w-5xl mx-auto p-4 spacing-y-6 text-tt-main"
     )
 
     with container:
@@ -130,17 +131,17 @@ def render_settings_view(
 
         # 0. Active Data Source & Dataset Stats Card
         with ui.card().classes(
-            "w-full bg-gray-900 border border-yellow-500/40 p-5 rounded-lg shadow-lg mb-6"
+            "w-full bg-tt-surface border border-tt-warning p-5 rounded-lg shadow-lg mb-6"
         ):
             with ui.row().classes(
                 "w-full justify-between items-center flex-wrap gap-2 mb-2"
             ):
                 ui.label("Current Active Data Source").classes(
-                    "text-xs font-bold text-yellow-400 uppercase tracking-wider"
+                    "text-xs font-bold text-tt-warning uppercase tracking-wider"
                 )
 
             ui.label(f"📁 {active_path}").classes(
-                "text-sm font-mono !text-black dark:!text-white break-all mb-3 bg-gray-800 p-2 rounded border border-gray-700"
+                "text-sm font-mono text-tt-main break-all mb-3 bg-tt-raised p-2 rounded border border-tt-border"
             )
 
             with ui.row().classes(
@@ -150,23 +151,24 @@ def render_settings_view(
                     ui.chip(
                         f"{taxa_cnt:,} Taxa Registered",
                         icon="diversity_3",
-                        color="indigo",
-                    ).props("dense dark")
+                        color="primary",
+                    ).props("dense ")
                     active_count_chip = ui.chip(
                         f"{active_taxa_cnt:,} Active ({discarded_taxa_cnt:,} Discarded)",
                         icon="filter_alt",
-                        color="amber",
-                    ).props("dense dark")
+                        color="warning",
+                    ).props("dense ")
                     ui.chip(
                         f"{occ_cnt:,} Occurrences Loaded",
                         icon="photo_library",
-                        color="teal",
-                    ).props("dense dark")
+                        color="primary",
+                    ).props("dense ")
 
                 def clear_data_source() -> None:
                     try:
                         # Preserve user preferences across dataset clearing
                         theme_pref = get_app_metadata("theme_preference", conn=app_conn)
+                        accent_pref = get_app_metadata("theme_accent", conn=app_conn)
                         lang_pref = get_app_metadata("language_preference", conn=app_conn)
                         min_pref = get_app_metadata("min_count", conn=app_conn)
                         tab_pref = get_app_metadata("active_tab", conn=app_conn)
@@ -182,6 +184,11 @@ def render_settings_view(
                             app_conn.execute("DELETE FROM app_metadata;")
 
                             # Restore preserved user settings into app_metadata
+                            if accent_pref:
+                                app_conn.execute(
+                                    "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('theme_accent', ?);",
+                                    (accent_pref,),
+                                )
                             if theme_pref:
                                 app_conn.execute(
                                     "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('theme_preference', ?);",
@@ -228,13 +235,13 @@ def render_settings_view(
 
 
         # 1. Preferred Vernacular Language Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+        with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
             ui.label("Preferred Display Language").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
+                "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
                 "Select display language preference for species vernacular names. Entering names in ANY supported language will validate as correct."
-            ).classes("text-xs text-gray-400 mb-4")
+            ).classes("text-xs text-tt-muted mb-4")
 
             lang_options = {
                 "da": "🇩🇰 Danish (Dansk) [Default]",
@@ -261,8 +268,8 @@ def render_settings_view(
                     else "da",
                     label="Primary Display Language",
                 )
-                .classes("w-72 text-white")
-                .props("outlined dark")
+                .classes("w-72 text-tt-main")
+                .props("outlined ")
             )
 
             def update_language(val: str) -> None:
@@ -277,13 +284,13 @@ def render_settings_view(
             lang_select.on_value_change(lambda e: update_language(e.value))
 
         # 1.2 Minimum Occurrences per Taxon Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+        with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
             ui.label("Minimum Occurrences per Taxon").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
+                "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
                 "Set the minimum occurrence limit per taxon used in the quiz. Taxa with fewer occurrences than this threshold are omitted from quiz sampling, autocomplete suggestions, and input interpolation to filter out spurious/rare taxa."
-            ).classes("text-xs text-gray-400 mb-4")
+            ).classes("text-xs text-tt-muted mb-4")
 
             with ui.column().classes("w-full space-y-3"):
                 with ui.row().classes("w-full gap-4 items-center flex-wrap"):
@@ -294,8 +301,8 @@ def render_settings_view(
                             min=1,
                             step=1,
                         )
-                        .classes("w-72 text-white")
-                        .props("outlined dark")
+                        .classes("w-72 text-tt-main")
+                        .props("outlined ")
                     )
 
                 stats_row = ui.row().classes("gap-3 text-xs flex-wrap items-center mt-1")
@@ -315,15 +322,15 @@ def render_settings_view(
                             f"✓ {act_c:,} Taxa Retained ({pct_act:.1f}%)",
                             icon="check_circle",
                             color="positive",
-                        ).props("dense dark")
+                        ).props("dense ")
                         ui.chip(
                             f"🚫 {disc_c:,} Taxa Discarded ({pct_disc:.1f}%)",
                             icon="block",
-                            color="negative" if disc_c > 0 else "grey",
-                        ).props("dense dark")
+                            color="negative" if disc_c > 0 else "secondary",
+                        ).props("dense ")
                         ui.label(
                             f"Taxa with fewer than {mc} occurrences are omitted."
-                        ).classes("text-xs text-gray-400 italic flex-align-center")
+                        ).classes("text-xs text-tt-muted italic flex-align-center")
 
                 refresh_cutoff_stats(active_filters.min_count)
 
@@ -351,13 +358,15 @@ def render_settings_view(
                 cutoff_input_main.on_value_change(lambda e: update_cutoff(e.value))
 
         # 1.5 Theme & Appearance Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+        with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
             ui.label("Theme & Appearance").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
+                "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
-                "Select UI color mode. System Default (Auto) automatically matches your operating system theme."
-            ).classes("text-xs text-gray-400 mb-4")
+                "Follow your system appearance or choose light or dark."
+            ).classes("text-xs text-tt-muted mb-4")
+
+            theme_controls = ui.row().classes("w-full gap-4 flex-wrap")
 
             theme_options = {
                 "auto": "🌗 System Default (Auto)",
@@ -373,8 +382,8 @@ def render_settings_view(
                     value=curr_theme if curr_theme in theme_options else "auto",
                     label="Theme Preference",
                 )
-                .classes("w-72 text-white")
-                .props("outlined dark")
+                .classes("w-72 text-tt-main")
+                .props("outlined ")
             )
 
             def update_theme(val: str) -> None:
@@ -392,14 +401,30 @@ def render_settings_view(
                 )
 
             theme_select.on_value_change(lambda e: update_theme(e.value))
+
+            accent_pref = get_app_metadata("theme_accent", "blue", conn=app_conn)
+            accent_select = ui.select(
+                options={key: value["label"] for key, value in ACCENTS.items()},
+                value=accent_pref if accent_pref in ACCENTS else "blue",
+                label="Accent color",
+            ).classes("w-72").props("outlined")
+
+            def update_accent(value: str) -> None:
+                if value in ACCENTS:
+                    set_app_metadata("theme_accent", value, conn=app_conn)
+                    set_accent(value)
+
+            accent_select.on_value_change(lambda e: update_accent(e.value))
+            theme_select.move(theme_controls)
+            accent_select.move(theme_controls)
         # 2. DarwinCore (DwC) Occurrence Ingestion Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+        with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
             ui.label("DarwinCore (DwC) Occurrence Ingestion").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
+                "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
                 "Ingest DarwinCore .zip (ZIP-file) or occurrence.txt (TSV) file into SQLite database app_data.db."
-            ).classes("text-xs text-gray-400 mb-4")
+            ).classes("text-xs text-tt-muted mb-4")
 
             saved_max_occ = get_app_metadata("max_occurrences_per_taxon", "1000", conn=app_conn)
             try:
@@ -415,12 +440,12 @@ def render_settings_view(
                         min=0,
                         step=100,
                     )
-                    .classes("w-72 text-white")
-                    .props("outlined dark dense")
+                    .classes("w-72 text-tt-main")
+                    .props("outlined dense")
                 )
                 ui.label(
                     "Threshold cap per raw taxon during ingestion (default: 1000). Set to 0 for unlimited."
-                ).classes("text-xs text-gray-400 italic")
+                ).classes("text-xs text-tt-muted italic")
 
             def save_max_occ(val: float | None) -> None:
                 if val is not None:
@@ -434,14 +459,14 @@ def render_settings_view(
                     value=ingest_input_path,
                     placeholder="e.g. src/data/datasets/danske_planter_2026.zip or https://api.gbif.org/v1/...",
                 )
-                .classes("w-full text-white mb-1")
-                .props("outlined dark dense clearable")
+                .classes("w-full text-tt-main mb-1")
+                .props("outlined dense clearable")
             )
 
 
             # Filesystem Prefix-Matching Autocomplete Suggestions Box
             path_suggestions_box = ui.row().classes(
-                "w-full gap-1 hidden flex-wrap max-h-32 overflow-y-auto mb-4 bg-gray-900 p-2 rounded border border-gray-700"
+                "w-full gap-1 hidden flex-wrap max-h-32 overflow-y-auto mb-4 bg-tt-surface p-2 rounded border border-tt-border"
             )
 
             def update_path_autocomplete(e) -> None:
@@ -472,11 +497,11 @@ def render_settings_view(
 
             if taxa_cnt > 0:
                 init_ingest_text = f"✓ Ingestion Active — {occ_cnt:,} occurrences loaded across {taxa_cnt:,} taxa."
-                init_ingest_class = "text-sm text-green-400 font-bold mb-3"
+                init_ingest_class = "text-sm text-tt-positive font-bold mb-3"
                 ingest_btn_label = "Re-Ingest Dataset"
             else:
                 init_ingest_text = "Ready for DarwinCore ingestion."
-                init_ingest_class = "text-sm text-gray-300 font-semibold mb-3"
+                init_ingest_class = "text-sm text-tt-main font-semibold mb-3"
                 ingest_btn_label = "Start Ingestion"
 
             with ui.row().classes("items-center gap-2 mb-3"):
@@ -544,15 +569,15 @@ def render_settings_view(
 
 
         # 3. Vernacular Name Enrichment Engine Card
-        with ui.card().classes("w-full bg-gray-800 p-6 rounded-lg shadow-md mb-6"):
+        with ui.card().classes("w-full bg-tt-raised p-6 rounded-lg shadow-md mb-6"):
             ui.label("Species Names").classes(
-                "text-lg font-bold text-yellow-300 mb-2"
+                "text-lg font-bold text-tt-main mb-2"
             )
             ui.label(
                 "Look up vernacular names from GBIF in all supported languages, including genus and family names. "
                 "Your preferred language determines which names are displayed. "
                 "Not every species has a name available in every language."
-            ).classes("text-xs text-gray-400 mb-4")
+            ).classes("text-xs text-tt-muted mb-4")
             coverage_label = ui.label(
                 name_coverage_summary(app_conn, active_filters.language)
             ).classes("text-sm mb-3")
@@ -563,15 +588,15 @@ def render_settings_view(
 
             if saved_enrich_error:
                 init_enrich_text = "The last name lookup did not finish. Names already saved are kept. Please try again later."
-                init_enrich_class = "text-sm text-amber-400 font-bold mb-3"
+                init_enrich_class = "text-sm text-tt-warning font-bold mb-3"
                 enrich_btn_label = "Retry Name Lookup"
             elif saved_enrich_status:
                 init_enrich_text = "The last name lookup completed."
-                init_enrich_class = "text-sm text-green-400 font-bold mb-3"
+                init_enrich_class = "text-sm text-tt-positive font-bold mb-3"
                 enrich_btn_label = "Check for Names Again"
             else:
                 init_enrich_text = "Ready to look up names."
-                init_enrich_class = "text-sm text-gray-300 font-semibold mb-3"
+                init_enrich_class = "text-sm text-tt-main font-semibold mb-3"
                 enrich_btn_label = "Look Up Names"
 
             enrich_status = ui.label(init_enrich_text).classes(init_enrich_class)
@@ -615,7 +640,7 @@ def render_settings_view(
                 progress_state["status"] = "Looking up species names..."
                 safe_ui_update(lambda: progress_bar.set_value(0.0))
                 safe_ui_update(lambda: progress_bar.classes(remove="hidden"))
-                safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-gray-300 font-semibold mb-3"))
+                safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-tt-main font-semibold mb-3"))
                 safe_ui_update(lambda: enrich_status.set_text(
                     "Looking up species names..."
                 ))
@@ -645,7 +670,7 @@ def render_settings_view(
 
                     safe_ui_update(timer.cancel)
                     safe_ui_update(lambda: progress_bar.set_value(1.0))
-                    safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-green-400 font-bold mb-3"))
+                    safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-tt-positive font-bold mb-3"))
                     safe_ui_update(lambda: enrich_status.set_text(
                         "Name lookup complete."
                     ))
@@ -666,7 +691,7 @@ def render_settings_view(
                     set_app_metadata("gbif_enrichment_error", err_msg, conn=app_conn)
                     safe_ui_update(lambda: coverage_label.set_text(name_coverage_summary(app_conn, active_filters.language)))
                     safe_ui_update(lambda: enrich_button.set_text("Retry Name Lookup"))
-                    safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-red-400 font-bold mb-3"))
+                    safe_ui_update(lambda: enrich_status.classes(replace="text-sm text-tt-negative font-bold mb-3"))
                     safe_ui_update(lambda: enrich_status.set_text(err_msg))
                     safe_ui_update(lambda: ui.notify(err_msg, type="warning"))
                 finally:
@@ -686,20 +711,20 @@ def render_settings_view(
         exp = ui.expansion(
             "Advanced Features", icon="settings_suggest", value=False
         ).classes(
-            "w-full bg-gray-800 rounded-lg shadow-md border border-gray-700 text-yellow-300 font-bold mb-6"
+            "w-full bg-tt-raised rounded-lg shadow-md border border-tt-border text-tt-warning font-bold mb-6"
         )
-        with exp, ui.column().classes("w-full p-4 space-y-6 text-white"):
+        with exp, ui.column().classes("w-full p-4 space-y-6 text-tt-main"):
             # Stage 1 Sampling Mode & Cutoffs Card
             with ui.card().classes(
-                "w-full bg-gray-900 p-6 rounded-lg border border-gray-700"
+                "w-full bg-tt-surface p-6 rounded-lg border border-tt-border"
             ):
                 ui.label("Stage 1 Sampling & Probability Weights").classes(
-                    "text-lg font-bold text-yellow-300 mb-2"
+                    "text-lg font-bold text-tt-main mb-2"
                 )
 
                 ui.label(
                     "Control how species are selected during quiz questions."
-                ).classes("text-xs text-gray-400 mb-4")
+                ).classes("text-xs text-tt-muted mb-4")
 
                 with ui.row().classes("w-full gap-6 flex-wrap items-center"):
                     mode_radio = (
@@ -712,8 +737,7 @@ def render_settings_view(
                             },
                             value=active_filters.mode,
                         )
-                        .props("dark")
-                        .classes("text-white")
+                        .classes("text-tt-main")
                     )
 
                     def update_mode(val: str) -> None:
@@ -734,8 +758,8 @@ def render_settings_view(
                             min=1,
                             step=1,
                         )
-                        .classes("w-64 text-white")
-                        .props("outlined dark")
+                        .classes("w-64 text-tt-main")
+                        .props("outlined ")
                     )
 
                     cutoff_controls.append(cutoff_input)
@@ -744,10 +768,10 @@ def render_settings_view(
 
             # Taxonomic Scope & Filters Card
             with ui.card().classes(
-                "w-full bg-gray-900 p-6 rounded-lg border border-gray-700"
+                "w-full bg-tt-surface p-6 rounded-lg border border-tt-border"
             ):
                 ui.label("Taxonomic Scope & Practice Filters").classes(
-                    "text-lg font-bold text-yellow-300 mb-2"
+                    "text-lg font-bold text-tt-main mb-2"
                 )
 
                 with ui.row().classes("w-full gap-4 items-center flex-wrap"):
@@ -757,8 +781,8 @@ def render_settings_view(
                             value=active_filters.family or "All Families",
                             label="Filter by Family",
                         )
-                        .classes("w-64 text-white")
-                        .props("outlined dark")
+                        .classes("w-64 text-tt-main")
+                        .props("outlined ")
                     )
 
                     def update_family(val: str) -> None:
@@ -771,7 +795,7 @@ def render_settings_view(
                     misidentified_toggle = ui.switch(
                         "Practice Misidentified Photos Only",
                         value=active_filters.misidentified_only,
-                    ).classes("text-white font-medium ml-4")
+                    ).classes("text-tt-main font-medium ml-4")
 
                     def update_misidentified(val: bool) -> None:
                         active_filters.misidentified_only = val
@@ -785,7 +809,7 @@ def render_settings_view(
                         lambda e: update_misidentified(e.value)
                     )
 
-                ui.separator().classes("bg-gray-700 my-4")
+                ui.separator().classes("bg-tt-raised my-4")
 
                 render_taxa_filter_controls(
                     app_conn,

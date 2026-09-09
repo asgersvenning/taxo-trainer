@@ -100,42 +100,42 @@ def render_guides_view(
         """Render catalog menu of all available guides."""
         # Top Header Banner
         with ui.row().classes(
-            "w-full justify-between items-center bg-gray-900 p-5 rx-12 rounded-xl border border-gray-800 shadow-lg mb-2"
+            "w-full justify-between items-center bg-tt-surface p-5 rx-12 rounded-xl border border-tt-border shadow-lg mb-2"
         ):
             with ui.row().classes("items-center gap-3"):
-                ui.icon("menu_book", size="md").classes("text-blue-400")
+                ui.icon("menu_book", size="md").classes("text-tt-primary")
                 with ui.column().classes("gap-0"):
                     ui.label("Interactive Application Guides").classes(
-                        "text-2xl font-bold tracking-tight text-white"
+                        "text-2xl font-bold tracking-tight text-tt-main"
                     )
                     ui.label(
                         "Learn how to configure datasets, practice identification, and use all Taxo-Trainer features."
-                    ).classes("text-sm text-gray-400")
+                    ).classes("text-sm text-tt-muted")
 
-            ui.chip("⌨️ Nav: Arrow Keys / A-D | Menu: Esc", color="blue-900").classes(
-                "text-xs text-blue-200"
+            ui.chip("⌨️ Nav: Arrow Keys / A-D | Menu: Esc", color="primary").classes(
+                "text-xs text-tt-primary"
             )
 
         # Featured / Onboarding Hero Banner
         with (
             ui.card().classes(
-                "w-full p-5 bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 rounded-xl border border-blue-800/60 shadow-xl"
+                "w-full p-5     rounded-xl border border-tt-primary shadow-xl"
             ),
             ui.row().classes("w-full justify-between items-center gap-4"),
             ui.row().classes("items-center gap-4 flex-1"),
         ):
-            ui.icon("rocket_launch", size="lg").classes("text-amber-400")
+            ui.icon("rocket_launch", size="lg").classes("text-tt-warning")
             with ui.column().classes("gap-1"):
                 ui.label("First Session? Start Here!").classes(
-                    "text-lg font-bold text-amber-300"
+                    "text-lg font-bold text-tt-main"
                 )
                 ui.label(
                     "Follow the 'Initial Default Dataset Setup' guide to configure species data and start your first quiz session."
-                ).classes("text-sm text-gray-300")
+                ).classes("text-sm text-tt-main")
 
             ui.button(
                 "Start Initial Setup Guide ▶",
-                color="amber-600",
+                color="warning",
                 on_click=lambda: (
                     state.select_guide("initial_dataset_setup"),
                     refresh_view(),
@@ -149,7 +149,7 @@ def render_guides_view(
 
         for category_name, guides in categories.items():
             ui.label(category_name).classes(
-                "text-lg font-bold text-gray-200 mt-4 border-b border-gray-800 pb-1 w-full"
+                "text-lg font-bold text-tt-main mt-4 border-b border-tt-border pb-1 w-full"
             )
 
             with ui.grid().classes(
@@ -159,7 +159,7 @@ def render_guides_view(
                     with (
                         ui.card()
                         .classes(
-                            "w-full p-4 bg-gray-900 hover:bg-gray-850 rounded-xl border border-gray-800 shadow-md flex flex-col justify-between space-y-3 cursor-pointer transition-all hover:border-blue-500/50"
+                            "w-full p-4 bg-tt-surface hover:bg-tt-raised rounded-xl border border-tt-border shadow-md flex flex-col justify-between space-y-3 cursor-pointer transition-all hover:border-tt-primary"
                         )
                         .on(
                             "click",
@@ -173,18 +173,18 @@ def render_guides_view(
                             with ui.row().classes(
                                 "w-full justify-between items-center"
                             ):
-                                ui.icon(g.icon, size="sm").classes("text-blue-400")
+                                ui.icon(g.icon, size="sm").classes("text-tt-primary")
                                 ui.badge(
-                                    f"{len(g.steps)} Steps", color="gray-800"
+                                    f"{len(g.steps)} Steps", color="secondary"
                                 ).classes(
-                                    "text-xs text-gray-300 border border-gray-700"
+                                    "text-xs text-tt-main border border-tt-border"
                                 )
 
                             ui.label(g.title).classes(
-                                "text-base font-bold text-white group-hover:text-blue-400"
+                                "text-base font-bold text-tt-main"
                             )
                             ui.label(g.description).classes(
-                                "text-xs text-gray-400 line-clamp-3 leading-relaxed"
+                                "text-xs text-tt-muted line-clamp-3 leading-relaxed"
                             )
 
                         with ui.row().classes("w-full justify-end pt-2"):
@@ -207,41 +207,41 @@ def render_guides_view(
 
         # Top Navigation Bar
         with ui.row().classes(
-            "w-full justify-between items-center bg-gray-900 p-4 rounded-xl stroke-gray-800 border border-gray-800 shadow-md"
+            "w-full justify-between items-center bg-tt-surface p-4 rounded-xl stroke-gray-800 border border-tt-border shadow-md"
         ):
             ui.button(
                 "← Return to Guide Menu",
-                color="dark",
+                color="secondary",
                 on_click=lambda: (state.return_to_menu(), refresh_view()),
-            ).classes("text-xs font-bold border border-gray-700 hover:bg-gray-800")
+            ).classes("text-xs font-bold border border-tt-border hover:bg-tt-raised")
 
             with ui.row().classes("items-center gap-2"):
-                ui.icon(guide.icon, size="xs").classes("text-blue-400")
-                ui.label(guide.title).classes("text-base font-bold text-white")
+                ui.icon(guide.icon, size="xs").classes("text-tt-primary")
+                ui.label(guide.title).classes("text-base font-bold text-tt-main")
 
-            ui.chip(f"Step {step_idx + 1} of {total_steps}", color="blue-900").classes(
-                "text-xs text-blue-200 font-bold"
+            ui.chip(f"Step {step_idx + 1} of {total_steps}", color="primary").classes(
+                "text-xs text-tt-primary font-bold"
             )
 
         # Main Step Content Card
         with ui.card().classes(
-            "w-full p-5 bg-gray-900 rounded-xl border border-gray-800 shadow-xl space-y-4"
+            "w-full p-5 bg-tt-surface rounded-xl border border-tt-border shadow-xl space-y-4"
         ):
             # Step Title & Description
             with ui.row().classes("w-full items-start gap-3"):
-                ui.badge(f"{step.step_number}", color="amber-600").classes(
-                    "text-sm font-bold px-3 py-1 rounded-full text-black"
+                ui.badge(f"{step.step_number}", color="warning").classes(
+                    "text-sm font-bold px-3 py-1 rounded-full text-tt-main"
                 )
                 with ui.column().classes("gap-1 flex-1"):
-                    ui.label(step.title).classes("text-xl font-bold text-white")
+                    ui.label(step.title).classes("text-xl font-bold text-tt-main")
                     ui.label(step.description).classes(
-                        "text-sm text-gray-300 leading-relaxed"
+                        "text-sm text-tt-main leading-relaxed"
                     )
 
             # Only show an image when the guide supplies a current illustration.
             if step.image_path:
                 with ui.column().classes(
-                    "w-full items-center justify-center bg-gray-950 p-2 rounded-lg border border-gray-800 overflow-hidden shadow-inner"
+                    "w-full items-center justify-center bg-tt-page p-2 rounded-lg border border-tt-border overflow-hidden shadow-inner"
                 ):
                     ui.image(step.image_path).props("fit=contain img-class=object-contain").classes(
                         "w-full max-h-[500px] object-contain rounded"
@@ -249,21 +249,21 @@ def render_guides_view(
 
             # Step Navigation Control Bar
             with ui.row().classes(
-                "w-full justify-between items-center pt-2 border-t border-gray-800"
+                "w-full justify-between items-center pt-2 border-t border-tt-border"
             ):
                 ui.button(
                     "◀ Previous [ A / ← ]",
-                    color="gray-800",
+                    color="secondary",
                     on_click=lambda: (state.prev_step(), refresh_view()),
-                ).classes("text-xs font-bold text-gray-200").set_visibility(
+                ).classes("text-xs font-bold text-tt-main").set_visibility(
                     not is_first
                 )
 
                 ui.button(
                     "Guide Menu [ Esc ]",
-                    color="dark",
+                    color="secondary",
                     on_click=lambda: (state.return_to_menu(), refresh_view()),
-                ).classes("text-xs font-bold text-gray-400 border border-gray-700")
+                ).classes("text-xs font-bold text-tt-muted border border-tt-border")
 
                 if not is_last:
                     ui.button(
@@ -282,25 +282,25 @@ def render_guides_view(
         if is_last:
             with (
                 ui.card().classes(
-                    "w-full p-4 bg-green-950 border border-green-700/60 rounded-xl shadow-lg"
+                    "w-full p-4 bg-tt-positive-soft border border-tt-positive rounded-xl shadow-lg"
                 ),
                 ui.row().classes("w-full justify-between items-center gap-4"),
             ):
                 with ui.row().classes("items-center gap-3 flex-1"):
-                    ui.icon("check_circle", size="md").classes("text-green-400")
+                    ui.icon("check_circle", size="md").classes("text-tt-positive")
                     with ui.column().classes("gap-0"):
                         ui.label("Guide Complete!").classes(
-                            "text-base font-bold text-green-300"
+                            "text-base font-bold text-tt-positive"
                         )
                         ui.label(
                             "You have completed all steps in this guide. You can return to the guide menu or jump straight into practicing!"
-                        ).classes("text-xs text-green-200")
+                        ).classes("text-xs text-tt-positive")
 
                 with ui.row().classes("items-center gap-2"):
                     if guide.id == "initial_dataset_setup" and on_navigate_tab:
                         ui.button(
                             "🚀 Go to Settings & Ingest",
-                            color="amber-600",
+                            color="warning",
                             on_click=lambda: on_navigate_tab("settings"),
                         ).classes("text-xs font-bold py-1 px-3")
 

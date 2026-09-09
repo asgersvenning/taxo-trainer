@@ -40,12 +40,12 @@ def render_dashboard_view() -> None:
         else "Default Data Source"
     )
 
-    container = ui.column().classes("w-full max-w-6xl mx-auto p-4 space-y-6 text-white")
+    container = ui.column().classes("w-full max-w-6xl mx-auto p-4 space-y-6 text-tt-main")
 
     with container:
         # Header & Time Filter Bar
         with ui.card().classes(
-            "w-full bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 space-y-3"
+            "w-full bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-3"
         ):
             with ui.row().classes("w-full justify-between items-center flex-wrap gap-3"):
                 with ui.column().classes("gap-0"):
@@ -54,20 +54,20 @@ def render_dashboard_view() -> None:
                     )
                     ui.label(
                         "Track your species identification progress, streaks, and taxonomic mastery over time."
-                    ).classes("text-xs text-gray-400")
+                    ).classes("text-xs text-tt-muted")
 
                 # Active Data Source Badge
-                with ui.row().classes("items-center gap-2 bg-gray-900 px-3 py-1.5 rounded-lg border border-yellow-500/40"):
-                    ui.icon("folder", color="yellow-400").classes("text-sm")
-                    ui.label("Active Data Source:").classes("text-xs font-bold text-gray-400")
-                    ui.label(ds_display_name).classes("text-xs font-mono font-bold text-yellow-300 truncate max-w-[240px]")
+                with ui.row().classes("items-center gap-2 bg-tt-surface px-3 py-1.5 rounded-lg border border-tt-warning"):
+                    ui.icon("folder", color="warning").classes("text-sm")
+                    ui.label("Active Data Source:").classes("text-xs font-bold text-tt-muted")
+                    ui.label(ds_display_name).classes("text-xs font-mono font-bold text-tt-warning truncate max-w-[240px]")
 
             # Controls Bar: Time Range & Rank/Limit Selectors
             with (
-                ui.row().classes("w-full justify-between items-center flex-wrap gap-3 pt-1 border-t border-gray-700"),
-                ui.row().classes("items-center gap-1.5 bg-gray-900 p-1.5 rounded-lg border border-gray-700 flex-wrap"),
+                ui.row().classes("w-full justify-between items-center flex-wrap gap-3 pt-1 border-t border-tt-border"),
+                ui.row().classes("items-center gap-1.5 bg-tt-surface p-1.5 rounded-lg border border-tt-border flex-wrap"),
             ):
-                ui.label("Time Range:").classes("text-xs font-bold text-gray-400 mr-1")
+                ui.label("Time Range:").classes("text-xs font-bold text-tt-muted mr-1")
 
                 ranges = [
                     ("1H", "Past Hour"),
@@ -133,79 +133,79 @@ def render_dashboard_view() -> None:
                 # 1. Summary Metrics Cards Grid (4 Cards)
                 with ui.row().classes("w-full gap-4 justify-between flex-wrap"):
                     with ui.card().classes(
-                        "flex-1 min-w-[200px] bg-gray-800 p-4 rounded-lg shadow-md border-l-4 border-blue-500 text-center"
+                        "flex-1 min-w-[200px] bg-tt-raised p-4 rounded-lg shadow-md border-l-4 border-tt-primary text-center"
                     ):
                         ui.label("Total Attempts").classes(
-                            "text-xs text-gray-400 font-semibold uppercase"
+                            "text-xs text-tt-muted font-semibold uppercase"
                         )
                         ui.label(str(stats["total_attempts"])).classes(
-                            "text-3xl font-bold mt-1 text-white"
+                            "text-3xl font-bold mt-1 text-tt-main"
                         )
                         ui.label(f"Filter: {r_val}").classes(
-                            "text-[10px] text-gray-500 mt-1"
+                            "text-xs text-tt-muted mt-1"
                         )
 
                     with ui.card().classes(
-                        "flex-1 min-w-[200px] bg-gray-800 p-4 rounded-lg shadow-md border-l-4 border-green-500 text-center"
+                        "flex-1 min-w-[200px] bg-tt-raised p-4 rounded-lg shadow-md border-l-4 border-tt-positive text-center"
                     ):
                         ui.label("Unassisted Accuracy").classes(
-                            "text-xs text-gray-400 font-semibold uppercase"
+                            "text-xs text-tt-muted font-semibold uppercase"
                         )
                         ui.label(f"{stats['unassisted_accuracy_pct']}%").classes(
-                            "text-3xl font-bold mt-1 text-green-400"
+                            "text-3xl font-bold mt-1 text-tt-positive"
                         )
                         ui.label(
                             f"({stats['unassisted_correct']} / {stats['unassisted_attempts']} unassisted)"
-                        ).classes("text-[10px] text-gray-400 mt-1")
+                        ).classes("text-xs text-tt-muted mt-1")
 
                     with ui.card().classes(
-                        "flex-1 min-w-[200px] bg-gray-800 p-4 rounded-lg shadow-md border-l-4 border-amber-500 text-center"
+                        "flex-1 min-w-[200px] bg-tt-raised p-4 rounded-lg shadow-md border-l-4 border-tt-warning text-center"
                     ):
                         ui.label("Active / Best Streak").classes(
-                            "text-xs text-gray-400 font-semibold uppercase"
+                            "text-xs text-tt-muted font-semibold uppercase"
                         )
                         with ui.row().classes("justify-center items-center gap-2 mt-1"):
                             ui.label(f"🔥 {stats['current_streak']}").classes(
-                                "text-2xl font-bold text-amber-400"
+                                "text-2xl font-bold text-tt-warning"
                             )
-                            ui.label("|").classes("text-gray-600")
+                            ui.label("|").classes("text-tt-muted")
                             ui.label(f"🏆 {stats['best_streak']}").classes(
-                                "text-2xl font-bold text-yellow-300"
+                                "text-2xl font-bold text-tt-warning"
                             )
                         ui.label("Active source record").classes(
-                            "text-[10px] text-gray-400 mt-1"
+                            "text-xs text-tt-muted mt-1"
                         )
 
                     with ui.card().classes(
-                        "flex-1 min-w-[200px] bg-gray-800 p-4 rounded-lg shadow-md border-l-4 border-purple-500 text-center"
+                        "flex-1 min-w-[200px] bg-tt-raised p-4 rounded-lg shadow-md border-l-4 border-tt-primary text-center"
                     ):
                         ui.label("Mastered Species").classes(
-                            "text-xs text-gray-400 font-semibold uppercase"
+                            "text-xs text-tt-muted font-semibold uppercase"
                         )
                         ui.label(str(stats["mastered_species_count"])).classes(
-                            "text-3xl font-bold mt-1 text-purple-400"
+                            "text-3xl font-bold mt-1 text-tt-primary"
                         )
                         ui.label("≥90% accuracy over ≥5 attempts").classes(
-                            "text-[10px] text-gray-400 mt-1"
+                            "text-xs text-tt-muted mt-1"
                         )
 
                 # 2. Accuracy Over Time ECharts Display (with Window Selector & Interactive Zoom)
                 with ui.card().classes(
-                    "w-full bg-gray-800 p-5 rounded-lg shadow-md border border-gray-700 space-y-3"
+                    "w-full bg-tt-raised p-5 rounded-lg shadow-md border border-tt-border space-y-3"
                 ):
                     with ui.row().classes("w-full justify-between items-center flex-wrap gap-2"):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("show_chart", color="blue-400").classes("text-base")
+                            ui.icon("show_chart", color="primary").classes("text-base")
                             ui.label("Accuracy Over Time").classes(
-                                "text-sm font-bold text-blue-300"
+                                "text-sm font-bold text-tt-primary"
                             )
                             if ema_points:
                                 latest_ema = ema_points[-1].ema_accuracy
-                                ui.label(f"Current EMA: {latest_ema}%").classes("text-xs font-bold text-green-400 ml-2")
+                                ui.label(f"Current EMA: {latest_ema}%").classes("text-xs font-bold text-tt-positive ml-2")
 
                         # Window Size Controls
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Smoothing Window:").classes("text-xs text-gray-400 font-medium")
+                            ui.label("Smoothing Window:").classes("text-xs text-tt-muted font-medium")
                             window_options = {
                                 10: "10 Attempts",
                                 25: "25 Attempts",
@@ -217,8 +217,8 @@ def render_dashboard_view() -> None:
                                     options=window_options,
                                     value=win_val,
                                 )
-                                .props("dense outlined dark")
-                                .classes("w-32 text-xs text-white")
+                                .props("dense outlined ")
+                                .classes("w-32 text-xs text-tt-main")
                             )
 
                             def update_win(val: int) -> None:
@@ -229,11 +229,11 @@ def render_dashboard_view() -> None:
 
                     ui.label(
                         f"Exponential moving average (EMA, {win_val}-attempt window) of unassisted identification accuracy over time."
-                    ).classes("text-xs text-gray-400 mb-1")
+                    ).classes("text-xs text-tt-muted mb-1")
 
                     if not ema_points:
                         ui.label("No attempt history recorded for this data source yet.").classes(
-                            "text-xs text-gray-500 italic py-6 text-center w-full"
+                            "text-xs text-tt-muted italic py-6 text-center w-full"
                         )
                     else:
                         x_labels = [p.timestamp for p in ema_points]
@@ -244,9 +244,9 @@ def render_dashboard_view() -> None:
                             "tooltip": {
                                 "trigger": "axis",
                                 "formatter": "Time: {b}<br/>Accuracy: {c}%",
-                                "backgroundColor": "#1f2937",
-                                "borderColor": "#374151",
-                                "textStyle": {"color": "#f3f4f6", "fontSize": 12},
+                                "backgroundColor": "var(--tt-surface)",
+                                "borderColor": "var(--tt-border)",
+                                "textStyle": {"color": "var(--tt-main)", "fontSize": 12},
                             },
                             "grid": {
                                 "left": "3%",
@@ -265,26 +265,26 @@ def render_dashboard_view() -> None:
                                     "type": "slider",
                                     "height": 18,
                                     "bottom": "0%",
-                                    "borderColor": "#374151",
-                                    "fillerColor": "rgba(59, 130, 246, 0.2)",
-                                    "handleStyle": {"color": "#3b82f6"},
-                                    "textStyle": {"color": "#9ca3af", "fontSize": 10},
+                                    "borderColor": "var(--tt-border)",
+                                    "fillerColor": "var(--tt-primary-soft)",
+                                    "handleStyle": {"color": "var(--tt-primary)"},
+                                    "textStyle": {"color": "var(--tt-muted)", "fontSize": 10},
                                 },
                             ],
                             "xAxis": {
                                 "type": "category",
                                 "boundaryGap": False,
                                 "data": x_labels,
-                                "axisLabel": {"color": "#9ca3af", "fontSize": 10},
-                                "axisLine": {"lineStyle": {"color": "#4b5563"}},
+                                "axisLabel": {"color": "var(--tt-muted)", "fontSize": 10},
+                                "axisLine": {"lineStyle": {"color": "var(--tt-border)"}},
                             },
                             "yAxis": {
                                 "type": "value",
                                 "min": 0,
                                 "max": 100,
                                 "interval": 20,
-                                "axisLabel": {"formatter": "{value}%", "color": "#9ca3af", "fontSize": 10},
-                                "splitLine": {"lineStyle": {"color": "#374151"}},
+                                "axisLabel": {"formatter": "{value}%", "color": "var(--tt-muted)", "fontSize": 10},
+                                "splitLine": {"lineStyle": {"color": "var(--tt-border)"}},
                             },
                             "series": [
                                 {
@@ -292,7 +292,7 @@ def render_dashboard_view() -> None:
                                     "type": "line",
                                     "smooth": True,
                                     "symbol": "none",
-                                    "lineStyle": {"color": "#3b82f6", "width": 2.5},
+                                    "lineStyle": {"color": "var(--tt-primary)", "width": 2.5},
                                     "data": y_values,
                                     "markLine": {
                                         "silent": True,
@@ -300,49 +300,37 @@ def render_dashboard_view() -> None:
                                         "label": {
                                             "formatter": f"Avg ({avg_acc}%)",
                                             "position": "insideEndTop",
-                                            "color": "#10b981",
+                                            "color": "var(--tt-positive)",
                                             "fontSize": 10,
                                         },
-                                        "lineStyle": {"color": "#10b981", "type": "dashed", "width": 1.5},
+                                        "lineStyle": {"color": "var(--tt-positive)", "type": "dashed", "width": 1.5},
                                         "data": [{"yAxis": avg_acc}],
                                     },
                                     "markPoint": {
                                         "symbolSize": 32,
                                         "label": {"fontSize": 9, "color": "#ffffff"},
                                         "data": [
-                                            {"type": "max", "name": "Peak", "itemStyle": {"color": "#10b981"}},
-                                            {"type": "min", "name": "Trough", "itemStyle": {"color": "#ef4444"}},
+                                            {"type": "max", "name": "Peak", "itemStyle": {"color": "var(--q-positive)"}},
+                                            {"type": "min", "name": "Trough", "itemStyle": {"color": "var(--q-negative)"}},
                                         ],
                                     },
-                                    "areaStyle": {
-                                        "color": {
-                                            "type": "linear",
-                                            "x": 0,
-                                            "y": 0,
-                                            "x2": 0,
-                                            "y2": 1,
-                                            "colorStops": [
-                                                {"offset": 0, "color": "rgba(59, 130, 246, 0.35)"},
-                                                {"offset": 1, "color": "rgba(59, 130, 246, 0.02)"},
-                                            ],
-                                        }
-                                    },
+                                    "areaStyle": {"color": "var(--tt-primary)", "opacity": 0.12},
                                 }
                             ],
                         }
-                        ui.echart(chart_options).classes("w-full h-56")
+                        ui.echart(chart_options, renderer="svg").classes("w-full h-56")
 
                 # 3. Dataset Species Coverage Meter
                 with ui.card().classes(
-                    "w-full bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700"
+                    "w-full bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border"
                 ):
                     with ui.row().classes("w-full justify-between items-center mb-1"):
                         ui.label("Dataset Species Coverage").classes(
-                            "text-xs font-bold text-gray-300 uppercase tracking-wider"
+                            "text-xs font-bold text-tt-main uppercase tracking-wider"
                         )
                         ui.label(
                             f"{coverage['encountered_species']} / {coverage['total_species']} species encountered ({coverage['coverage_pct']}%)"
-                        ).classes("text-xs font-bold text-blue-400")
+                        ).classes("text-xs font-bold text-tt-primary")
                     ui.linear_progress(
                         value=coverage["coverage_pct"] / 100.0, show_value=False
                     ).props("color=primary stripe rounded").classes("h-2.5 w-full")
@@ -359,11 +347,11 @@ def render_dashboard_view() -> None:
                 with ui.column().classes("w-full space-y-3"):
                     # Rank and Limit Selector Toolbar
                     with ui.row().classes(
-                        "w-full justify-between items-center bg-gray-800 p-3 rounded-lg border border-gray-700 flex-wrap gap-3"
+                        "w-full justify-between items-center bg-tt-raised p-3 rounded-lg border border-tt-border flex-wrap gap-3"
                     ):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("layers", color="yellow-400").classes("text-base")
-                            ui.label("Taxonomic Rank Analysis:").classes("text-xs font-bold text-gray-300")
+                            ui.icon("layers", color="warning").classes("text-base")
+                            ui.label("Taxonomic Rank Analysis:").classes("text-xs font-bold text-tt-main")
 
                             rank_options = {
                                 "ORDER": "Order",
@@ -376,8 +364,8 @@ def render_dashboard_view() -> None:
                                     options=rank_options,
                                     value=rank_val,
                                 )
-                                .props("dense outlined dark")
-                                .classes("w-32 text-xs text-white")
+                                .props("dense outlined ")
+                                .classes("w-32 text-xs text-tt-main")
                             )
 
                             def update_rank(val: str) -> None:
@@ -387,7 +375,7 @@ def render_dashboard_view() -> None:
                             rank_select.on_value_change(lambda e: update_rank(e.value))
 
                         with ui.row().classes("items-center gap-2"):
-                            ui.label("Items to Show:").classes("text-xs font-bold text-gray-300")
+                            ui.label("Items to Show:").classes("text-xs font-bold text-tt-main")
                             limit_options = {
                                 5: "Top 5",
                                 10: "Top 10",
@@ -399,8 +387,8 @@ def render_dashboard_view() -> None:
                                     options=limit_options,
                                     value=limit_val,
                                 )
-                                .props("dense outlined dark")
-                                .classes("w-28 text-xs text-white")
+                                .props("dense outlined ")
+                                .classes("w-28 text-xs text-tt-main")
                             )
 
                             def update_limit(val: int) -> None:
@@ -412,71 +400,71 @@ def render_dashboard_view() -> None:
                     with ui.row().classes("w-full gap-4 justify-between flex-wrap items-start"):
                         # Best Performing Taxa
                         with ui.card().classes(
-                            "flex-1 min-w-[320px] bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 space-y-2 max-h-96 overflow-y-auto"
+                            "flex-1 min-w-[320px] bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-2 max-h-96 overflow-y-auto"
                         ):
                             with ui.row().classes("items-center gap-2"):
-                                ui.icon("verified", color="green-400").classes("text-base")
+                                ui.icon("verified", color="positive").classes("text-base")
                                 ui.label(f"Top Mastered {curr_rank_plural}").classes(
-                                    "text-sm font-bold text-green-400"
+                                    "text-sm font-bold text-tt-positive"
                                 )
-                            ui.label("Ranked by Bayesian accuracy under 50% prior").classes("text-[10px] text-gray-400")
+                            ui.label("Ranked by Bayesian accuracy under 50% prior").classes("text-xs text-tt-muted")
 
                             if not best_ranks:
                                 ui.label(f"No {curr_rank_plural.lower()} attempts recorded yet.").classes(
-                                    "text-xs text-gray-500 italic py-2"
+                                    "text-xs text-tt-muted italic py-2"
                                 )
                             else:
                                 with ui.column().classes("w-full gap-1.5"):
                                     for item in best_ranks:
                                         with ui.row().classes(
-                                            "w-full justify-between items-center bg-gray-900 px-3 py-1.5 rounded border border-gray-800"
+                                            "w-full justify-between items-center bg-tt-surface px-3 py-1.5 rounded border border-tt-border"
                                         ):
                                             ui.label(item.display_name).classes(
-                                                "text-xs font-medium text-white truncate max-w-[200px]"
+                                                "text-xs font-medium text-tt-main truncate max-w-[200px]"
                                             )
                                             ui.label(
                                                 f"{item.accuracy_pct}% ({item.correct_attempts}/{item.total_attempts})"
-                                            ).classes("text-xs font-bold text-green-400")
+                                            ).classes("text-xs font-bold text-tt-positive")
 
                         # Struggling Taxa (Needing Practice)
                         with ui.card().classes(
-                            "flex-1 min-w-[320px] bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 space-y-2 max-h-96 overflow-y-auto"
+                            "flex-1 min-w-[320px] bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-2 max-h-96 overflow-y-auto"
                         ):
                             with ui.row().classes("items-center gap-2"):
-                                ui.icon("warning", color="amber-400").classes("text-base")
+                                ui.icon("warning", color="warning").classes("text-base")
                                 ui.label(f"{curr_rank_plural} Needing Practice").classes(
-                                    "text-sm font-bold text-amber-400"
+                                    "text-sm font-bold text-tt-warning"
                                 )
-                            ui.label("Ranked by Bayesian accuracy under 50% prior").classes("text-[10px] text-gray-400")
+                            ui.label("Ranked by Bayesian accuracy under 50% prior").classes("text-xs text-tt-muted")
 
                             if not worst_ranks:
                                 ui.label("No weak patterns identified yet!").classes(
-                                    "text-xs text-gray-500 italic py-2"
+                                    "text-xs text-tt-muted italic py-2"
                                 )
                             else:
                                 with ui.column().classes("w-full gap-1.5"):
                                     for item in worst_ranks:
                                         with ui.row().classes(
-                                            "w-full justify-between items-center bg-gray-900 px-3 py-1.5 rounded border border-gray-800"
+                                            "w-full justify-between items-center bg-tt-surface px-3 py-1.5 rounded border border-tt-border"
                                         ):
                                             ui.label(item.display_name).classes(
-                                                "text-xs font-medium text-white truncate max-w-[200px]"
+                                                "text-xs font-medium text-tt-main truncate max-w-[200px]"
                                             )
                                             ui.label(
                                                 f"{item.accuracy_pct}% ({item.correct_attempts}/{item.total_attempts})"
-                                            ).classes("text-xs font-bold text-amber-400")
+                                            ).classes("text-xs font-bold text-tt-warning")
 
                 # 5. Trouble Taxa List Card
                 if trouble_taxa:
                     with ui.card().classes(
-                        "w-full bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 space-y-2"
+                        "w-full bg-tt-raised p-4 rounded-lg shadow-md border border-tt-border space-y-2"
                     ):
                         with ui.row().classes("items-center gap-2"):
-                            ui.icon("priority_high", color="red-400").classes(
+                            ui.icon("priority_high", color="negative").classes(
                                 "text-base"
                             )
                             ui.label("Trouble Taxa (Lowest Accuracy Species)").classes(
-                                "text-sm font-bold text-red-400"
+                                "text-sm font-bold text-tt-negative"
                             )
 
                         t_columns = [
@@ -516,30 +504,30 @@ def render_dashboard_view() -> None:
                         ]
                         ui.table(
                             columns=t_columns, rows=t_rows, row_key="canonical_name"
-                        ).classes("w-full bg-gray-900 text-white rounded-md").props(
-                            "dark flat bordered dense"
+                        ).classes("w-full bg-tt-surface text-tt-main rounded-md").props(
+                            "flat bordered dense"
                         )
 
                 # 6. Pairwise Lookalikes (Confusion Matrix) Table Card
                 with ui.card().classes(
-                    "w-full bg-gray-800 p-5 rounded-lg shadow-md border border-gray-700 space-y-2"
+                    "w-full bg-tt-raised p-5 rounded-lg shadow-md border border-tt-border space-y-2"
                 ):
                     with ui.row().classes("items-center gap-2"):
-                        ui.icon("compare_arrows", color="yellow-400").classes(
+                        ui.icon("compare_arrows", color="warning").classes(
                             "text-base"
                         )
                         ui.label("Top Taxonomic Lookalikes (Confusion Matrix)").classes(
-                            "text-sm font-bold text-yellow-300"
+                            "text-sm font-bold text-tt-warning"
                         )
                     ui.label(
                         "Pairwise misidentifications logged during quiz attempts."
-                    ).classes("text-xs text-gray-400 mb-2")
+                    ).classes("text-xs text-tt-muted mb-2")
 
                     if not confusion:
                         ui.label(
                             "No misidentifications recorded in this time period. Keep practicing!"
                         ).classes(
-                            "text-xs text-gray-500 italic py-4 text-center w-full"
+                            "text-xs text-tt-muted italic py-4 text-center w-full"
                         )
                     else:
                         columns = [
@@ -586,8 +574,8 @@ def render_dashboard_view() -> None:
                         ]
                         ui.table(
                             columns=columns, rows=rows, row_key="target_canonical"
-                        ).classes("w-full bg-gray-900 text-white rounded-md").props(
-                            "dark flat bordered dense"
+                        ).classes("w-full bg-tt-surface text-tt-main rounded-md").props(
+                            "flat bordered dense"
                         )
 
         # Initial dashboard load
