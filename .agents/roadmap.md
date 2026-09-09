@@ -74,9 +74,37 @@ Content-Length, transfer completion relies on normal EOF; this is not validation
 of archive contents or DarwinCore semantics. A forcibly terminated process may
 leave an unused `.part` file, which is never considered a cache entry.
 
-Item 3's download portion is complete. Next: malformed-row/media validation and
-usable-observation cap accounting, followed separately by recoverable dataset
-activation. Partial database imports are not addressed by this download fix.
+Item 3's download portion is complete. Its row/media validation follow-up is
+recorded below. Partial database imports are not addressed by the download fix.
+
+### Progress update: optional coordinates and media eligibility
+
+Malformed, blank, nonfinite, and out-of-range latitude/longitude values now become
+NULL rather than interrupting ingestion or reaching the map. Valid coordinates,
+including zero and geographic boundaries, are retained independently.
+
+The per-taxon cap increments only after media eligibility checks. Occurrence
+record identifiers/references are no longer promoted to photo URLs. Explicit
+associatedMedia/accessURI fields and multimedia identifier/accessURI fields
+accept HTTP(S) URLs with a host, trim whitespace, and deduplicate. Dynamic URLs
+without image extensions remain supported. Local TSV imports now discover sibling
+multimedia.txt (including verbatim/multimedia.txt); the former filename condition
+missed the standard occurrence.txt name. ZIP media loading remains supported.
+
+Eleven regression cases cover coordinate failures/boundaries, media eligibility,
+cap accounting across transaction batches, and direct, sidecar, and ZIP media.
+Nine failed against the prior implementation. Final verification: 72 tests passed
+in 4.11s, Ruff passed for changed files, and diff whitespace passed. An initial
+full-suite run exhausted temporary disk through repeated bundled-data seeding;
+the new parser tests now bypass that unrelated seeding and our temporary
+application-data directories were cleaned before the successful rerun.
+
+These checks establish syntactic media eligibility, not remote availability or
+actual image content. Invalid-coordinate/rejected-row summary diagnostics,
+duplicate-record accounting, and atomic dataset activation remain separate work.
+The next recommended target is recoverable dataset activation: a later import
+failure must not leave a partially replaced dataset or misleading active-source
+metadata. Keep that separate from user scoring and taxonomy-policy changes.
 
 Prioritize trustworthy training results, complete observation coverage, and
 recoverable dataset operations. These directly support the README's emphasis
