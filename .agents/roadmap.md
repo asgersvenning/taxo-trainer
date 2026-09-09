@@ -86,6 +86,17 @@ duplicate cutoff and overlapping statistics displays were removed. This complete
 the requested three-stage UX pass, without claiming universal accessibility or
 substituting packaging work for the user's priorities.
 
+### Completed: photo inspection and diagnostic browsing
+
+Implemented in `bb064e8` and `bdb3289`: zoom/pan/Fit, selected-photo and framing
+retention across quiz redraws, understandable loading/failure recovery, and a
+large independently navigable reference gallery spanning loaded observations.
+Reference provenance follows selection; assistance accounting is retained.
+Wide windows compare side by side; narrower windows stack the viewers.
+Verification: 173 tests passed, Ruff/whitespace checks and isolated Chromium
+interaction checks passed. See [photo inspection notes](notes/2026-09-09-photo-inspection.md)
+for evidence and limits. This completes the authorized photo UX sequence.
+
 ### Completed: autocomplete, expanded themes, and focused practice
 
 The next authorized UX sequence is implemented: missing CoL hierarchy links are
