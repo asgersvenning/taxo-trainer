@@ -61,7 +61,8 @@ def index_page() -> None:
     else:
         dark_mode.auto()
 
-    install_theme(get_app_metadata("theme_accent", "blue", conn=app_conn))
+    install_theme(get_app_metadata("theme_accent", "blue", conn=app_conn),
+                  get_app_metadata("surface_theme", "standard", conn=app_conn))
     ui.query(".q-tab-panel").style(
         "padding: 0 !important; height: 100%; overflow: auto;"
     )

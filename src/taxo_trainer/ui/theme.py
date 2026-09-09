@@ -63,6 +63,32 @@ ACCENTS = {
     },
 }
 
+ACCENTS.update({
+    "amber": {"label": "Amber", "button": "#92400e", "light": "#78350f",
+              "dark": "#fde68a", "soft_light": "#fef3c7", "soft_dark": "#713f12"},
+    "rose": {"label": "Rose", "button": "#9f1239", "light": "#881337",
+             "dark": "#fecdd3", "soft_light": "#ffe4e6", "soft_dark": "#881337"},
+    "slate": {"label": "Slate", "button": "#334155", "light": "#1e293b",
+              "dark": "#f1f5f9", "soft_light": "#e2e8f0", "soft_dark": "#334155"},
+})
+THEME_LABELS = {"standard": "Standard", "warm": "Warm paper", "neutral": "Neutral",
+                "contrast": "High contrast"}
+THEMES = {
+    "standard": PALETTES,
+    "warm": {
+        "light": PALETTES["light"] | {"page": "#f5f0e5", "surface": "#fffcf5", "raised": "#eee7d9", "main": "#28221a", "muted": "#514638", "border": "#746755"},
+        "dark": PALETTES["dark"] | {"page": "#1c1917", "surface": "#292524", "raised": "#38312c", "main": "#fff7ed", "muted": "#e7d9c7", "border": "#b5a48d"},
+    },
+    "neutral": {
+        "light": PALETTES["light"] | {"page": "#f5f5f5", "surface": "#ffffff", "raised": "#e5e5e5", "main": "#171717", "muted": "#404040", "border": "#737373"},
+        "dark": PALETTES["dark"] | {"page": "#0a0a0a", "surface": "#171717", "raised": "#262626", "main": "#fafafa", "muted": "#d4d4d4", "border": "#a3a3a3"},
+    },
+    "contrast": {
+        "light": PALETTES["light"] | {"page": "#ffffff", "surface": "#ffffff", "raised": "#f0f0f0", "main": "#000000", "muted": "#202020", "border": "#303030", "positive": "#004500", "negative": "#780000", "warning": "#543500"},
+        "dark": PALETTES["dark"] | {"page": "#000000", "surface": "#000000", "raised": "#151515", "main": "#ffffff", "muted": "#f0f0f0", "border": "#dddddd", "positive": "#cfffda", "negative": "#ffdddd", "warning": "#fff0a0"},
+    },
+}
+
 
 def theme_css() -> str:
     """Build CSS from shared palette roles and component rules."""
@@ -78,6 +104,10 @@ def theme_css() -> str:
             rules.append(
                 f"{selector} {{ --q-primary:{colors['button']} !important; --q-accent:{colors['button']} !important; --tt-primary:{colors[mode]}; --tt-primary-soft:{colors['soft_' + mode]}; }}"
             )
+    for theme, modes in THEMES.items():
+        for mode, palette in modes.items():
+            values = ";".join(f"--tt-{key}:{value}" for key, value in palette.items())
+            rules.append(f'body.body--{mode}[data-theme="{theme}"] {{{values};}}')
     for token in (
         "page",
         "surface",
@@ -149,6 +179,8 @@ body .q-btn:not(.q-btn--flat):not(.q-btn--outline), body .q-chip, body .q-badge 
 }
 .q-linear-progress__track {color:var(--tt-raised); opacity:1;}
 .q-notification {color:#fff;}
+body[data-theme="contrast"] .q-separator {opacity:1;}
+body[data-theme="contrast"] :focus-visible {outline-width:3px;}
 """)
     return "\n".join(rules)
 
@@ -160,7 +192,15 @@ def set_accent(accent: str) -> None:
     ui.run_javascript(f'document.body.dataset.accent = "{accent}"')
 
 
-def install_theme(accent: str = "blue") -> None:
+def set_surface_theme(theme: str) -> None:
+    """Apply a surface palette while preserving appearance mode and quiz state."""
+    if theme not in THEMES:
+        theme = "standard"
+    ui.run_javascript(f'document.body.dataset.theme = "{theme}"')
+
+
+def install_theme(accent: str = "blue", surface_theme: str = "standard") -> None:
     """Install theme roles once per page and restore its saved accent."""
     ui.add_head_html("<style>" + theme_css() + "</style>")
     ui.timer(0, lambda: set_accent(accent), once=True)
+    ui.timer(0, lambda: set_surface_theme(surface_theme), once=True)

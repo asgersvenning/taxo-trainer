@@ -173,3 +173,15 @@ def test_training_group_suggestions_use_selected_language(settings, monkeypatch)
         assert requested_languages == ['en', 'en']
     finally:
         container.delete()
+
+
+def test_surface_palette_persists_and_survives_clear(settings, monkeypatch):
+    conn, _, _, _, container, _ = settings
+    applied = []
+    monkeypatch.setattr(settings_view, "set_surface_theme", applied.append)
+    palette = next(e for e in container.descendants() if isinstance(e, ui.select) and e._props.get("label") == "Palette")
+    palette.set_value("contrast")
+    assert applied == ["contrast"]
+    button = next(e for e in container.descendants() if isinstance(e, ui.button) and e.text == "Clear Current Data Source")
+    next(e for e in button._event_listeners.values() if e.type == "click").handler(None)
+    assert conn.execute("SELECT val FROM app_metadata WHERE key='surface_theme'").fetchone()[0] == "contrast"

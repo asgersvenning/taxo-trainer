@@ -43,3 +43,17 @@ def test_accent_contrast_in_both_modes(accent):
                 surface,
             )
         assert contrast(colors[mode], colors["soft_" + mode]) >= 4.5
+
+
+@pytest.mark.parametrize("theme", ["standard", "warm", "neutral", "contrast"])
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_surface_palettes_and_accents(theme, mode):
+    from taxo_trainer.ui.theme import THEMES
+
+    colors = THEMES[theme][mode]
+    for surface in ("page", "surface", "raised"):
+        for role in ("main", "muted", "positive", "negative", "warning"):
+            assert contrast(colors[role], colors[surface]) >= (7 if theme == "contrast" else 4.5), (theme, mode, role)
+        assert contrast(colors["border"], colors[surface]) >= 3
+        for accent in ACCENTS.values():
+            assert contrast(accent[mode], colors[surface]) >= 4.5

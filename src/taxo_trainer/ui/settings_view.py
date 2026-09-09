@@ -30,7 +30,7 @@ from taxo_trainer.ui.name_status import (
     name_coverage_summary,
     name_lookup_failure_message,
 )
-from taxo_trainer.ui.theme import ACCENTS, set_accent
+from taxo_trainer.ui.theme import ACCENTS, THEME_LABELS, set_accent, set_surface_theme
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -168,6 +168,7 @@ def render_settings_view(
                     try:
                         # Preserve user preferences across dataset clearing
                         theme_pref = get_app_metadata("theme_preference", conn=app_conn)
+                        surface_pref = get_app_metadata("surface_theme", conn=app_conn)
                         accent_pref = get_app_metadata("theme_accent", conn=app_conn)
                         lang_pref = get_app_metadata("language_preference", conn=app_conn)
                         min_pref = get_app_metadata("min_count", conn=app_conn)
@@ -184,6 +185,8 @@ def render_settings_view(
                             app_conn.execute("DELETE FROM app_metadata;")
 
                             # Restore preserved user settings into app_metadata
+                            if surface_pref:
+                                app_conn.execute("INSERT OR REPLACE INTO app_metadata (key,val) VALUES ('surface_theme', ?)", (surface_pref,))
                             if accent_pref:
                                 app_conn.execute(
                                     "INSERT OR REPLACE INTO app_metadata (key, val) VALUES ('theme_accent', ?);",
@@ -412,6 +415,18 @@ def render_settings_view(
                     set_accent(value)
 
             accent_select.on_value_change(lambda e: update_accent(e.value))
+            surface_pref = get_app_metadata("surface_theme", "standard", conn=app_conn)
+            surface_select = ui.select(THEME_LABELS,
+                value=surface_pref if surface_pref in THEME_LABELS else "standard",
+                label="Palette").classes("w-72").props("outlined")
+
+            def update_surface(value: str) -> None:
+                if value in THEME_LABELS:
+                    set_app_metadata("surface_theme", value, conn=app_conn)
+                    set_surface_theme(value)
+
+            surface_select.on_value_change(lambda e: update_surface(e.value))
+            surface_select.move(theme_controls)
             theme_select.move(theme_controls)
             accent_select.move(theme_controls)
         # 2. Import observation data Card
