@@ -36,6 +36,25 @@ Quasar important-layer precedence and contrast problems in filled guide buttons.
 Statistics and self-explanatory interaction work remain outstanding under the
 active user goal; theme completion is not completion of the full sequence.
 
+Statistics stage completed next: all accuracy summaries, rank/trouble aggregates,
+and trend points now exclude assisted attempts consistently. The existing
+mastery threshold and Bayesian ranking formula are unchanged. A single paginated,
+sortable group table replaces overlapping best/worst/trouble lists; species are
+the default grouping. Attempt counts remain visible. Confusion pairs use three
+columns, selected-language labels, scientific secondary text, and ID-based row
+keys. No-attempt accuracy is a dash rather than zero; all-time streak/coverage
+scope is explicit. Dashboard entry refreshes data and selected-language names,
+retaining rank, time window, and table sorting/page preferences.
+
+Verification: regressions first reproduced inconsistent assisted denominators,
+missing language support, and misleading empty accuracy. 144 tests passed in
+7.35s; Ruff and whitespace checks passed. Chromium checks covered language
+switching, empty/current period selection, ascending/descending numeric sorting,
+and retained grouping/sort after returning from Quiz. Five current dashboard
+screenshots replace the obsolete guide assets. A browser test initially used an
+incorrect table-container locator; scoped card/header checks confirmed the
+actual interactions work. Self-explanatory interaction improvements remain.
+
 ### Completed: README and onboarding refresh
 
 Follow-up after user review: restored the README's illustrated GBIF export sequence
