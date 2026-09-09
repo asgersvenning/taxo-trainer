@@ -17,6 +17,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from taxo_trainer.db import (
     APP_DB_PATH,
@@ -41,6 +42,41 @@ def extract_canonical_name(scientific_name: str) -> str:
     if len(parts) >= 2:
         return f"{parts[0]} {parts[1]}"
     return parts[0] if parts else ""
+
+
+def _parse_coordinate(value: str | None, bound: float) -> float | None:
+    """Return a coordinate within its geographic bounds, or None if invalid.
+
+    Args:
+        value: Optional decimal coordinate from the source row.
+        bound: Maximum absolute value (90 for latitude, 180 for longitude).
+    """
+    try:
+        coordinate = float(value) if value else None
+    except (TypeError, ValueError):
+        return None
+    # This comparison also rejects NaN and infinities.
+    return coordinate if coordinate is not None and -bound <= coordinate <= bound else None
+
+
+def _media_url(value: str | None) -> str | None:
+    """Return a valid HTTP(S) URL from a media field without fetching it.
+
+    Args:
+        value: Candidate URL explicitly provided as media by the dataset.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if any(character.isspace() for character in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme in ("http", "https") and parsed.hostname:
+            return value
+    except ValueError:
+        pass
+    return None
 
 
 def parse_month(month_str: str, date_str: str) -> int | None:
@@ -162,11 +198,11 @@ def parse_multimedia_txt(rows: csv.DictReader[str]) -> dict[str, list[str]]:
             or row.get("id")
             or row.get("occurrenceID")
         )
-        url = row.get("identifier") or row.get("accessURI") or row.get("references")
-        if gbif_id and url and url.strip():
-            clean_url = url.strip()
-            if clean_url not in media_map[gbif_id]:
-                media_map[gbif_id].append(clean_url)
+        if gbif_id:
+            for field in ("identifier", "accessURI"):
+                clean_url = _media_url(row.get(field))
+                if clean_url and clean_url not in media_map[gbif_id]:
+                    media_map[gbif_id].append(clean_url)
     return media_map
 
 
@@ -180,7 +216,7 @@ def load_multimedia_index(source: Path) -> dict[str, list[str]]:
         Dict[str, List[str]]: Map of gbifID/occurrence_id -> list of image URLs.
     """
     media_map: dict[str, list[str]] = defaultdict(list)
-    if source.name.lower().endswith("occurrences.txt"):
+    if source.suffix.lower() != ".zip":
         candidates = [
             source.parent / "multimedia.txt",
             source.parent / "verbatim" / "multimedia.txt",
@@ -384,41 +420,28 @@ def ingest_dwc_file(
                 continue
 
 
-            taxon_occ_counts[taxon_key] += 1
-
-
             # Gather media URLs from multimedia index + row columns
             media_urls = list(multimedia_index.get(str(occ_id), []))
 
-            direct_media = (
-                row.get("associatedMedia")
-                or row.get("accessURI")
-                or row.get("identifier")
-                or ""
-            )
-            if direct_media:
-                for part in direct_media.split("|"):
-                    p = part.strip()
-                    if p and p not in media_urls:
-                        media_urls.append(p)
-
-            if not media_urls:
-                # Fallback: check if references or occurrenceID provides a web observation link
-                ref_url = row.get("references") or row.get("occurrenceID") or ""
-                if ref_url and ref_url.startswith("http"):
-                    media_urls.append(ref_url.strip())
+            # Occurrence identifiers/references describe the record, not its photo.
+            for field in ("associatedMedia", "accessURI"):
+                for part in (row.get(field) or "").split("|"):
+                    url = _media_url(part)
+                    if url and url not in media_urls:
+                        media_urls.append(url)
 
             # Skip if still no media URL available
             if not media_urls:
                 continue
 
+            taxon_occ_counts[taxon_key] += 1
             media = "|".join(media_urls)
 
             # Latitude & Longitude
             lat_raw = row.get("decimalLatitude") or row.get("latitude")
             lon_raw = row.get("decimalLongitude") or row.get("longitude")
-            lat = float(lat_raw) if lat_raw else None
-            lon = float(lon_raw) if lon_raw else None
+            lat = _parse_coordinate(lat_raw, 90)
+            lon = _parse_coordinate(lon_raw, 180)
 
             locality = row.get("locality") or row.get("verbatimLocality") or ""
             event_date = row.get("eventDate") or ""

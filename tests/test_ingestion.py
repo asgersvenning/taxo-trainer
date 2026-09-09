@@ -1,7 +1,9 @@
 """Unit tests for DarwinCore ingestion and taxonomy building modules."""
 
+import csv
 import io
 import sqlite3
+import zipfile
 
 import pytest
 
@@ -163,6 +165,90 @@ def test_max_occurrences_per_taxon_threshold(tmp_path):
     cnt_101 = conn.execute("SELECT COUNT(*) FROM occurrences WHERE taxon_key = '101'").fetchone()[0]
     assert cnt_101 == 2
     conn.close()
+
+
+@pytest.mark.parametrize(
+    "latitude,longitude,expected",
+    [
+        ("invalid", "12.5", (None, 12.5)),
+        ("55.5", "not known", (55.5, None)),
+        (" ", "", (None, None)),
+        ("NaN", "inf", (None, None)),
+        ("91", "-181", (None, None)),
+        ("-90", "180", (-90.0, 180.0)),
+        ("0", "0", (0.0, 0.0)),
+    ],
+)
+def test_ingest_invalid_coordinates_preserves_photo_observations(
+    tmp_path, monkeypatch, latitude, longitude, expected
+):
+    """Optional coordinates cannot interrupt ingestion of usable photos."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    source = tmp_path / "occurrence.txt"
+    with source.open("w", newline="") as stream:
+        writer = csv.writer(stream, delimiter="\t")
+        writer.writerow(["gbifID", "taxonKey", "associatedMedia", "decimalLatitude", "decimalLongitude"])
+        writer.writerow(["1", "101", "https://example.com/photo", latitude, longitude])
+        writer.writerow(["2", "101", "https://example.com/photo2", "55", "12"])
+    target = tmp_path / "app.db"
+    assert ingest_dwc_file(source, db_path=target, batch_size=1) == (2, 1)
+    conn = sqlite3.connect(target)
+    try:
+        assert conn.execute(
+            "SELECT latitude, longitude FROM occurrences WHERE occurrence_id = '1'"
+        ).fetchone() == expected
+        assert conn.execute("SELECT occurrence_count FROM taxa").fetchone() == (2,)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("media_source", ["associatedMedia", "accessURI", "sidecar", "zip"])
+def test_unusable_media_does_not_consume_taxon_cap(tmp_path, monkeypatch, media_source):
+    """Record links and malformed media must not crowd out photo observations."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    source = tmp_path / "occurrence.txt"
+    fields = ["gbifID", "taxonKey", "associatedMedia", "accessURI", "references", "identifier"]
+    records = [
+        {"gbifID": "1", "references": "https://example.com/observation/1"},
+        {"gbifID": "2", "identifier": "https://example.com/observation/2"},
+        {"gbifID": "3", "associatedMedia": "not-a-url|https:///missing-host"},
+        {"gbifID": "4"},
+        {"gbifID": "5"},
+        {"gbifID": "6"},
+    ]
+    # No suffix requirement: providers often serve photos from dynamic URLs.
+    photo = "https://images.example/image?id=4"
+    if media_source in ("associatedMedia", "accessURI"):
+        for record in records[3:]:
+            record[media_source] = f" {photo} |{photo}"
+    with source.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields, delimiter="\t")
+        writer.writeheader()
+        writer.writerows({"taxonKey": "101", **record} for record in records)
+    if media_source in ("sidecar", "zip"):
+        multimedia = tmp_path / "multimedia.txt"
+        multimedia.write_text(
+            "coreid\tidentifier\taccessURI\treferences\n"
+            "1\t\t\thttps://example.com/observation/1\n"
+            "3\tnot-a-url\t\t\n"
+            f"4\t{photo}\t\t\n5\t\t{photo}\t\n6\t{photo}\t\t\n"
+        )
+        if media_source == "zip":
+            archive = tmp_path / "dataset.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.write(source, "occurrence.txt")
+                bundle.write(multimedia, "multimedia.txt")
+            source = archive
+    target = tmp_path / "app.db"
+    assert ingest_dwc_file(source, db_path=target, batch_size=1, max_occurrences_per_taxon=2) == (2, 1)
+    conn = sqlite3.connect(target)
+    try:
+        assert conn.execute(
+            "SELECT occurrence_id, media_urls FROM occurrences ORDER BY occurrence_id"
+        ).fetchall() == [("4", photo), ("5", photo)]
+        assert conn.execute("SELECT occurrence_count FROM taxa").fetchone() == (2,)
+    finally:
+        conn.close()
 
 
 def test_fetch_gbif_raw_api_cache(tmp_path, monkeypatch):
