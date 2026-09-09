@@ -7,6 +7,29 @@ navigation anchors; line numbers may change as work lands.
 
 ## Direction
 
+### Completed: README and onboarding refresh
+
+Implemented in `e5f815c`. README and setup/custom-dataset/quiz guides now describe
+the current Species Names controls, configurable vernacular language and scientific
+mode, cache reuse and rate-limit pauses, realistic naming gaps, import add/update
+semantics, separate clearing, and saved sampling preferences. Import caps are
+distinguished from training cutoffs. Keyboard instructions and personal overrides
+match current behavior. The developer section records the GBIF/CoL ID-only boundary.
+The README contribution categories remain intact.
+
+Added the previously advertised but missing Settings & Species Names walkthrough.
+Guide images are optional: obsolete Settings/name-lookup screenshots are no longer
+displayed, while useful existing quiz, dashboard, welcome, and GBIF examples remain.
+Original image files were retained; no replacement screenshots were fabricated.
+The guide banner now says First Session rather than Fresh Clone.
+
+Verification: **135 tests passed in 10.20s**, including real NiceGUI element rendering
+and next-step callbacks for illustrated and text-only guides. Ruff, guide asset
+existence, README local-link/command-target checks, and diff whitespace passed.
+GBIF archive contents were checked against its official download-format documentation.
+No browser/native visual check or new screenshot capture was performed. This closes
+the onboarding-text target; runtime/distribution checks remain separate work.
+
 ### Completed: sampling preference persistence and control consistency
 
 Implemented in `5a4686e`. Sampling mode now saves to the metadata key already read
