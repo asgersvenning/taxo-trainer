@@ -5,6 +5,7 @@ and hint options with strict penalty enforcement.
 """
 
 import random
+import sqlite3
 
 from nicegui import ui
 
@@ -57,6 +58,144 @@ class QuizViewState:
         self.best_streak: int = 0
         self.streak_initialized: bool = False
         self.is_incorrect: bool = False
+
+
+def submit_guess(
+    state: QuizViewState,
+    app_conn: sqlite3.Connection,
+    user_conn: sqlite3.Connection,
+    active_ds: str,
+    guess_text: str,
+) -> None:
+    """Validate a quiz submission and persist its outcome.
+
+    Args:
+        state: Current client quiz state.
+        app_conn: Dataset connection used for validation and reference photos.
+        user_conn: Connection used to record progress and streaks.
+        active_ds: Dataset identifier for progress isolation.
+        guess_text: Scientific or vernacular name submitted by the user.
+    """
+    if not state.current_question or not guess_text or not guess_text.strip():
+        return
+
+    res = validate_user_guess(
+        app_conn,
+        guess_text,
+        state.current_question.taxon_key,
+        lang=state.filters.language,
+        min_count=state.filters.min_count,
+    )
+    state.last_validation_result = res
+
+    if res.is_correct and res.matched_rank == "SPECIES":
+        if not state.solved:
+            state.solved = True
+            state.is_incorrect = False
+            state.current_streak += 1
+            state.best_streak = max(state.best_streak, state.current_streak)
+            set_user_streak(
+                state.current_streak,
+                state.best_streak,
+                user_conn,
+                data_source=active_ds,
+            )
+
+        state.matched_genus = state.current_question.genus
+        state.matched_family = state.current_question.family
+        log_attempt(
+            user_conn,
+            state.current_question.occurrence_id,
+            state.current_question.taxon_key,
+            res.matched_taxon_key or state.current_question.taxon_key,
+            is_correct=True,
+            used_hint=state.used_hint,
+            data_source=active_ds,
+        )
+        state.last_feedback = {
+            "type": "success",
+            "message": res.feedback_message,
+        }
+    elif res.is_correct:
+        # Correct Family or Genus rank (allow user to refine to Species)
+        target_row = app_conn.execute(
+            "SELECT order_name FROM taxa WHERE taxon_key = ?",
+            (state.current_question.taxon_key,),
+        ).fetchone()
+        target_order_val = (
+            target_row["order_name"]
+            if target_row
+            and "order_name" in target_row
+            and target_row["order_name"]
+            else None
+        )
+
+        if res.matched_rank == "GENUS":
+            state.matched_genus = state.current_question.genus
+            state.matched_family = state.current_question.family
+        elif res.matched_rank == "FAMILY":
+            state.matched_family = state.current_question.family
+        elif res.matched_rank == "ORDER":
+            if target_order_val:
+                state.matched_order = target_order_val
+
+        state.last_feedback = {
+            "type": "info",
+            "message": res.feedback_message,
+        }
+    else:
+        state.is_incorrect = True
+        if res.matched_taxon_key is not None:
+            # Incorrect guess against a real species -> Log attempt and show diagnostic photo
+            log_attempt(
+                user_conn,
+                state.current_question.occurrence_id,
+                state.current_question.taxon_key,
+                res.matched_taxon_key,
+                is_correct=False,
+                used_hint=state.used_hint,
+                data_source=active_ds,
+            )
+            state.last_feedback = {
+                "type": "error",
+                "message": res.feedback_message,
+            }
+
+            if res.matched_rank in ("GENUS", "FAMILY"):
+                state.diagnostic_guessed_name = res.matched_name
+            else:
+                guessed_row = app_conn.execute(
+                    "SELECT * FROM taxa WHERE taxon_key = ?",
+                    (res.matched_taxon_key,),
+                ).fetchone()
+                if guessed_row:
+                    g_disp = get_display_name(
+                        guessed_row, lang=state.filters.language
+                    )
+                    g_sci = guessed_row["canonical_name"]
+                    state.diagnostic_guessed_name = (
+                        f"{g_disp} ({g_sci})" if g_disp != g_sci else g_sci
+                    )
+                else:
+                    state.diagnostic_guessed_name = res.matched_name or guess_text
+
+            diag_cursor = app_conn.execute(
+                "SELECT media_urls FROM occurrences WHERE taxon_key = ? LIMIT 1",
+                (res.matched_taxon_key,),
+            )
+            diag_row = diag_cursor.fetchone()
+            if diag_row and diag_row["media_urls"]:
+                state.diagnostic_photo_url = (
+                    diag_row["media_urls"].split("|")[0].strip()
+                )
+                if state.diagnostic_photo_url:
+                    state.used_hint = True
+        else:
+            # Unrecognized taxon name (e.g. typing error) -> Warning message, do NOT log attempt
+            state.last_feedback = {
+                "type": "warning",
+                "message": res.feedback_message,
+            }
 
 
 def render_quiz_view(
@@ -141,126 +280,8 @@ def render_quiz_view(
         refresh_quiz_ui()
 
     def handle_submit_guess(guess_text: str) -> None:
-        """Validate user guess and update progress."""
-        if not state.current_question or not guess_text or not guess_text.strip():
-            return
-
-        res = validate_user_guess(
-            app_conn,
-            guess_text,
-            state.current_question.taxon_key,
-            lang=state.filters.language,
-            min_count=state.filters.min_count,
-        )
-        state.last_validation_result = res
-
-        if res.is_correct and res.matched_rank == "SPECIES":
-            if not state.solved:
-                state.solved = True
-                state.is_incorrect = False
-                state.current_streak += 1
-                state.best_streak = max(state.best_streak, state.current_streak)
-                set_user_streak(
-                    state.current_streak,
-                    state.best_streak,
-                    user_conn,
-                    data_source=active_ds,
-                )
-
-            state.matched_genus = state.current_question.genus
-            state.matched_family = state.current_question.family
-            log_attempt(
-                user_conn,
-                state.current_question.occurrence_id,
-                state.current_question.taxon_key,
-                res.matched_taxon_key or state.current_question.taxon_key,
-                is_correct=True,
-                used_hint=state.used_hint,
-                data_source=active_ds,
-            )
-            state.last_feedback = {
-                "type": "success",
-                "message": res.feedback_message,
-            }
-        elif res.is_correct:
-            # Correct Family or Genus rank (allow user to refine to Species)
-            target_row = app_conn.execute(
-                "SELECT order_name FROM taxa WHERE taxon_key = ?",
-                (state.current_question.taxon_key,),
-            ).fetchone()
-            target_order_val = (
-                target_row["order_name"]
-                if target_row
-                and "order_name" in target_row
-                and target_row["order_name"]
-                else None
-            )
-
-            if res.matched_rank == "GENUS":
-                state.matched_genus = state.current_question.genus
-                state.matched_family = state.current_question.family
-            elif res.matched_rank == "FAMILY":
-                state.matched_family = state.current_question.family
-            elif res.matched_rank == "ORDER":
-                if target_order_val:
-                    state.matched_order = target_order_val
-
-            state.last_feedback = {
-                "type": "info",
-                "message": res.feedback_message,
-            }
-        else:
-            state.is_incorrect = True
-            if res.matched_taxon_key is not None:
-                # Incorrect guess against a real species -> Log attempt and show diagnostic photo
-                log_attempt(
-                    user_conn,
-                    state.current_question.occurrence_id,
-                    state.current_question.taxon_key,
-                    res.matched_taxon_key,
-                    is_correct=False,
-                    used_hint=state.used_hint,
-                    data_source=active_ds,
-                )
-                state.last_feedback = {
-                    "type": "error",
-                    "message": res.feedback_message,
-                }
-
-                if res.matched_rank in ("GENUS", "FAMILY"):
-                    state.diagnostic_guessed_name = res.matched_name
-                else:
-                    guessed_row = app_conn.execute(
-                        "SELECT * FROM taxa WHERE taxon_key = ?",
-                        (res.matched_taxon_key,),
-                    ).fetchone()
-                    if guessed_row:
-                        g_disp = get_display_name(
-                            guessed_row, lang=state.filters.language
-                        )
-                        g_sci = guessed_row["canonical_name"]
-                        state.diagnostic_guessed_name = (
-                            f"{g_disp} ({g_sci})" if g_disp != g_sci else g_sci
-                        )
-                    else:
-                        state.diagnostic_guessed_name = res.matched_name or guess_text
-
-                diag_cursor = app_conn.execute(
-                    "SELECT media_urls FROM occurrences WHERE taxon_key = ? LIMIT 1",
-                    (res.matched_taxon_key,),
-                )
-                diag_row = diag_cursor.fetchone()
-                if diag_row and diag_row["media_urls"]:
-                    state.diagnostic_photo_url = (
-                        diag_row["media_urls"].split("|")[0].strip()
-                    )
-            else:
-                # Unrecognized taxon name (e.g. typing error) -> Warning message, do NOT log attempt
-                state.last_feedback = {
-                    "type": "warning",
-                    "message": res.feedback_message,
-                }
-
+        """Apply the submission and refresh the quiz view."""
+        submit_guess(state, app_conn, user_conn, active_ds, guess_text)
         refresh_quiz_ui()
 
     def handle_report_bad_observation() -> None:

@@ -198,6 +198,32 @@ def test_analytics_and_hint_penalties(setup_engine_dbs):
     assert matrix[0].count == 1
 
 
+@pytest.mark.parametrize("has_photo", [True, False])
+def test_diagnostic_photo_marks_subsequent_success_assisted(setup_engine_dbs, has_photo):
+    """Exercise real submissions and persisted metrics after a wrong guess."""
+    from taxo_trainer.ui.quiz_view import QuizViewState, submit_guess
+
+    app_conn, user_conn = setup_engine_dbs
+    if not has_photo:
+        app_conn.execute("UPDATE occurrences SET media_urls = '' WHERE taxon_key = ?", (2865545,))
+    state = QuizViewState()
+    state.current_question = sample_stage2_observation(
+        app_conn, user_conn, 2435140, state.filters, state.seen_set
+    )
+
+    submit_guess(state, app_conn, user_conn, "fixture", "Fagus sylvatica")
+    assert bool(state.diagnostic_photo_url) is has_photo
+    assert state.used_hint is has_photo
+    submit_guess(state, app_conn, user_conn, "fixture", "Quercus robur")
+
+    rows = user_conn.execute(
+        "SELECT is_correct, used_hint FROM user_progress ORDER BY attempt_id"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [(0, 0), (1, int(has_photo))]
+    stats = get_global_stats(user_conn, app_conn, data_source="fixture")
+    assert stats["unassisted_correct"] == (0 if has_photo else 1)
+
+
 def test_sampling_whitelist_and_blacklist(setup_engine_dbs):
     """Test stage 1 taxon sampling with whitelist (include_taxa) and blacklist (exclude_taxa)."""
     app_conn, _ = setup_engine_dbs
@@ -908,5 +934,4 @@ def test_accuracy_over_time_ema(setup_engine_dbs) -> None:
     assert points[0].ema_accuracy == 100.0
     assert points[1].ema_accuracy == 87.5
     assert points[2].ema_accuracy == 89.1
-
 
