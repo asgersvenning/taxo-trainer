@@ -16,7 +16,7 @@ _**Note**: `taxo-trainer` is built around a "bring-your-own" data model. Review 
 - **Keyboard Shortcuts**:
   - `Ctrl + Right Arrow` or `n`: Advance to next observation
   - `Left / Right Arrow` or `a` / `d`: Navigate photo carousel
-  - `Esc`: Leave the identification input (or focus it when it is not selected)
+  - `Esc`: Toggle focus on Identify Taxon — focus when unfocused, defocus when focused
   - `Enter`: Select the first autocomplete candidate, or submit the typed guess if no candidate is shown
   - `/`, `F2`, or `Ctrl+K`: Focus the identification input
 
@@ -151,6 +151,22 @@ GBIF photographs can be ambiguous or incorrectly labelled. You can manually over
 ## Custom Datasets
 
 Export occurrences from the [GBIF website](https://www.gbif.org/occurrence/search), filtering for the region and taxonomic groups you want to learn. Choose a **Darwin Core Archive** with multimedia information, rather than a species list. GBIF describes the archive's `occurrence.txt` and `multimedia.txt` files in its [download format documentation](https://techdocs.gbif.org/en/data-use/download-formats). Review the download terms and the licenses associated with its datasets and photographs.
+
+### Export from GBIF
+
+The screenshots illustrate the download sequence; the website layout may change.
+
+| Step | Action | Visual guide |
+| --- | --- | --- |
+| 1 | Open **Occurrences** on the GBIF website. | ![GBIF download step 1](./assets/guides/adding_custom_datasets/step1_gbif_occurrences.webp) |
+| 2 | Filter for the region and taxa you want to practise, and observations with photographs. | ![GBIF download step 2](./assets/guides/adding_custom_datasets/step2_filter_taxa_region.webp) |
+| 3 | Open **Download**, choose **Darwin Core Archive**, and click **Configure**. | ![GBIF download step 3](./assets/guides/adding_custom_datasets/step3_download_archive.webp) |
+| 4 | Scroll down through the **Extensions** list to find **Multimedia**. | ![GBIF download step 4](./assets/guides/adding_custom_datasets/step4_multimedia_extension.webp) |
+| 5 | Select **Multimedia**, then click **Continue to Terms**. | ![GBIF download step 5](./assets/guides/adding_custom_datasets/step5_enable_multimedia.webp) |
+| 6 | Review the terms and licenses, check the agreement box, and click **Create Download**. | ![GBIF download step 6](./assets/guides/adding_custom_datasets/step6_create_download.webp) |
+| 7 | When ready, download the ZIP or right-click **Download archive** and choose **Copy link address**. | ![GBIF download step 7](./assets/guides/adding_custom_datasets/step7_copy_archive_link.webp) |
+
+### Import into Taxo-Trainer
 
 Once the export is ready, download the ZIP or copy its direct archive download link. In **Settings & Data**, paste the local file path or direct URL into **Path or URL to DarwinCore dataset (.zip / occurrence.txt)**, then click **Start Ingestion** or **Re-Ingest Dataset**. Prefer the complete ZIP so its multimedia information stays with the observations. The in-app **Adding Custom GBIF Datasets** guide includes example GBIF screens; website layouts can change.
 

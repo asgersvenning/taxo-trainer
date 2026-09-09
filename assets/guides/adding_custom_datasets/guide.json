@@ -20,25 +20,25 @@
     {
       "step_number": 3,
       "title": "Select DarwinCore Archive Download",
-      "description": "Choose a Darwin Core Archive download, which contains occurrence and multimedia information. If configuration options are shown, open them to review the archive contents.",
+      "description": "Select the 'Download' tab, choose 'Darwin Core Archive', and click 'Configure' to open the archive export options.",
       "image_filename": "step3_download_archive.webp"
     },
     {
       "step_number": 4,
       "title": "Locate Multimedia Extension",
-      "description": "The archive's multimedia information links photographs to observations. Keep it with occurrence.txt when importing; using the complete ZIP is simplest.",
+      "description": "In the archive configuration panel, scroll down through the 'Extensions' list to find 'Multimedia', as shown in the next step.",
       "image_filename": "step4_multimedia_extension.webp"
     },
     {
       "step_number": 5,
       "title": "Enable Multimedia Extension",
-      "description": "If offered multimedia configuration options, include the multimedia information and continue to the download terms. The pictured controls are an example of the GBIF download interface.",
+      "description": "Select the 'Multimedia' extension checkbox, then click 'Continue to Terms'. Import the complete ZIP so the multimedia information stays with the observations.",
       "image_filename": "step5_enable_multimedia.webp"
     },
     {
       "step_number": 6,
       "title": "Acknowledge Terms & Create Download",
-      "description": "Review the download terms and licenses associated with the datasets and photographs, then create the download. GBIF will prepare the archive.",
+      "description": "Review the download terms and licenses associated with the datasets and photographs, check the agreement box, and click 'Create Download'. GBIF will prepare the archive.",
       "image_filename": "step6_create_download.webp"
     },
     {

@@ -14,7 +14,7 @@
     {
       "step_number": 2,
       "title": "Interactive Multi-Word Autocomplete",
-      "description": "Click 'Identify Taxon', or press /, F2, or Ctrl+K to focus it. Enter a scientific name or an available vernacular name for a species, genus, or family. Choose your display language in Settings & Data. Autocomplete matches name prefixes; select a suggestion or press Enter to choose the first result. With no result shown, Enter submits the typed guess. Press Esc to leave the input.",
+      "description": "Press Esc to toggle focus on 'Identify Taxon': it focuses the field when unfocused and defocuses it when focused. You can also click the field, or use /, F2, or Ctrl+K to focus it. Enter a scientific name or an available vernacular name for a species, genus, or family. Choose your display language in Settings & Data. Autocomplete matches name prefixes; select a suggestion or press Enter to choose the first result. With no result shown, Enter submits the typed guess.",
       "image_filename": "step2_autocomplete_input.webp"
     },
     {
