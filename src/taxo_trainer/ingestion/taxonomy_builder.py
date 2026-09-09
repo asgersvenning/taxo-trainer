@@ -494,7 +494,7 @@ def _classification_node(classification: dict, rank: str) -> dict | None:
 
 
 def _resolve_usage(
-    row: dict, occurrence_id: str | None, cache, diagnostics=None
+    row: dict, occurrence_id: str | None, cache, diagnostics=None, *, taxonomy_only=False
 ) -> tuple[str | None, dict, dict]:
     """Resolve API IDs through records only; keep imported IDs as local identity.
 
@@ -544,6 +544,8 @@ def _resolve_usage(
         node = _classification_node(source, rank.upper())
         if node:
             links[f"{rank}_key"] = str(node["key"])
+    if taxonomy_only:
+        return None, {}, links
     legacy = classifications.get(BACKBONE_CHECKLIST, {})
     legacy_species = _classification_node(legacy, "SPECIES")
     if (
@@ -784,3 +786,81 @@ def enrich_vernacular_names_from_gbif(
         _LOGGER.info("GBIF name lookup diagnostics: %s", dict(diagnostics.counts))
         if own:
             conn.close()
+
+
+_TAXONOMY_REPAIR_LOCK = threading.Lock()
+
+
+def repair_missing_taxonomy(conn: sqlite3.Connection | None = None) -> int:
+    """Restore missing rank IDs from explicit GBIF classifications in background.
+
+    Existing names and history IDs are retained. This does not fetch vernacular
+    names or invent links for unresolved taxa; cached ID requests and the shared
+    GBIF rate-limit handling apply. Only one repair runs per process at a time.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not _TAXONOMY_REPAIR_LOCK.acquire(blocking=False):
+        return 0
+    own = conn is None
+    diagnostics = LookupDiagnostics()
+    updated = 0
+    try:
+        conn = conn if conn is not None else get_db_connection(APP_DB_PATH)
+        rows = [dict(row) for row in conn.execute("""
+            SELECT t.*, (SELECT occurrence_id FROM occurrences o
+                         WHERE o.taxon_key=t.taxon_key LIMIT 1) AS occurrence_id
+            FROM taxa t WHERE (genus IS NOT NULL AND genus_key IS NULL)
+                OR (family IS NOT NULL AND family_key IS NULL)
+                OR (order_name IS NOT NULL AND order_key IS NULL)
+                OR (genus_key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM higher_ranks h WHERE h.taxon_key=t.genus_key))
+                OR (family_key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM higher_ranks h WHERE h.taxon_key=t.family_key))
+                OR (order_key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM higher_ranks h WHERE h.taxon_key=t.order_key))
+        """)]
+
+        def lookup(row):
+            if all(not row[rank if rank != "order" else "order_name"] or row[f"{rank}_key"]
+                   for rank in ("genus", "family", "order")):
+                return row, {"checklist_key": row["checklist_key"], **{
+                    f"{rank}_key": row[f"{rank}_key"] for rank in ("genus", "family", "order")
+                    if row[f"{rank}_key"]}}
+            cache = get_gbif_cache_connection()
+            try:
+                _, _, links = _resolve_usage(row, row["occurrence_id"], cache,
+                                             diagnostics, taxonomy_only=True)
+                return row, links
+            finally:
+                cache.close()
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for row, links in executor.map(lookup, rows):
+                if not links:
+                    continue
+                # Preserve links that another operation may have populated.
+                with conn:
+                    current = conn.execute("SELECT * FROM taxa WHERE taxon_key=?",
+                                           (row["taxon_key"],)).fetchone()
+                    if not current or current["checklist_key"] not in (None, links.get("checklist_key")):
+                        continue
+                    for column, value in links.items():
+                        if current[column] is None:
+                            conn.execute(f"UPDATE taxa SET {column}=? WHERE taxon_key=?",
+                                         (value, row["taxon_key"]))
+                    for rank in ("genus", "family", "order"):
+                        key = current[f"{rank}_key"] or links.get(f"{rank}_key")
+                        name = current[rank if rank != "order" else "order_name"]
+                        if key and name:
+                            existing = conn.execute("SELECT checklist_key FROM higher_ranks WHERE taxon_key=?", (key,)).fetchone()
+                            if existing and existing[0] not in (None, links.get("checklist_key")):
+                                raise GBIFRequestError("Conflicting checklist identity for higher rank")
+                            conn.execute("""INSERT INTO higher_ranks
+                                (taxon_key,rank_name,rank_level,checklist_key) VALUES (?,?,?,?)
+                                ON CONFLICT(taxon_key) DO NOTHING""",
+                                (key, name, rank.upper(), links.get("checklist_key")))
+                    updated += 1
+        return updated
+    finally:
+        if own and conn is not None:
+            conn.close()
+        _TAXONOMY_REPAIR_LOCK.release()
+        _LOGGER.info("Taxonomy link repair: %s taxa; %s", updated, dict(diagnostics.counts))

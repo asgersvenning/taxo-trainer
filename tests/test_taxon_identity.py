@@ -351,3 +351,29 @@ def test_id_lookup_redirect_cannot_escape_endpoint_boundary(monkeypatch):
     monkeypatch.setattr("urllib.request.build_opener", opener)
     with pytest.raises(builder.GBIFRequestError, match="redirected"):
         builder._open_gbif(urllib.request.Request("https://api.gbif.org/v1/species/1"))
+
+
+def test_missing_col_rank_links_repair_without_name_lookup(database, monkeypatch):
+    """An existing import regains selectable genus IDs from its occurrence only."""
+    add_taxon(database, "4N93X", "Prunus padus", genus="Prunus", family="Rosaceae")
+    database.execute("INSERT INTO occurrences (occurrence_id,taxon_key,media_urls) VALUES ('10','4N93X','photo')")
+    database.commit()
+    calls = []
+
+    def respond(req, **kwargs):
+        calls.append(req.full_url)
+        assert req.full_url == "https://api.gbif.org/v1/occurrence/10"
+        return Response(json.dumps({"key": 10, "classifications": {
+            builder.COL_CHECKLIST: {"classification": [
+                {"rank": "SPECIES", "key": "4N93X"},
+                {"rank": "GENUS", "key": "6Y6H"},
+                {"rank": "FAMILY", "key": "FTK"},
+            ]}}}).encode())
+
+    monkeypatch.setattr(builder, "_open_gbif", respond)
+    assert builder.repair_missing_taxonomy(database) == 1
+    matches = autocomplete_taxa(database, "Prunus")
+    assert matches[0]["taxon_key"] == "6Y6H"
+    assert validate_user_guess(database, "6Y6H", "4N93X").is_correct
+    assert builder.repair_missing_taxonomy(database) == 0
+    assert len(calls) == 1

@@ -5,8 +5,9 @@ Run via: uv run python -m taxo_trainer.app
 """
 
 import argparse
+import logging
 
-from nicegui import app, ui
+from nicegui import app, background_tasks, run, ui
 
 from taxo_trainer.db import (
     get_app_metadata,
@@ -21,6 +22,22 @@ from taxo_trainer.ui.quiz_view import QuizViewState, render_quiz_view
 from taxo_trainer.ui.settings_view import render_settings_view
 from taxo_trainer.ui.theme import install_theme
 
+
+async def repair_taxonomy_in_background() -> None:
+    """Restore missing imported hierarchy links without delaying quiz use."""
+    from taxo_trainer.ingestion.taxonomy_builder import repair_missing_taxonomy
+
+    try:
+        await run.io_bound(repair_missing_taxonomy)
+    except Exception:
+        logging.getLogger(__name__).exception("Taxonomy link repair did not finish; retry on next launch")
+
+
+def start_taxonomy_repair() -> None:
+    """Schedule ID-only taxonomy maintenance after launch or an import reload."""
+    background_tasks.create(repair_taxonomy_in_background())
+
+
 app.add_static_files("/assets", str(get_resource_path("assets")))
 
 
@@ -28,6 +45,7 @@ app.add_static_files("/assets", str(get_resource_path("assets")))
 def index_page() -> None:
     """Render main application page layout."""
     init_databases()
+    start_taxonomy_repair()
     quiz_state = QuizViewState()
     guides_state = GuidesViewState()
     refresh_dashboard = None
