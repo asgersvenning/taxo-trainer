@@ -41,6 +41,18 @@ from taxo_trainer.ui.components import (
 )
 
 
+@dataclass
+class IgnoredObservation:
+    """Keep the last reversible ignore action within this client session."""
+
+    question: TargetObservation
+    attempts: list[dict]
+    was_solved: bool
+    previous_feedback: dict | None
+    feedback: dict
+    was_seen: bool
+
+
 class QuizViewState:
     """Session state wrapper for QuizView client connection."""
 
@@ -65,6 +77,7 @@ class QuizViewState:
         self.practice_taxa: list[str] = []
         self.question_filters: SamplingFilter | None = None
         self.draft_guess = ""
+        self.ignored_observation: IgnoredObservation | None = None
 
     def effective_filters(self) -> SamplingFilter:
         """Apply a temporary dashboard scope without changing saved preferences."""
@@ -81,6 +94,50 @@ class QuizController:
     refresh: Callable[[], None]
     practise: Callable[[list[str]], bool]
 
+
+
+def ignore_observation(state: QuizViewState, user_conn: sqlite3.Connection) -> None:
+    """Remove this observation's attempts atomically and retain an Undo snapshot."""
+    question = state.current_question
+    if question is None:
+        return
+    previous = state.ignored_observation
+    if previous and previous.question is question and state.last_feedback is previous.feedback:
+        return
+    feedback = {"type": "warning", "message": "Saved attempts for this observation were removed. It may appear again in a later session."}
+    with user_conn:
+        attempts = [dict(row) for row in user_conn.execute(
+            "DELETE FROM user_progress WHERE occurrence_id=? RETURNING *",
+            (question.occurrence_id,),
+        ).fetchall()]
+    state.ignored_observation = IgnoredObservation(
+        question, attempts, state.solved, state.last_feedback, feedback,
+        question.occurrence_id in state.seen_set,
+    )
+    state.seen_set.add(question.occurrence_id)
+    state.solved = True
+    state.last_feedback = feedback
+
+
+def undo_ignore_observation(state: QuizViewState, user_conn: sqlite3.Connection) -> bool:
+    """Restore exact history rows without overwriting intervening attempts."""
+    ignored = state.ignored_observation
+    if ignored is None:
+        return False
+    with user_conn:
+        for row in ignored.attempts:
+            columns = list(row)
+            user_conn.execute(
+                f"INSERT INTO user_progress ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                tuple(row[column] for column in columns),
+            )
+    if state.current_question is ignored.question and state.last_feedback is ignored.feedback:
+        state.solved = ignored.was_solved
+        state.last_feedback = ignored.previous_feedback
+        if not ignored.was_seen:
+            state.seen_set.discard(ignored.question.occurrence_id)
+    state.ignored_observation = None
+    return True
 
 
 def submit_guess(
@@ -353,25 +410,14 @@ def render_quiz_view(
         refresh_quiz_ui()
 
     def handle_report_bad_observation() -> None:
-        """Flag current observation as misidentified, omit from user statistics, and mark as seen."""
-        if not state.current_question:
-            return
-
-        occ_id = state.current_question.occurrence_id
-        state.seen_set.add(occ_id)
-
-        # Delete any logged attempts for this occurrence_id from user_progress DB
-        user_conn.execute(
-            "DELETE FROM user_progress WHERE occurrence_id = ?", (occ_id,)
-        )
-        user_conn.commit()
-
-        state.solved = True
-        state.last_feedback = {
-            "type": "warning",
-            "message": "Saved attempts for this observation were removed. It may appear again in a later session.",
-        }
+        """Ignore the current observation and expose its reversible action."""
+        ignore_observation(state, user_conn)
         refresh_quiz_ui()
+
+    def handle_undo_ignore() -> None:
+        if undo_ignore_observation(state, user_conn):
+            refresh_quiz_ui()
+            ui.notify("Removed attempts restored.", type="info")
 
     def get_target_order(question) -> str:
         if not question:
@@ -569,6 +615,11 @@ def render_quiz_view(
         is_input_focused[0] = False
         main_container.clear()
         with main_container:
+            if state.ignored_observation is not None:
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("Undo ignore", icon="undo", on_click=handle_undo_ignore).props("flat dense").tooltip(
+                        "Restore the saved attempts removed by your last Ignore observation action in this session."
+                    )
             if state.practice_taxa:
                 names = []
                 for key in state.practice_taxa:
@@ -772,6 +823,7 @@ def render_quiz_view(
                                 app_conn,
                                 val,
                                 limit=1,
+                                min_count=(state.question_filters or state.filters).min_count,
                                 lang=state.filters.language,
                                 parent_genus=scope_key("genus") if state.matched_genus else None,
                                 parent_family=scope_key("family") if state.matched_family else None,

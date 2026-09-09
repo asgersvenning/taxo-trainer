@@ -79,3 +79,41 @@ def test_order_scope_uses_canonical_ids(quiz):
     app, _, _, _, _ = quiz
     assert sample_stage1_taxon(app, SamplingFilter(include_taxa=['O1'])) in ('A1', 'B2')
     assert sample_stage1_taxon(app, SamplingFilter(exclude_taxa=['O1'])) is None
+
+
+def test_undo_ignore_restores_exact_history_and_question(quiz):
+    _, user, state, _, _ = quiz
+    question = state.current_question
+    user.executemany("""INSERT INTO user_progress
+        (occurrence_id,target_taxon_key,guessed_taxon_key,is_correct,used_hint,attempt_timestamp,data_source)
+        VALUES (?,?,?,?,?,?,?)""", [
+        (question.occurrence_id, question.taxon_key, 'B2', 0, 1, '2026-01-01 12:00:00', 'first'),
+        (question.occurrence_id, question.taxon_key, question.taxon_key, 1, 0, '2026-02-01 12:00:00', 'second'),
+    ])
+    user.commit()
+    before = [tuple(r) for r in user.execute('SELECT * FROM user_progress ORDER BY attempt_id')]
+    state.last_feedback = {'type': 'error', 'message': 'Previous feedback'}
+    quiz_view.ignore_observation(state, user)
+    assert user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0] == 0
+    quiz_view.ignore_observation(state, user)  # Repeated click must retain the snapshot.
+    assert quiz_view.undo_ignore_observation(state, user)
+    assert [tuple(r) for r in user.execute('SELECT * FROM user_progress ORDER BY attempt_id')] == before
+    assert not state.solved
+    assert state.last_feedback['message'] == 'Previous feedback'
+    assert not quiz_view.undo_ignore_observation(state, user)
+
+
+def test_undo_after_advancing_preserves_new_question_and_attempts(quiz):
+    _, user, state, controller, _ = quiz
+    old = state.current_question
+    user.execute("INSERT INTO user_progress (occurrence_id,target_taxon_key,is_correct,used_hint) VALUES (?,?,0,0)", (old.occurrence_id,old.taxon_key))
+    user.commit()
+    quiz_view.ignore_observation(state, user)
+    assert controller.practise(['B2' if old.taxon_key == 'A1' else 'A1'])
+    current = state.current_question
+    user.execute("INSERT INTO user_progress (occurrence_id,target_taxon_key,is_correct,used_hint) VALUES (?,?,1,0)", (current.occurrence_id,current.taxon_key))
+    user.commit()
+    assert quiz_view.undo_ignore_observation(state, user)
+    assert state.current_question is current
+    assert user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0] == 2
+    assert not state.solved
