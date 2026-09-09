@@ -153,3 +153,48 @@ def test_photo_selection_survives_answer_and_settings_refresh(quiz):
     assert state.photo_view.index == 0
     assert state.photo_view.generation == generation + 1
     assert state.photo_view.cache_key == key
+
+
+def test_reference_gallery_uses_all_local_photos_and_updates_provenance(quiz):
+    app, user, state, controller, container = quiz
+    from taxo_trainer.engine.diagnostics import get_diagnostic_photos
+    from taxo_trainer.ui.photo_canvas import PhotoCanvas
+
+    other = 'B2' if state.current_question.taxon_key == 'A1' else 'A1'
+    app.execute("""INSERT INTO occurrences(occurrence_id,taxon_key,media_urls,recorded_by,references_url)
+        VALUES('extra',?,'https://photo.example/second.jpg| |https://photo.example/third.jpg|https://photo.example/a.jpg','Second observer','https://example.org/extra')""", (other,))
+    app.commit()
+    photos = get_diagnostic_photos(app, other)
+    assert [p.url for p in photos] == ['https://photo.example/a.jpg', 'https://photo.example/second.jpg', 'https://photo.example/third.jpg']
+    quiz_view.submit_guess(state, app, user, 'default', other)
+    assert state.used_hint
+    assert state.comparison_open
+    controller.refresh()
+    viewers = [e for e in container.descendants() if isinstance(e, PhotoCanvas)]
+    assert len(viewers) == 2
+    assert viewers[0]._props['cache_key'] != viewers[1]._props['cache_key']
+    reference = next(e for e in container.descendants() if e._props.get('aria-label') == 'Reference photo panel')
+    next_photo = next(e for e in reference.descendants() if isinstance(e, ui.button) and e.text == 'Next Photo ▶')
+    attempts = user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0]
+    next(e for e in next_photo._event_listeners.values() if e.type == 'click').handler(None)
+    assert user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0] == attempts
+    assert state.diagnostic_view.index == 1
+    assert state.photo_view.index == 0
+    assert any(isinstance(e, ui.label) and e.text == 'Observer: Second observer' for e in reference.descendants())
+    assert state.diagnostic_photo_url.endswith('/second.jpg')
+    quiz_view.submit_guess(state, app, user, 'default', str(state.current_question.taxon_key))
+    assert user.execute('SELECT used_hint FROM user_progress ORDER BY attempt_id DESC LIMIT 1').fetchone()[0] == 1
+
+
+def test_new_guess_without_photos_clears_previous_reference(quiz):
+    app, user, state, _, _ = quiz
+    other = 'B2' if state.current_question.taxon_key == 'A1' else 'A1'
+    quiz_view.submit_guess(state, app, user, 'default', other)
+    assert state.diagnostic_photos
+    app.execute("INSERT INTO taxa(taxon_key,scientific_name,canonical_name,accepted_name,rank,occurrence_count) VALUES('C3','Third species','Third species','Third species','SPECIES',10)")
+    app.commit()
+    quiz_view.submit_guess(state, app, user, 'default', 'C3')
+    assert state.diagnostic_photos == []
+    assert state.diagnostic_photo_url is None
+    assert not state.comparison_open
+    assert state.used_hint  # Earlier assistance still counts.

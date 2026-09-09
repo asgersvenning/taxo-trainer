@@ -10,7 +10,7 @@ _**Note**: `taxo-trainer` is built around a "bring-your-own" data model. Review 
 
 ### Quiz & Identification Interface
 
-- **Photo Inspection Canvas**: High-resolution image viewer with keyboard-driven photo carousel (`Alt+Left` / `Alt+Right`), satellite map toggle (`Esri.WorldImagery`), observer attribution, and links to GBIF occurrence records.
+- **Photo Inspection Canvas**: Zoomable image viewer with drag-to-pan, Fit controls, and a keyboard-driven photo carousel (`Alt+Left` / `Alt+Right`), satellite map toggle (`Esri.WorldImagery`), observer attribution, and links to GBIF occurrence records.
 - **Taxonomic Hierarchy Breakdown**: Visual hierarchy displaying Order, Family, Genus, and Species. Highlights correct rank matches, incorrect guesses, and unrevealed ranks.
 - **Streak & Record Tracker**: Tracks active identification streaks (🔥) and personal best records (🏆) stored per dataset in SQLite.
 - **Keyboard Shortcuts**:
@@ -143,6 +143,8 @@ After upgrading from older versions, reselect saved training groups if prompted.
 | **Practice Misidentified Photos Only** | Revisit photos you previously misidentified. |
 
 Choose light, dark, or system appearance under **Theme & Appearance**, with a Standard, Warm paper, Neutral, or High contrast palette. Accent choices are Blue, Forest, Plum, Amber, Rose, and Slate. High contrast strengthens text and control boundaries in both light and dark mode. Display language, palette, theme, accent, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls. Training changes apply to the next observation; the current question and typed input stay in place. Temporary dashboard practice keeps your normal training groups saved.
+
+Use the photo viewer’s +/− buttons or scroll wheel to zoom, drag to inspect details, and select **Fit** to see the whole image. Your selected photo and framing stay in place while answering or changing settings; a new observation starts fresh. Slow photos show a loading message, and failed photos offer **Retry** or **Try another photo**. After an incorrect identification, reference photos of your guessed taxon appear beside the observation (stacked on narrower windows). Browse the photos available in your loaded dataset with their own controls; **Hide comparison** gives the observation more room, and **Compare photos** restores your place.
 
 GBIF photographs can be ambiguous or incorrectly labelled. You can manually override how an observation is counted for your own training. **Ignore observation** removes its saved attempts from your statistics; it does not send a report to GBIF or permanently block the observation. **Undo ignore** restores the attempts removed by your last ignore action in the current session, even after advancing to another observation. Hints and diagnostic comparisons mark an attempt as assisted and exclude it from unassisted success metrics.
 

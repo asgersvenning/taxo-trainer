@@ -22,6 +22,7 @@ from taxo_trainer.db import (
     set_user_streak,
 )
 from taxo_trainer.engine.analytics import log_attempt
+from taxo_trainer.engine.diagnostics import DiagnosticPhoto, get_diagnostic_photos
 from taxo_trainer.engine.sampling import (
     SamplingFilter,
     TargetObservation,
@@ -67,7 +68,10 @@ class QuizViewState:
         self.success_recorded: bool = False
         self.last_feedback: dict[str, str] | None = None
         self.last_validation_result = None
-        self.diagnostic_photo_url: str | None = None
+        self.diagnostic_photos: list[DiagnosticPhoto] = []
+        self.diagnostic_view = PhotoViewerState()
+        self.diagnostic_taxon_key: str | None = None
+        self.comparison_open = False
         self.diagnostic_guessed_name: str | None = None
         self.matched_genus: str | None = None
         self.matched_family: str | None = None
@@ -80,6 +84,13 @@ class QuizViewState:
         self.question_filters: SamplingFilter | None = None
         self.draft_guess = ""
         self.ignored_observation: IgnoredObservation | None = None
+
+    @property
+    def diagnostic_photo_url(self) -> str | None:
+        """Return the selected reference photo, when one is available."""
+        if not self.diagnostic_photos:
+            return None
+        return self.diagnostic_photos[min(self.diagnostic_view.index, len(self.diagnostic_photos) - 1)].url
 
     def effective_filters(self) -> SamplingFilter:
         """Apply a temporary dashboard scope without changing saved preferences."""
@@ -264,17 +275,15 @@ def submit_guess(
                 else:
                     state.diagnostic_guessed_name = res.matched_name or guess_text
 
-            diag_cursor = app_conn.execute(
-                "SELECT media_urls FROM occurrences WHERE taxon_key = ? LIMIT 1",
-                (res.matched_taxon_key,),
-            )
-            diag_row = diag_cursor.fetchone()
-            if diag_row and diag_row["media_urls"]:
-                state.diagnostic_photo_url = (
-                    diag_row["media_urls"].split("|")[0].strip()
-                )
-                if state.diagnostic_photo_url:
-                    state.used_hint = True
+            key = str(res.matched_taxon_key)
+            photos = get_diagnostic_photos(app_conn, key)
+            if key != state.diagnostic_taxon_key or photos != state.diagnostic_photos:
+                state.diagnostic_view.reset()
+            state.diagnostic_taxon_key = key
+            state.diagnostic_photos = photos
+            state.comparison_open = bool(photos)
+            if photos:
+                state.used_hint = True
         else:
             # Unrecognized taxon name (e.g. typing error) -> Warning message, do NOT log attempt
             state.last_feedback = {
@@ -365,7 +374,10 @@ def render_quiz_view(
         state.success_recorded = False
         state.last_feedback = None
         state.last_validation_result = None
-        state.diagnostic_photo_url = None
+        state.diagnostic_photos = []
+        state.diagnostic_taxon_key = None
+        state.diagnostic_view.reset()
+        state.comparison_open = False
         state.diagnostic_guessed_name = None
         state.matched_genus = None
         state.matched_family = None
@@ -410,6 +422,10 @@ def render_quiz_view(
         """Apply the submission and refresh the quiz view."""
         state.draft_guess = ""
         submit_guess(state, app_conn, user_conn, active_ds, guess_text)
+        refresh_quiz_ui()
+
+    def toggle_comparison() -> None:
+        state.comparison_open = not state.comparison_open
         refresh_quiz_ui()
 
     def handle_report_bad_observation() -> None:
@@ -685,19 +701,31 @@ def render_quiz_view(
                 # =========================================================
                 # LEFT COLUMN (I): 75% Width Reserved for Whole Image Display
                 # =========================================================
-                with ui.column().classes(
-                    "w-[75%] h-full flex flex-col flex-grow justify-between"
+                with (
+                    ui.column().classes("w-[75%] min-w-0 h-full flex flex-col flex-grow justify-between"),
+                    ui.row().classes("w-full h-full min-h-0 gap-2 no-wrap flex-col xl:flex-row"),
                 ):
-                    render_photo_viewer(
-                        state.current_question.media_urls,
-                        state=state.photo_view,
-                        latitude=state.current_question.latitude,
-                        longitude=state.current_question.longitude,
-                        locality=state.current_question.locality,
-                        nav_callbacks=nav_callbacks,
-                        recorded_by=state.current_question.recorded_by,
-                        references=state.current_question.references,
-                    )
+                    with ui.column().classes("flex-1 w-full xl:w-0 min-w-0 min-h-0 h-full"):
+                        render_photo_viewer(
+                            state.current_question.media_urls,
+                            state=state.photo_view,
+                            latitude=state.current_question.latitude,
+                            longitude=state.current_question.longitude,
+                            locality=state.current_question.locality,
+                            nav_callbacks=nav_callbacks,
+                            recorded_by=state.current_question.recorded_by,
+                            references=state.current_question.references,
+                        )
+
+                    if state.comparison_open and state.diagnostic_photos:
+                        row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (state.diagnostic_taxon_key,)).fetchone()
+                        name = get_display_name(row, state.filters.language) if row else state.diagnostic_guessed_name
+                        with ui.column().classes("flex-1 w-full xl:w-0 min-w-0 min-h-0 h-full"):
+                            render_photo_viewer(
+                                [photo.url for photo in state.diagnostic_photos],
+                                state=state.diagnostic_view, label="Reference photo", show_map=False,
+                                heading=f"Your guess: {name}", photo_details=state.diagnostic_photos,
+                            )
 
                 # =========================================================
                 # RIGHT COLUMN (U): 25% Width User Interface Controls Sidebar
@@ -936,24 +964,9 @@ def render_quiz_view(
                             )
 
                     # Diagnostic Reference Photo (on wrong guess)
-                    if state.diagnostic_photo_url:
-                        with ui.card().classes(
-                            "w-full p-3 bg-tt-raised text-tt-main rounded-md shadow-sm border border-tt-border"
-                        ):
-                            diag_label = (
-                                f"Diagnostic Reference (Guessed '{state.diagnostic_guessed_name}'):"
-                                if state.diagnostic_guessed_name
-                                else "Diagnostic Reference (Guessed Species):"
-                            )
-                            ui.label(diag_label).classes(
-                                "font-bold text-xs text-tt-warning mb-1"
-                            )
-
-                            ui.element("img").props(
-                                f'src="{state.diagnostic_photo_url}"'
-                            ).style(
-                                "max-width: 100%; max-height: 128px; object-fit: scale-down; display: block; margin: auto; border-radius: 4px;"
-                            )
+                    if state.diagnostic_photos:
+                        ui.button("Hide comparison" if state.comparison_open else "Compare photos",
+                                  icon="compare", on_click=toggle_comparison).props("flat dense")
 
                     # Compact Location Satellite Map Card
                     render_satellite_map(

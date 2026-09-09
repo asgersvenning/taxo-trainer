@@ -6,6 +6,7 @@ and taxonomic badge components.
 
 from nicegui import ui
 
+from taxo_trainer.engine.diagnostics import DiagnosticPhoto
 from taxo_trainer.ui.photo_canvas import PhotoCanvas, PhotoViewerState
 
 
@@ -21,9 +22,10 @@ def render_photo_viewer(
     state: PhotoViewerState | None = None,
     label: str = "Observation photo",
     show_map: bool = True,
+    heading: str = "",
+    photo_details: list[DiagnosticPhoto] | None = None,
 ) -> ui.column:
-    """Render 75% width main image display panel with object-contain showing the whole photo,
-    carousel controls, photo credits, source links, and a toggle between Field Photo and Satellite Map.
+    """Render an inspectable photo carousel with provenance and an optional map.
 
     Args:
         media_urls: List of image URLs.
@@ -34,13 +36,20 @@ def render_photo_viewer(
         nav_callbacks: Optional dictionary to receive next/prev photo navigation functions.
         recorded_by: Optional observer / photo credit string.
         references: Optional observation reference source URL.
+        state: Persistent selection and framing identity for this question.
+        label: Accessible name distinguishing observation and reference viewers.
+        show_map: Whether to offer the observation's map alongside its photos.
+        heading: Optional reference taxon label above the photo controls.
+        photo_details: Per-image provenance for a collection spanning observations.
 
     Returns:
         ui.column: Column container holding image/map canvas and controls.
     """
     container = ui.column().classes(
-        "w-full h-full bg-tt-surface text-tt-main rounded-lg p-2 flex flex-col justify-between relative shadow-2xl border border-tt-border"
+        "w-full h-full min-h-0 min-w-0 bg-tt-surface text-tt-main rounded-lg p-2 flex flex-col justify-between relative shadow-2xl border border-tt-border"
     )
+
+    container.props(f'role="group" aria-label="{label} panel"')
 
     if not media_urls:
         with container:
@@ -62,6 +71,7 @@ def render_photo_viewer(
             )
         if state.view == "photo":
             refresh_canvas()
+        refresh_details()
 
     if nav_callbacks is not None:
         nav_callbacks["next"] = lambda: update_photo(1) if len(media_urls) > 1 else None
@@ -70,6 +80,8 @@ def render_photo_viewer(
         )
 
     with container:
+        if heading:
+            ui.label(heading).classes("text-sm font-semibold text-tt-main")
         # Top toolbar over image
         with ui.row().classes(
             "w-full justify-between items-center backdrop-blur-md p-2 rounded-t-md z-10 border-b border-tt-border"
@@ -152,26 +164,30 @@ def render_photo_viewer(
                 )
                 prev_btn.on_click(lambda: update_photo(-1))
 
-            # Metadata info container: Locality, Photo Credit, and Observation Source Link
-            with ui.row().classes(
+            details_container = ui.row().classes(
                 "items-center gap-3 text-xs text-tt-main mx-auto flex-wrap justify-center"
-            ):
-                loc_txt = locality or "Field Observation"
-                ui.label(f"📍 {loc_txt}").classes(
-                    "font-medium truncate max-w-xs text-tt-muted"
-                )
+            )
 
-                if recorded_by:
-                    ui.label(f"👤 Photo: {recorded_by}").classes(
-                        "font-medium text-tt-main bg-tt-raised px-2 py-0.5 rounded border border-tt-border"
+            def refresh_details() -> None:
+                details = photo_details[state.index] if photo_details else None
+                observer = details.recorded_by if details else recorded_by
+                source = details.references if details else references
+                location = details.locality if details else locality
+                details_container.clear()
+                with details_container:
+                    ui.label(location or "Field Observation").classes(
+                        "font-medium truncate max-w-xs text-tt-muted"
                     )
+                    if observer:
+                        ui.label(f"Observer: {observer}").classes(
+                            "font-medium text-tt-main bg-tt-raised px-2 py-0.5 rounded border border-tt-border"
+                        )
+                    if source:
+                        ui.link("View Source / GBIF Obs ↗", source, new_tab=True).classes(
+                            "font-bold text-tt-warning underline text-xs"
+                        )
 
-                if references:
-                    ui.link(
-                        "🔗 View Source / GBIF Obs ↗", references, new_tab=True
-                    ).classes(
-                        "font-bold text-tt-warning underline text-xs"
-                    )
+            refresh_details()
 
             if len(media_urls) > 1:
                 next_btn = (

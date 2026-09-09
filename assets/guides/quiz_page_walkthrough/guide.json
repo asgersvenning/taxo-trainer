@@ -8,7 +8,7 @@
     {
       "step_number": 1,
       "title": "Photo Inspection Canvas & Map Toggle",
-      "description": "Inspect the observation photographs and use the map when coordinates are available. Use Left/Right Arrow or A/D to change photos while the identification input is not selected. Observation details and the GBIF link provide context and attribution.",
+      "description": "Inspect the observation photographs and use the map when coordinates are available. Use Left/Right Arrow or A/D to change photos while the identification input is not selected. Zoom with +/− or the scroll wheel, drag to inspect details, and use Fit to see the whole image. The selected photo and framing survive answers and settings changes. Failed photos offer Retry or Try another photo. Observation details and the GBIF link provide context and attribution.",
       "image_filename": "current_photo.jpg"
     },
     {
@@ -26,7 +26,7 @@
     {
       "step_number": 4,
       "title": "Structured Hints & Diagnostic Comparisons",
-      "description": "Use 'Reveal next rank' or 'Multiple choice' for help. Multiple choice offers up to five species within the revealed scope. Hints and diagnostic comparison photos mark the attempt as assisted and exclude it from unassisted accuracy.",
+      "description": "Use 'Reveal next rank' or 'Multiple choice' for help. Multiple choice offers up to five species within the revealed scope. After an incorrect identification, compare the observation with photos of your guessed taxon from the loaded dataset. Browse and zoom each viewer independently. Hide comparison and Compare photos retain your place. Hints and diagnostic comparison photos mark the attempt as assisted and exclude it from unassisted accuracy.",
       "image_filename": "current_hints.png"
     },
     {
