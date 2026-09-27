@@ -44,6 +44,16 @@ EXAMPLE_DATASETS = (
         "https://api.gbif.org/v1/occurrence/download/request/0007018-260806074905277.zip",
         "https://doi.org/10.15468/dl.bq556b",
     ),
+    (
+        "August 2026 birds (309 MB)",
+        "https://api.gbif.org/v1/occurrence/download/request/0009449-260921141020460.zip",
+        "https://doi.org/10.15468/dl.mz5547",
+    ),
+    (
+        "Cetaceans (72 MB)",
+        "https://api.gbif.org/v1/occurrence/download/request/0009451-260921141020460.zip",
+        "https://doi.org/10.15468/dl.rpwenk",
+    ),
 )
 
 

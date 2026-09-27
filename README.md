@@ -129,7 +129,7 @@ The output executable directory will be created under `dist/taxo-trainer`.
 
 ### Example GBIF downloads
 
-The app links to two GBIF-hosted example extracts: [Danish plants](https://doi.org/10.15468/dl.hxcqej) and [Danish butterflies](https://doi.org/10.15468/dl.bq556b). The app provides the archive URL when you select an example. GBIF hosts the extract, while each publisher retains its rights; the app downloads the archive only when you start an import.
+The app links to four GBIF-hosted example extracts: [Danish plants](https://doi.org/10.15468/dl.hxcqej), [Danish butterflies](https://doi.org/10.15468/dl.bq556b), [August 2026 birds](https://doi.org/10.15468/dl.mz5547) (309 MB), and [cetaceans](https://doi.org/10.15468/dl.rpwenk) (72 MB). The bird extract contains 2026 human observations of Aves from August; the cetacean extract contains human observations of Cetacea. Both have still images and coordinates without known geospatial issues. The app provides the archive URL when you select an example. GBIF hosts the extract, while each publisher retains its rights; the app downloads the archive only when you start an import.
 
 ### Names and lookup progress
 
