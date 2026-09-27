@@ -223,3 +223,43 @@ def test_settings_group_chips_refresh_after_quiz_selection(settings):
         assert not any(isinstance(e, ui.chip) and 'Fixture species' in e.text for e in container.descendants())
     finally:
         container.delete()
+
+
+def test_training_groups_offer_class_and_order_by_gbif_id(settings):
+    """Users can select broad groups without replacing the combined dataset."""
+    from taxo_trainer.ui.components import render_taxa_filter_controls
+
+    conn, _, _, filters, _, _ = settings
+    conn.execute(
+        "UPDATE taxa SET class_key='V2', class='Aves', order_key='X3', "
+        "order_name='Charadriiformes' WHERE taxon_key='67S22'"
+    )
+    conn.execute(
+        "UPDATE taxa SET class_key='6224G', class='Mammalia', order_key='WP', "
+        "order_name='Cetacea' WHERE taxon_key='75R3T'"
+    )
+    conn.executemany(
+        "INSERT INTO higher_ranks (taxon_key, rank_name, rank_level) "
+        "VALUES (?, ?, ?)",
+        [("V2", "Aves", "CLASS"), ("WP", "Cetacea", "ORDER")],
+    )
+    conn.commit()
+    with ui.column() as container:
+        render_taxa_filter_controls(conn, filters, lambda: None)
+    try:
+        include = next(e for e in container.descendants() if isinstance(e, ui.input))
+        include.set_value("Aves")
+        button = next(
+            e for e in container.descendants()
+            if isinstance(e, ui.button) and e.text == "+ Aves (class)"
+        )
+        next(e for e in button._event_listeners.values() if e.type == "click").handler(None)
+        assert filters.include_taxa == ["V2"]
+
+        include.set_value("Cetacea")
+        assert any(
+            isinstance(e, ui.button) and e.text == "+ Cetacea (order)"
+            for e in container.descendants()
+        )
+    finally:
+        container.delete()

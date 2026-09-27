@@ -30,6 +30,12 @@ from taxo_trainer.ui.name_status import (
     name_lookup_failure_message,
 )
 from taxo_trainer.ui.theme import ACCENTS, THEME_LABELS, set_accent, set_surface_theme
+from taxo_trainer.updates import (
+    APP_VERSION,
+    DOWNLOAD_PAGE,
+    fetch_latest_release,
+    is_newer_release,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -157,6 +163,35 @@ def render_settings_view(
             "text-2xl font-bold mb-4 text-primary"
         )
 
+        with ui.row().classes("items-center gap-3 flex-wrap mb-4"):
+            ui.label(f"Version {APP_VERSION}").classes("text-sm text-tt-muted")
+            update_button = ui.button("Check for updates").props("outline dense")
+            update_status = ui.label("").classes("text-sm text-tt-muted")
+            update_link = ui.link("Open download page ↗", DOWNLOAD_PAGE, new_tab=True).classes(
+                "text-sm text-primary hidden"
+            )
+
+            async def check_for_updates() -> None:
+                update_button.disable()
+                update_link.classes(add="hidden")
+                update_status.set_text("Checking GitHub Releases...")
+                try:
+                    latest_tag = await run.io_bound(fetch_latest_release)
+                    if is_newer_release(latest_tag):
+                        update_status.set_text(f"{latest_tag} is available.")
+                        update_link.classes(remove="hidden")
+                    else:
+                        update_status.set_text("You have the latest release.")
+                except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                    update_status.set_text(
+                        "Could not check right now. Try again later or open the download page."
+                    )
+                    update_link.classes(remove="hidden")
+                finally:
+                    update_button.enable()
+
+            update_button.on_click(check_for_updates)
+
         # 0. Active Data Source & Dataset Stats Card
         with ui.card().classes(
             "w-full bg-tt-surface border border-tt-warning p-5 rounded-lg shadow-lg mb-6"
@@ -164,11 +199,11 @@ def render_settings_view(
             with ui.row().classes(
                 "w-full justify-between items-center flex-wrap gap-2 mb-2"
             ):
-                ui.label("Current Active Data Source").classes(
+                ui.label("Observation data").classes(
                     "text-xs font-bold text-tt-warning uppercase tracking-wider"
                 )
 
-            ui.label(f"📁 {active_path}").classes(
+            ui.label(f"Most recent import: {active_path}" if taxa_cnt else active_path).classes(
                 "text-sm font-mono text-tt-main break-all mb-3 bg-tt-raised p-2 rounded border border-tt-border"
             )
 

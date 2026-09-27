@@ -405,17 +405,18 @@ def _activate_import(staged_path: Path, db_path: Path) -> None:
                     taxon_key, scientific_name, canonical_name, accepted_name,
                     rank, kingdom, phylum, class, order_name, family, genus,
                     vernacular_da, vernacular_en, occurrence_count,
-                    genus_key, family_key, order_key, checklist_key
+                    genus_key, family_key, order_key, class_key, checklist_key
                 ) SELECT taxon_key, scientific_name, canonical_name, accepted_name,
                     rank, kingdom, phylum, class, order_name, family, genus,
                     vernacular_da, vernacular_en, occurrence_count,
-                    genus_key, family_key, order_key, checklist_key
+                    genus_key, family_key, order_key, class_key, checklist_key
                   FROM staged.taxa WHERE 1
                 ON CONFLICT(taxon_key) DO UPDATE SET
                     occurrence_count = excluded.occurrence_count,
                     genus_key = COALESCE(excluded.genus_key, taxa.genus_key),
                     family_key = COALESCE(excluded.family_key, taxa.family_key),
                     order_key = COALESCE(excluded.order_key, taxa.order_key),
+                    class_key = COALESCE(excluded.class_key, taxa.class_key),
                     checklist_key = COALESCE(excluded.checklist_key, taxa.checklist_key),
                     vernacular_da = COALESCE(NULLIF(excluded.vernacular_da, ''), taxa.vernacular_da),
                     vernacular_en = COALESCE(NULLIF(excluded.vernacular_en, ''), taxa.vernacular_en)
@@ -631,6 +632,7 @@ def _ingest_to_database(
                     "genus_key": row.get("genusKey") or None,
                     "family_key": row.get("familyKey") or None,
                     "order_key": row.get("orderKey") or None,
+                    "class_key": row.get("classKey") or None,
                     "checklist_key": row.get("checklistKey") or None,
                     "vernacular_da": vernacular_da,
                     "vernacular_en": vernacular_en,
@@ -697,7 +699,7 @@ def _flush_batch(
             data["vernacular_da"],
             data["vernacular_en"],
             data["count"],
-            data["genus_key"], data["family_key"], data["order_key"], data["checklist_key"],
+            data["genus_key"], data["family_key"], data["order_key"], data["class_key"], data["checklist_key"],
         )
         for tkey, data in taxa_accumulator.items()
     ]
@@ -710,13 +712,14 @@ def _flush_batch(
                     taxon_key, scientific_name, canonical_name, accepted_name,
                     rank, kingdom, phylum, class, order_name, family, genus,
                     vernacular_da, vernacular_en, occurrence_count,
-                    genus_key, family_key, order_key, checklist_key
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    genus_key, family_key, order_key, class_key, checklist_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(taxon_key) DO UPDATE SET
                     occurrence_count = excluded.occurrence_count,
                     genus_key = COALESCE(excluded.genus_key, taxa.genus_key),
                     family_key = COALESCE(excluded.family_key, taxa.family_key),
                     order_key = COALESCE(excluded.order_key, taxa.order_key),
+                    class_key = COALESCE(excluded.class_key, taxa.class_key),
                     checklist_key = COALESCE(excluded.checklist_key, taxa.checklist_key),
                     vernacular_da = COALESCE(NULLIF(excluded.vernacular_da, ''), taxa.vernacular_da),
                     vernacular_en = COALESCE(NULLIF(excluded.vernacular_en, ''), taxa.vernacular_en);
@@ -725,7 +728,7 @@ def _flush_batch(
             )
 
         for data in taxa_accumulator.values():
-            for rank in ("genus", "family", "order"):
+            for rank in ("genus", "family", "order", "class"):
                 key = data.get(f"{rank}_key")
                 name = data.get(rank if rank != "order" else "order_name")
                 if key and name:

@@ -22,8 +22,8 @@ class SamplingFilter:
     month: int | None = None
     misidentified_only: bool = False
     language: str = "da"  # "da" (Danish), "en" (English), etc.
-    include_taxa: list[str] = field(default_factory=list)  # Whitelist of GBIF IDs (species/genus/family)
-    exclude_taxa: list[str] = field(default_factory=list)  # Blacklist of GBIF IDs (species/genus/family)
+    include_taxa: list[str] = field(default_factory=list)  # Whitelist of GBIF taxon IDs
+    exclude_taxa: list[str] = field(default_factory=list)  # Blacklist of GBIF taxon IDs
 
 
 @dataclass
@@ -103,14 +103,14 @@ def sample_stage1_taxon(
     if filters.include_taxa:
         inc_conditions = []
         for inc_item in filters.include_taxa:
-            inc_conditions.append("(taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ? OR COALESCE(order_key, '') = ?)")
-            params.extend([inc_item] * 4)
+            inc_conditions.append("(taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ? OR COALESCE(order_key, '') = ? OR COALESCE(class_key, '') = ?)")
+            params.extend([inc_item] * 5)
         query += " AND (" + " OR ".join(inc_conditions) + ")"
 
     if filters.exclude_taxa:
         for exc_item in filters.exclude_taxa:
-            query += " AND NOT (taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ? OR COALESCE(order_key, '') = ?)"
-            params.extend([exc_item] * 4)
+            query += " AND NOT (taxon_key = ? OR COALESCE(genus_key, '') = ? OR COALESCE(family_key, '') = ? OR COALESCE(order_key, '') = ? OR COALESCE(class_key, '') = ?)"
+            params.extend([exc_item] * 5)
 
 
     cursor = app_conn.execute(query, params)

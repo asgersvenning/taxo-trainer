@@ -304,6 +304,35 @@ def render_taxa_filter_controls(
         set_app_metadata(f"blacklist_ids_{active_ds}", "|".join(filters.exclude_taxa), conn=app_conn)
         on_changed()
 
+    def training_group_matches(query: str) -> list[dict]:
+        """Offer ID-backed class and order groups alongside existing local matches."""
+        pattern = f"%{query.strip().lower()}%"
+        broad = app_conn.execute("""
+            SELECT h.taxon_key, h.rank_name, h.rank_level
+            FROM higher_ranks h
+            WHERE h.rank_level IN ('CLASS', 'ORDER')
+              AND LOWER(h.rank_name) LIKE ?
+              AND EXISTS (
+                  SELECT 1 FROM taxa t
+                  WHERE t.occurrence_count >= ?
+                    AND ((h.rank_level = 'CLASS' AND t.class_key = h.taxon_key)
+                         OR (h.rank_level = 'ORDER' AND t.order_key = h.taxon_key))
+              )
+            ORDER BY CASE WHEN LOWER(h.rank_name) = ? THEN 0 ELSE 1 END,
+                     h.rank_name
+            LIMIT 5
+        """, (pattern, filters.min_count, query.strip().lower())).fetchall()
+        matches = [
+            {"taxon_key": row["taxon_key"],
+             "label": f"{row['rank_name']} ({row['rank_level'].lower()})"}
+            for row in broad
+        ]
+        matches.extend(autocomplete_taxa(
+            app_conn, query, limit=5, min_count=filters.min_count,
+            lang=filters.language,
+        ))
+        return matches[:5]
+
     card = ui.card().classes(
         "w-full bg-tt-surface p-3 rounded-lg border border-tt-border space-y-3 shadow-md"
     )
@@ -327,7 +356,7 @@ def render_taxa_filter_controls(
 
             inc_input = (
                 ui.input(
-                    placeholder="Species, genus, or family",
+                    placeholder="Species, genus, family, order, or class",
                 )
                 .classes("w-full text-xs text-tt-main")
                 .props("outlined dense clearable")
@@ -342,9 +371,7 @@ def render_taxa_filter_controls(
                 if len(txt.strip()) < 2:
                     inc_suggestions.classes(add="hidden")
                     return
-                matches = autocomplete_taxa(
-                    app_conn, txt, limit=5, min_count=filters.min_count, lang=filters.language
-                )
+                matches = training_group_matches(txt)
                 inc_suggestions.clear()
                 if matches:
                     inc_suggestions.classes(remove="hidden")
@@ -400,7 +427,7 @@ def render_taxa_filter_controls(
 
             exc_input = (
                 ui.input(
-                    placeholder="Species, genus, or family",
+                    placeholder="Species, genus, family, order, or class",
                 )
                 .classes("w-full text-xs text-tt-main")
                 .props("outlined dense clearable")
@@ -415,9 +442,7 @@ def render_taxa_filter_controls(
                 if len(txt.strip()) < 2:
                     exc_suggestions.classes(add="hidden")
                     return
-                matches = autocomplete_taxa(
-                    app_conn, txt, limit=5, min_count=filters.min_count, lang=filters.language
-                )
+                matches = training_group_matches(txt)
                 exc_suggestions.clear()
                 if matches:
                     exc_suggestions.classes(remove="hidden")

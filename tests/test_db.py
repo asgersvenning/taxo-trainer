@@ -24,7 +24,7 @@ def test_init_app_db_in_memory():
     expected_cols = {
         "taxon_key", "scientific_name", "canonical_name", "accepted_name",
         "rank", "kingdom", "phylum", "class", "order_name", "family",
-        "genus", "vernacular_da", "vernacular_en", "occurrence_count"
+        "genus", "vernacular_da", "vernacular_en", "occurrence_count", "class_key"
     }
     assert expected_cols.issubset(columns)
 

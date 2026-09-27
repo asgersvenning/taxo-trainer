@@ -262,7 +262,7 @@ def init_app_db(conn: sqlite3.Connection | None = None) -> None:
                 )""")
                 conn.execute("CREATE INDEX idx_higher_ranks_names ON higher_ranks(rank_name, vernacular_da, vernacular_en)")
             columns = {r["name"] for r in conn.execute("PRAGMA table_info(taxa)")}
-            for column in ("genus_key", "family_key", "order_key", "checklist_key", "accepted_taxon_key"):
+            for column in ("genus_key", "family_key", "order_key", "class_key", "checklist_key", "accepted_taxon_key"):
                 if column not in columns:
                     conn.execute(f"ALTER TABLE taxa ADD COLUMN {column} TEXT")
 

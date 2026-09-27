@@ -469,3 +469,48 @@ def test_url_cache_isolates_basenames_and_query_strings(tmp_path, monkeypatch):
     assert calls == urls
     assert legacy.read_bytes() == b"old partial download"
     assert resolve_dwc_source_path(str(legacy)) == legacy
+
+
+def test_combined_import_supports_class_and_order_training_groups(tmp_path):
+    """Separate archives remain together and can be scoped by GBIF rank IDs."""
+    from taxo_trainer.engine.sampling import SamplingFilter, sample_stage1_taxon
+
+    header = (
+        "gbifID\ttaxonKey\tscientificName\tacceptedScientificName\t"
+        "taxonRank\tclass\tclassKey\torder\torderKey\tassociatedMedia\n"
+    )
+    bird = tmp_path / "birds.txt"
+    bird.write_text(
+        header
+        + "bird-1\t5YGFK\tChroicocephalus ridibundus\tChroicocephalus ridibundus\t"
+        "SPECIES\tAves\tV2\tCharadriiformes\tX3\thttps://example.com/bird.jpg\n"
+    )
+    whale = tmp_path / "cetaceans.txt"
+    whale.write_text(
+        header
+        + "whale-1\t59R5F\tTursiops truncatus\tTursiops truncatus\t"
+        "SPECIES\tMammalia\t6224G\tCetacea\tWP\thttps://example.com/whale.jpg\n"
+    )
+    database = tmp_path / "combined.db"
+    assert ingest_dwc_file(bird, db_path=database) == (1, 1)
+    assert ingest_dwc_file(whale, db_path=database) == (1, 1)
+
+    conn = sqlite3.connect(database)
+    conn.row_factory = sqlite3.Row
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM occurrences").fetchone()[0] == 2
+        assert {
+            (row["taxon_key"], row["rank_name"], row["rank_level"])
+            for row in conn.execute(
+                "SELECT taxon_key, rank_name, rank_level FROM higher_ranks "
+                "WHERE taxon_key IN ('V2', 'WP')"
+            )
+        } == {("V2", "Aves", "CLASS"), ("WP", "Cetacea", "ORDER")}
+        assert sample_stage1_taxon(
+            conn, SamplingFilter(include_taxa=["V2"])
+        ) == "5YGFK"
+        assert sample_stage1_taxon(
+            conn, SamplingFilter(include_taxa=["WP"])
+        ) == "59R5F"
+    finally:
+        conn.close()

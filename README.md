@@ -78,6 +78,10 @@ Download the latest installer or executable bundle for your platform from the [d
 
 ---
 
+Use **Check for updates** in Settings & Data to compare the installed version with the latest public GitHub release. This only contacts GitHub when clicked; it opens the download page if an update is available.
+
+---
+
 ### Option B: Running from Source (Developers)
 
 Ensure you have [`uv`](https://docs.astral.sh/uv/) installed.
@@ -137,7 +141,7 @@ The app links to four GBIF-hosted example extracts: [Danish plants](https://doi.
 
 Use **Check for Names Again** to revisit available names, or **Retry Name Lookup** after an incomplete lookup. Successful responses are cached. If GBIF asks the app to pause, wait for the time shown before retrying; repeated clicking will not bypass the pause.
 
-After upgrading from older versions, reselect saved training groups if prompted. Re-ingesting the archive or running name lookup can restore missing higher-rank information where GBIF provides the necessary identifiers. Neither can guarantee a complete hierarchy or naming coverage.
+After upgrading from older versions, reselect saved training groups if prompted. Re-import any archive loaded before version 0.1.5 if you want to filter it by class, since earlier versions did not store GBIF class IDs. Re-ingesting the archive or running name lookup can restore missing higher-rank information where GBIF provides the necessary identifiers. Neither can guarantee a complete hierarchy or naming coverage.
 
 ### Choose what to practise
 
@@ -147,7 +151,7 @@ After upgrading from older versions, reselect saved training groups if prompted.
 | **Equal chance across taxa** | Give each eligible taxon equal weight. |
 | **Follow observation counts** | Favour taxa in proportion to their retained observation counts. These counts describe the imported data, not biological abundance. |
 | **Reduce differences strongly (log)** / **Reduce differences moderately (square root)** | Soften the influence of observation counts compared with Natural sampling. |
-| Family and taxon filters | Focus on selected groups, or exclude groups you choose. |
+| Training groups | Include or exclude GBIF species, genera, families, orders, or classes by ID. For a combined bird and cetacean import, select **Aves (class)** or **Cetacea (order)** under **Include only**. |
 | **Practice Misidentified Photos Only** | Revisit photos you previously misidentified. |
 
 Choose light, dark, or system appearance under **Theme & Appearance**, with a Standard, Warm paper, Neutral, or High contrast palette. Accent choices are Blue, Forest, Plum, Amber, Rose, and Slate. High contrast strengthens text and control boundaries in both light and dark mode. Display language, palette, theme, accent, sampling mode, and minimum-occurrence threshold are saved automatically across launches and when clearing a dataset. Family and misidentified-only filters are session controls. Training changes apply to the next observation; the current question and typed input stay in place. Temporary dashboard practice keeps your normal training groups saved.
@@ -180,7 +184,7 @@ Once the export is ready, download the ZIP or copy its direct archive download l
 
 **Import limit per taxon** limits the number of observations retained per taxon during import (`0` means unlimited). It is separate from the minimum-occurrence threshold used to choose taxa for training.
 
-Imports **add or update records** in the current data source. They do not automatically replace it. To start with only a new dataset, use **Clear Current Data Source** first. Clearing removes the current observation data, while retaining user progress and the preferences listed above. A failed import leaves the data present immediately before that import intact; it does not undo a separate clearing action.
+Imports **add or update records** in the current data source. Import the bird and cetacean examples one after the other to train on both without merging their ZIP files. Under **Training groups → Include only**, select **Aves (class)** for birds or **Cetacea (order)** for cetaceans; remove the current chip before choosing the other group. The Settings card shows the most recent import, while its occurrence count includes all imported archives. Imports do not automatically replace existing records. To start with only a new dataset, use **Clear Current Data Source** first. Clearing removes the current observation data, while retaining user progress and the preferences listed above. A failed import leaves the data present immediately before that import intact; it does not undo a separate clearing action.
 
 After import, use **Species Names** for optional name lookup and return to **Quiz**.
 

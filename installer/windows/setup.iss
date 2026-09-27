@@ -1,6 +1,6 @@
 ; Inno Setup script for Taxo-Trainer Desktop Application Installer
 #define MyAppName "Taxo-Trainer"
-#define MyAppVersion "0.1.4"
+#define MyAppVersion "0.1.5"
 #define MyAppPublisher "Taxo-Trainer Development Team"
 #define MyAppURL "https://github.com/asgersvenning/taxo-trainer"
 #define MyAppExeName "taxo-trainer.exe"
