@@ -4,7 +4,7 @@ import json
 import re
 import urllib.request
 
-APP_VERSION = "0.1.8"
+APP_VERSION = "0.1.9"
 DOWNLOAD_PAGE = "https://asgersvenning.github.io/taxo-trainer/"
 LATEST_RELEASE_API = "https://api.github.com/repos/asgersvenning/taxo-trainer/releases/latest"
 
