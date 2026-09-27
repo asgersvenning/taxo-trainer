@@ -56,6 +56,29 @@ def test_bad_responses_are_visible_and_not_cached(cache, monkeypatch, payload):
     assert cache.execute("SELECT COUNT(*) FROM gbif_api_cache").fetchone()[0] == 0
 
 
+@pytest.mark.parametrize("url", [
+    "https://api.gbif.org/v1/species/999",
+    "https://api.gbif.org/v1/occurrence/999",
+])
+def test_missing_id_is_cached_for_retry(cache, monkeypatch, url):
+    """A GBIF 404 is a reusable negative result, not a repeated HTTP request."""
+    calls = []
+
+    def missing(req, **kwargs):
+        calls.append(req.full_url)
+        raise urllib.error.HTTPError(req.full_url, 404, "Not found", {}, None)
+
+    monkeypatch.setattr(builder, "_open_gbif", missing)
+    diagnostics = builder.LookupDiagnostics()
+    assert builder.fetch_gbif_raw_api(url, cache, diagnostics=diagnostics) == {}
+    assert builder.fetch_gbif_raw_api(url, cache, diagnostics=diagnostics) == {}
+    assert diagnostics.counts == {"requests": 1, "not_found": 1, "cache_hits": 1}
+    assert calls == [url]
+    assert cache.execute(
+        "SELECT response_json FROM gbif_api_cache WHERE url=?", (url,)
+    ).fetchone()[0] == "{}"
+
+
 @pytest.mark.parametrize("cached,age", [("broken", 0), ("[]", 0), ('{"old": true}', 8 * 86400)])
 def test_invalid_or_expired_cache_is_refreshed(cache, monkeypatch, cached, age):
     """Only fresh JSON objects are eligible cache hits."""
@@ -139,6 +162,39 @@ def test_multilingual_lookup_reports_actual_changes_and_logs_cache_use(tmp_path,
         conn.close()
 
 
+def test_no_vernacular_names_recheck_uses_cache(tmp_path, monkeypatch):
+    """An empty vernacular response stays cached across complete lookup runs."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+    calls = []
+
+    def response(req, **kwargs):
+        calls.append(req.full_url)
+        data = (
+            {"results": [], "endOfRecords": True}
+            if "vernacularNames" in req.full_url
+            else {"key": 1, "rank": "SPECIES"}
+        )
+        return Response(json.dumps(data).encode())
+
+    monkeypatch.setattr(builder, "_open_gbif", response)
+    app = sqlite3.connect(":memory:")
+    app.row_factory = sqlite3.Row
+    init_app_db(app)
+    app.execute(
+        """INSERT INTO taxa (taxon_key, scientific_name, canonical_name,
+           accepted_name, rank, checklist_key)
+           VALUES ('1', 'Example species', 'Example species', 'Example species', 'SPECIES', ?)""",
+        (builder.BACKBONE_CHECKLIST,),
+    )
+    try:
+        assert builder.enrich_vernacular_names_from_gbif(app) == 0
+        assert builder.enrich_vernacular_names_from_gbif(app) == 0
+        assert len(calls) == 2
+    finally:
+        app.close()
+
+
 def test_cached_recheck_reuses_worker_connections(tmp_path, monkeypatch):
     """A warm multi-batch recheck uses local cache without redundant writes."""
     monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
@@ -184,6 +240,37 @@ def test_cached_recheck_reuses_worker_connections(tmp_path, monkeypatch):
         assert builder.enrich_vernacular_names_from_gbif(app) == 0
         assert app.total_changes == before
         assert opened == 4  # One pruning connection and three batches of 32 taxa.
+    finally:
+        app.close()
+
+
+def test_progress_reports_each_taxon_before_batch_finishes(tmp_path, monkeypatch):
+    """The first completed lookup updates progress while the batch is still running."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+    app = sqlite3.connect(":memory:")
+    app.row_factory = sqlite3.Row
+    init_app_db(app)
+    app.executemany(
+        """INSERT INTO taxa (taxon_key, scientific_name, canonical_name, accepted_name, rank)
+           VALUES (?, 'Example species', 'Example species', 'Example species', 'SPECIES')""",
+        [("1",), ("2",)],
+    )
+    progress = []
+
+    def lookup(row, _occurrence_id, _diagnostics, _cache):
+        if row["taxon_key"] == "2":
+            assert any(current == 1 for current, _total, _message in progress)
+        return row, {}, {}, [], None
+
+    monkeypatch.setattr(builder, "_lookup_taxon", lookup)
+    try:
+        assert builder.enrich_vernacular_names_from_gbif(
+            app, progress_callback=lambda current, total, message: progress.append(
+                (current, total, message)
+            )
+        ) == 0
+        assert [current for current, _total, _message in progress] == [0, 1, 2, 2]
     finally:
         app.close()
 

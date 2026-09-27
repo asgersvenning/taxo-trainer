@@ -427,7 +427,7 @@ def fetch_gbif_raw_api(
             parsed_json = _decode_gbif_json(raw_str)
     except urllib.error.HTTPError as exc:
         if diagnostics is not None:
-            diagnostics.record("failed_requests")
+            diagnostics.record("not_found" if exc.code == 404 else "failed_requests")
         if exc.code == 429:
             delay = _retry_after_seconds(
                 exc.headers.get("Retry-After") if exc.headers else None
@@ -442,10 +442,13 @@ def fetch_gbif_raw_api(
                 retry_after_seconds=delay,
             ) from exc
         if exc.code == 404:
-            return {}
-        raise GBIFRequestError(
-            f"GBIF returned HTTP {exc.code}; enrichment is incomplete."
-        ) from exc
+            # A missing ID is a valid negative result for the cache TTL.
+            raw_str = "{}"
+            parsed_json = {}
+        else:
+            raise GBIFRequestError(
+                f"GBIF returned HTTP {exc.code}; enrichment is incomplete."
+            ) from exc
     except (OSError, http.client.HTTPException, TypeError, ValueError) as exc:
         if diagnostics is not None:
             diagnostics.record("failed_requests")
@@ -685,6 +688,11 @@ def enrich_vernacular_names_from_gbif(
     conn = conn if conn is not None else get_db_connection(APP_DB_PATH)
     diagnostics = LookupDiagnostics()
     try:
+        if progress_callback:
+            total = conn.execute("SELECT COUNT(*) FROM taxa").fetchone()[0]
+            if limit is not None:
+                total = len(range(total)[:limit])
+            progress_callback(0, total, "Preparing name lookup...")
         cache = get_gbif_cache_connection()
         try:
             prune_gbif_cache(cache, max_size_mb=100.0, max_age_days=7)
@@ -704,24 +712,39 @@ def enrich_vernacular_names_from_gbif(
             for r in rows
         ]
 
+        progress_lock = threading.Lock()
+        stop_requested = threading.Event()
+        checked = 0
+
         def lookup_batch(batch):
-            """Reuse one cache connection across several taxa in a worker."""
+            """Reuse one cache connection and report each completed taxon."""
+            nonlocal checked
             cache = get_gbif_cache_connection()
             results = []
             try:
                 for row, obs in batch:
+                    if stop_requested.is_set():
+                        break
                     try:
                         results.append(
                             _lookup_taxon(row, obs[0] if obs else None, diagnostics, cache)
                         )
                     except (GBIFRequestError, sqlite3.Error) as exc:
+                        stop_requested.set()
                         return results, exc
+                    with progress_lock:
+                        checked += 1
+                        if progress_callback:
+                            progress_callback(
+                                checked,
+                                len(rows),
+                                f"Checked {checked}/{len(rows)} species...",
+                            )
                 return results, None
             finally:
                 cache.close()
 
         updated = 0
-        checked = 0
         with ThreadPoolExecutor(max_workers=30) as executor:
             futures = [
                 executor.submit(lookup_batch, targets[start : start + 32])
@@ -731,7 +754,6 @@ def enrich_vernacular_names_from_gbif(
                 for future in as_completed(futures):
                     results, error = future.result()
                     for row, links, names, ranks, accepted in results:
-                        checked += 1
                         merged = _merge_names(row.get("vernacular_json"), names)
                         old = _merge_names(row.get("vernacular_json"), {})
                         if names and (
@@ -805,15 +827,10 @@ def enrich_vernacular_names_from_gbif(
                                         checklist,
                                     ),
                                 )
-                        if progress_callback:
-                            progress_callback(
-                                checked,
-                                len(rows),
-                                f"Checked {checked}/{len(rows)} species...",
-                            )
                     if error is not None:
                         raise error
             except Exception:
+                stop_requested.set()
                 for pending in futures:
                     pending.cancel()
                 raise
