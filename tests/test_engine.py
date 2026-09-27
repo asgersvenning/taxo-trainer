@@ -160,6 +160,29 @@ def test_sampling_exhausts_full_species_pool_before_repeating(
     assert seen_set == preserved_seen | {repeated.occurrence_id}
 
 
+def test_autocomplete_respects_training_group_ids(setup_engine_dbs):
+    """Species, genus, and family suggestions use the sampling group scope."""
+    app_conn, _ = setup_engine_dbs
+    app_conn.execute(
+        "UPDATE taxa SET class_key='CLASS_OAK' WHERE taxon_key=2435140"
+    )
+    app_conn.execute(
+        """UPDATE taxa SET class_key='CLASS_BEECH', family='Beechaceae',
+           family_key='FAMILY_BEECH' WHERE taxon_key=2865545"""
+    )
+
+    assert autocomplete_taxa(app_conn, "Fagus", include_taxa=["CLASS_OAK"]) == []
+    assert autocomplete_taxa(app_conn, "Beechaceae", include_taxa=["CLASS_OAK"]) == []
+    beech = autocomplete_taxa(app_conn, "Fagus", include_taxa=["CLASS_BEECH"])
+    assert {row["rank"] for row in beech} >= {"SPECIES", "GENUS"}
+    assert autocomplete_taxa(app_conn, "Beechaceae", include_taxa=["CLASS_BEECH"])
+    assert autocomplete_taxa(app_conn, "Fagus", exclude_taxa=["CLASS_BEECH"]) == []
+    assert autocomplete_taxa(app_conn, "Quercus", exclude_taxa=["CLASS_BEECH"])
+    assert autocomplete_taxa(
+        app_conn, "Fagus sylvatica", include_taxa=["CLASS_OAK"]
+    ) == []
+
+
 def test_validator_multi_rank_and_autocomplete(setup_engine_dbs):
     """Test validator rank matching, fuzzy typos, and autocomplete."""
     app_conn, _ = setup_engine_dbs

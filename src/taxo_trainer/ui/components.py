@@ -175,6 +175,10 @@ def render_photo_viewer(
                 location = details.locality if details else locality
                 details_container.clear()
                 with details_container:
+                    if details and details.species_name:
+                        ui.label(f"Species: {details.species_name}").classes(
+                            "font-semibold text-tt-main bg-tt-raised px-2 py-0.5 rounded border border-tt-border"
+                        )
                     ui.label(location or "Field Observation").classes(
                         "font-medium truncate max-w-xs text-tt-muted"
                     )
@@ -624,17 +628,19 @@ def render_taxonomic_hierarchy_feedback(
         )
         species_ok = bool((is_corr and m_rank == "SPECIES") or is_solved)
 
-        # Determine which ranks should be hidden ("???").
-        # If an incorrect guess was made (validation_result exists and is not correct),
-        # all ranks are revealed as red incorrect boxes showing the true target ranks.
-        is_incorrect_guess = bool(
-            validation_result and not validation_result.is_correct
+        # An incorrect higher-rank guess reveals the target hierarchy only
+        # through that rank. Lower ranks remain hidden until guessed or hinted.
+        rank_depth = {"ORDER": 0, "FAMILY": 1, "GENUS": 2, "SPECIES": 3}
+        reveal_depth = (
+            rank_depth.get(m_rank, -1)
+            if validation_result and not is_corr and validation_result.matched_taxon_key
+            else -1
         )
 
-        order_hidden = not order_ok and not is_solved and not is_incorrect_guess
-        family_hidden = not family_ok and not is_solved and not is_incorrect_guess
-        genus_hidden = not genus_ok and not is_solved and not is_incorrect_guess
-        species_hidden = not species_ok and not is_solved and not is_incorrect_guess
+        order_hidden = not order_ok and not is_solved and reveal_depth < 0
+        family_hidden = not family_ok and not is_solved and reveal_depth < 1
+        genus_hidden = not genus_ok and not is_solved and reveal_depth < 2
+        species_hidden = not species_ok and not is_solved and reveal_depth < 3
 
         def resolve_gbif_key(rank_lvl: str, raw_name: str) -> str | None:
             column = "taxon_key" if rank_lvl.upper() == "SPECIES" else f"{rank_lvl.lower()}_key"

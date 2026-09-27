@@ -198,3 +198,64 @@ def test_new_guess_without_photos_clears_previous_reference(quiz):
     assert state.diagnostic_photo_url is None
     assert not state.comparison_open
     assert state.used_hint  # Earlier assistance still counts.
+
+
+def test_incorrect_genus_hides_species_and_shows_labelled_group_photos(quiz):
+    app, user, state, controller, container = quiz
+    app.execute("""UPDATE taxa SET scientific_name='Passer domesticus',
+        canonical_name='Passer domesticus', accepted_name='Passer domesticus',
+        genus='Passer', genus_key='G2', family='Passeridae', family_key='F2'
+        WHERE taxon_key='B2'""")
+    app.execute("""INSERT INTO taxa(taxon_key,scientific_name,canonical_name,
+        accepted_name,rank,genus,genus_key,family,family_key,order_name,order_key,
+        occurrence_count) VALUES('B3','Passer montanus','Passer montanus',
+        'Passer montanus','SPECIES','Passer','G2','Passeridae','F2','Order','O1',10)""")
+    app.execute("""INSERT INTO occurrences(occurrence_id,taxon_key,media_urls)
+        VALUES('B3','B3','https://photo.example/b3.jpg')""")
+    app.executemany("INSERT INTO higher_ranks(taxon_key,rank_name,rank_level) VALUES(?,?,?)",
+                    [('G2', 'Passer', 'GENUS'), ('F2', 'Passeridae', 'FAMILY')])
+    app.commit()
+
+    assert controller.practise(['A1'])
+    quiz_view.submit_guess(state, app, user, 'default', 'Passer')
+    assert state.last_validation_result.matched_rank == 'GENUS'
+    assert not state.solved
+    assert 'Example A1' not in state.last_feedback['message']
+    assert state.diagnostic_guessed_name == 'Passer (genus)'
+    assert {photo.species_name for photo in state.diagnostic_photos} == {
+        'Passer domesticus', 'Passer montanus'
+    }
+    assert state.comparison_open
+
+    controller.refresh()
+    labels = {e.text for e in container.descendants() if isinstance(e, ui.label)}
+    assert '[Genus] Example' in labels
+    assert '[Species] ???' in labels
+    assert '[Species] Example A1' not in labels
+    reference = next(e for e in container.descendants()
+                     if e._props.get('aria-label') == 'Reference photo panel')
+    assert any(isinstance(e, ui.label) and e.text == 'Species: Passer domesticus'
+               for e in reference.descendants())
+    next_photo = next(e for e in reference.descendants()
+                      if isinstance(e, ui.button) and e.text == 'Next Photo ▶')
+    next(e for e in next_photo._event_listeners.values() if e.type == 'click').handler(None)
+    assert any(isinstance(e, ui.label) and e.text == 'Species: Passer montanus'
+               for e in reference.descendants())
+
+
+def test_incorrect_family_does_not_reveal_genus_or_species(quiz):
+    app, user, state, controller, container = quiz
+    app.execute("""UPDATE taxa SET family='Passeridae', family_key='F2'
+        WHERE taxon_key='B2'""")
+    app.execute("""INSERT INTO higher_ranks(taxon_key,rank_name,rank_level)
+        VALUES('F2','Passeridae','FAMILY')""")
+    app.commit()
+    assert controller.practise(['A1'])
+    quiz_view.submit_guess(state, app, user, 'default', 'Passeridae')
+    assert state.last_validation_result.matched_rank == 'FAMILY'
+    assert 'Example A1' not in state.last_feedback['message']
+    controller.refresh()
+    labels = {e.text for e in container.descendants() if isinstance(e, ui.label)}
+    assert '[Family] Family' in labels
+    assert '[Genus] ???' in labels
+    assert '[Species] ???' in labels

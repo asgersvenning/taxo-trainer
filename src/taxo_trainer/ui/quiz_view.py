@@ -257,8 +257,8 @@ def submit_guess(
                 "message": res.feedback_message,
             }
 
-            if res.matched_rank in ("GENUS", "FAMILY"):
-                state.diagnostic_guessed_name = res.matched_name
+            if res.matched_rank in ("GENUS", "FAMILY", "ORDER"):
+                state.diagnostic_guessed_name = f"{res.matched_name} ({res.matched_rank.lower()})"
             else:
                 guessed_row = app_conn.execute(
                     "SELECT * FROM taxa WHERE taxon_key = ?",
@@ -276,7 +276,7 @@ def submit_guess(
                     state.diagnostic_guessed_name = res.matched_name or guess_text
 
             key = str(res.matched_taxon_key)
-            photos = get_diagnostic_photos(app_conn, key)
+            photos = get_diagnostic_photos(app_conn, key, res.matched_rank or "SPECIES")
             if key != state.diagnostic_taxon_key or photos != state.diagnostic_photos:
                 state.diagnostic_view.reset()
             state.diagnostic_taxon_key = key
@@ -719,7 +719,9 @@ def render_quiz_view(
 
                     if state.comparison_open and state.diagnostic_photos:
                         row = app_conn.execute("SELECT * FROM taxa WHERE taxon_key=?", (state.diagnostic_taxon_key,)).fetchone()
-                        name = get_display_name(row, state.filters.language) if row else state.diagnostic_guessed_name
+                        name = state.diagnostic_guessed_name or (
+                            get_display_name(row, state.filters.language) if row else ""
+                        )
                         with ui.column().classes("flex-1 w-full xl:w-0 min-w-0 min-h-0 h-full"):
                             render_photo_viewer(
                                 [photo.url for photo in state.diagnostic_photos],
@@ -827,6 +829,8 @@ def render_quiz_view(
                                 parent_genus=scope_key("genus") if state.matched_genus else None,
                                 parent_family=scope_key("family") if state.matched_family else None,
                                 parent_order=scope_key("order") if state.matched_order else None,
+                                include_taxa=(state.question_filters or state.effective_filters()).include_taxa,
+                                exclude_taxa=(state.question_filters or state.effective_filters()).exclude_taxa,
                             )
                             suggestions_container.clear()
                             if matches:
@@ -860,6 +864,8 @@ def render_quiz_view(
                                 parent_genus=scope_key("genus") if state.matched_genus else None,
                                 parent_family=scope_key("family") if state.matched_family else None,
                                 parent_order=scope_key("order") if state.matched_order else None,
+                                include_taxa=(state.question_filters or state.effective_filters()).include_taxa,
+                                exclude_taxa=(state.question_filters or state.effective_filters()).exclude_taxa,
                             )
                             if matches:
                                 handle_submit_guess(matches[0]["value"])

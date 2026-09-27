@@ -185,6 +185,8 @@ def autocomplete_taxa(
     parent_family: str | None = None,
     parent_order: str | None = None,
     min_count: int = 1,
+    include_taxa: list[str] | None = None,
+    exclude_taxa: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Autocomplete taxa query returning matching canonical, vernacular, genus, and family names.
 
@@ -201,6 +203,8 @@ def autocomplete_taxa(
         parent_family: Optional GBIF family ID constraining genus/species suggestions.
         parent_order: Optional GBIF order ID constraining lower-rank suggestions.
         min_count: Minimum occurrence count cutoff threshold.
+        include_taxa: GBIF group IDs allowed by the current training filter.
+        exclude_taxa: GBIF group IDs excluded by the current training filter.
 
     Returns:
         List[Dict[str, str]]: List of suggestion objects containing label, value, rank, taxon_key.
@@ -402,6 +406,35 @@ def autocomplete_taxa(
     if p_ord:
         f_where_extra = " AND t.order_key = :p_ord"
 
+    # Apply the same ID-based group membership rules used by stage-one sampling.
+    # Genus and family suggestions come only from eligible descendant taxa.
+    group_params = {}
+
+    def group_scope(alias: str) -> str:
+        columns = ("taxon_key", "genus_key", "family_key", "order_key", "class_key")
+        clauses = []
+        if include_taxa:
+            included = []
+            for index, key in enumerate(include_taxa):
+                name = f"group_include_{index}"
+                group_params[name] = str(key)
+                included.append("(" + " OR ".join(
+                    f"COALESCE({alias}{column}, '') = :{name}" for column in columns
+                ) + ")")
+            clauses.append(" AND (" + " OR ".join(included) + ")")
+        for index, key in enumerate(exclude_taxa or []):
+            name = f"group_exclude_{index}"
+            group_params[name] = str(key)
+            clauses.append(" AND NOT (" + " OR ".join(
+                f"COALESCE({alias}{column}, '') = :{name}" for column in columns
+            ) + ")")
+        return "".join(clauses)
+
+    sp_group_scope = group_scope("")
+    g_group_scope = group_scope("t.")
+    f_group_scope = group_scope("t.")
+    params.update(group_params)
+
     if len(q_words) > 1:
         sp_conds = []
         g_conds = []
@@ -446,6 +479,7 @@ def autocomplete_taxa(
             WHERE t.family_key IS NOT NULL AND t.family IS NOT NULL AND t.family != '' AND t.occurrence_count >= :min_count{f_where_extra}
               AND ({" AND ".join(f_conds)})
         """
+        multi_params.update(group_params)
         exec_params = multi_params
     else:
         sp_sql = f"""
@@ -505,6 +539,10 @@ def autocomplete_taxa(
             g_sql = sql
         else:
             f_sql = sql
+
+    sp_sql += sp_group_scope
+    g_sql += g_group_scope
+    f_sql += f_group_scope
 
     # 1. Species matches
     for row in conn.execute(sp_sql, exec_params).fetchall():
@@ -810,6 +848,13 @@ def validate_user_guess(conn, user_input, target_taxon_key, typo_threshold=0.90,
     if rank in ("SUBSPECIES", "VARIETY", "FORM"):
         rank = "SPECIES"
     correct = str(selected["taxon_key"]) == str(target_ids.get(rank))
-    return result(selected, correct, 1.0 if correct else 0.0,
-                  message=f"Correct {rank.lower()} identification!" if correct else
-                  f"Incorrect. Target species was {get_display_name(target, lang)} ({target['canonical_name']}).")
+    if correct:
+        message = f"Correct {rank.lower()} identification!"
+    elif rank == "SPECIES":
+        message = (
+            f"Incorrect. Target species was {get_display_name(target, lang)} "
+            f"({target['canonical_name']})."
+        )
+    else:
+        message = f"Incorrect {rank.lower()} identification. Try again."
+    return result(selected, correct, 1.0 if correct else 0.0, message=message)
