@@ -68,7 +68,7 @@ Photo and observation navigation shortcuts work when the identification input is
 
 ### Option A: Standalone Desktop Application (Recommended)
 
-Download the latest installer or executable bundle for your platform from the [GitHub Releases](https://github.com/asgersvenning/taxo-trainer/releases) page:
+Download the latest installer or executable bundle for your platform from the [download page](https://asgersvenning.github.io/taxo-trainer/) or [GitHub Releases](https://github.com/asgersvenning/taxo-trainer/releases):
 
 - **Windows**: Download `TaxoTrainerSetup.exe` and run the setup wizard. It creates desktop and Start Menu shortcuts.
 - **macOS**: Download `TaxoTrainer-macOS.dmg`, open the disk image, and drag **Taxo-Trainer** into your `Applications` folder.

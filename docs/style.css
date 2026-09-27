@@ -1,0 +1,46 @@
+:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #22312b; background: #f6f7f1; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: #195b48; text-underline-offset: 3px; }
+a:hover { color: #0c3e30; }
+.page { max-width: 1120px; margin: auto; padding: 0 28px; }
+.site-header { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 28px 0; border-bottom: 1px solid #d7ded5; }
+.site-header > a:last-child { font-size: .9rem; font-weight: 600; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: #22312b; font-size: 1.1rem; font-weight: 750; text-decoration: none; }
+.mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: #245f4c; color: white; font-size: 1.35rem; }
+.intro { max-width: 780px; padding: 76px 0 60px; }
+.eyebrow { margin: 0 0 12px; color: #48755e; font-size: .76rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { margin-bottom: 18px; font-size: clamp(2.8rem, 7vw, 5.2rem); line-height: 1.04; letter-spacing: -.055em; }
+h2 { margin-bottom: 24px; font-size: clamp(1.5rem, 3vw, 2.05rem); letter-spacing: -.035em; }
+h3 { margin-bottom: 10px; font-size: 1.16rem; }
+.lead { max-width: 680px; margin-bottom: 22px; color: #4c5b53; font-size: 1.2rem; line-height: 1.6; }
+.subtle { margin-bottom: 0; color: #65736a; font-size: .88rem; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.card { display: flex; flex-direction: column; padding: 27px; border: 1px solid #d8e0d7; border-radius: 18px; background: #fff; box-shadow: 0 5px 20px #213e2710; }
+.card.featured { border-color: #7dab8f; box-shadow: 0 8px 24px #245f4c1a; }
+.card-top { display: flex; align-items: center; gap: 9px; min-height: 36px; margin-bottom: 26px; font-weight: 750; }
+.symbol { display: grid; place-items: center; width: 33px; height: 33px; border-radius: 9px; background: #e9f2ea; color: #245f4c; font-size: 1.35rem; }
+.tag { margin-left: auto; padding: 5px 8px; border-radius: 99px; background: #e9f2ea; color: #245f4c; font-size: .7rem; }
+.card p { min-height: 72px; color: #5b685e; font-size: .93rem; line-height: 1.55; }
+.button { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; margin-top: auto; padding: 13px 16px; border: 1px solid #245f4c; border-radius: 9px; background: #245f4c; color: #fff; font-weight: 700; text-decoration: none; }
+.button:hover { background: #174a3b; color: #fff; }
+.button.secondary { background: #fff; color: #245f4c; }
+.button.secondary:hover { background: #edf5ee; color: #174a3b; }
+.card small { margin-top: 12px; color: #748078; font-size: .76rem; }
+.release-link { margin: 20px 0 62px; color: #5b685e; font-size: .9rem; }
+.help { display: grid; grid-template-columns: .9fr 1.1fr; gap: 66px; padding: 54px 0; border-top: 1px solid #d7ded5; }
+.help > div > p:not(.eyebrow), .next p:not(.eyebrow) { color: #536158; line-height: 1.65; }
+.help-list > div { padding: 0 0 17px; margin-bottom: 18px; border-bottom: 1px solid #d7ded5; }
+.help-list > div:last-child { margin-bottom: 0; border-bottom: 0; }
+.help-list h3 { margin-bottom: 5px; font-size: 1rem; }
+.help-list p { margin: 0; color: #536158; font-size: .93rem; line-height: 1.6; }
+code { padding: 2px 5px; border-radius: 4px; background: #e9eee8; color: #244c3c; font-size: .88em; }
+.next { display: flex; align-items: center; justify-content: space-between; gap: 34px; padding: 30px 34px; border-radius: 18px; background: #e8eee6; }
+.next > div { max-width: 690px; }
+.next h2 { margin-bottom: 8px; }
+.next p:last-child { margin-bottom: 0; }
+.next a { flex-shrink: 0; font-weight: 700; }
+footer { display: flex; justify-content: space-between; gap: 16px; padding: 34px 0; color: #6c776f; font-size: .84rem; }
+@media (max-width: 800px) { .intro { padding: 58px 0 44px; } .cards { grid-template-columns: 1fr; } .card p { min-height: 0; } .card-top { margin-bottom: 17px; } .help { grid-template-columns: 1fr; gap: 18px; } .next { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 520px) { .page { padding: 0 18px; } .site-header { padding: 18px 0; } .site-header > a:last-child { max-width: 110px; text-align: right; } .intro { padding: 48px 0 42px; } .lead { font-size: 1.07rem; } .card { padding: 22px; } .help { padding: 42px 0; } .next { padding: 26px; } footer { flex-direction: column; } }
