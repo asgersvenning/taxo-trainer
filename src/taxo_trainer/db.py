@@ -123,14 +123,14 @@ def get_gbif_cache_connection() -> sqlite3.Connection:
 
 def prune_gbif_cache(
     conn: sqlite3.Connection | None = None,
-    max_size_mb: float = 100.0,
+    max_size_mb: float = 1024.0,
     max_age_days: int = 7,
 ) -> int:
-    """Prune expired (> 7 days) and LRU cache entries to maintain size under max_size_mb (100 MB).
+    """Prune expired (> 7 days) and oldest responses to the cache size limit.
 
     Args:
         conn: Optional SQLite connection to gbif_cache.db.
-        max_size_mb: Maximum allowed database size in MB (default: 100.0).
+        max_size_mb: Maximum allowed database size in MB (default: 1024.0).
         max_age_days: Maximum age of cached entries in days (default: 7).
 
     Returns:
@@ -156,27 +156,33 @@ def prune_gbif_cache(
             )
             deleted_count += cursor.rowcount
 
-        # 2. Enforce 100 MB max size limit via LRU eviction
+        # 2. Count occupied SQLite pages, not the file's allocated size. Deleted
+        # rows leave free pages in the file until VACUUM, so checking stat().st_size
+        # after each deletion would continue evicting every cached response.
         max_bytes = int(max_size_mb * 1024 * 1024)
+        page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+
+        def live_size_bytes() -> int:
+            pages = conn.execute("PRAGMA page_count").fetchone()[0]
+            free_pages = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            return (pages - free_pages) * page_size
+
+        with conn:
+            while live_size_bytes() > max_bytes:
+                oldest = conn.execute(
+                    "SELECT rowid FROM gbif_api_cache ORDER BY cached_at ASC LIMIT 1"
+                ).fetchone()
+                if oldest is None:
+                    break
+                conn.execute("DELETE FROM gbif_api_cache WHERE rowid = ?", (oldest[0],))
+                deleted_count += 1
+
         cache_file = GBIF_CACHE_DB_PATH
-
-        if cache_file.exists() and cache_file.stat().st_size > max_bytes:
-            while cache_file.exists() and cache_file.stat().st_size > max_bytes:
-                with conn:
-                    c_del = conn.execute("""
-                        DELETE FROM gbif_api_cache
-                        WHERE rowid IN (
-                            SELECT rowid FROM gbif_api_cache
-                            ORDER BY cached_at ASC
-                            LIMIT 50
-                        );
-                    """)
-                    if c_del.rowcount == 0:
-                        break
-                    deleted_count += c_del.rowcount
-
-        if deleted_count > 0:
+        if deleted_count or (cache_file.exists() and cache_file.stat().st_size > max_bytes):
             conn.execute("VACUUM;")
+            # In WAL mode VACUUM's compacted pages remain in the WAL until a
+            # checkpoint; the main file can otherwise still appear oversized.
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return deleted_count
     finally:
         if should_close:

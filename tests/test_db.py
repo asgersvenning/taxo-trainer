@@ -105,3 +105,39 @@ def test_prune_gbif_cache():
     keys = [r["taxon_key"] for r in remaining]
     assert keys == ["new_key"]
 
+
+
+def test_size_pruning_retains_newest_cache_entries(tmp_path, monkeypatch):
+    """A large cache shrinks to its limit without deleting every live row."""
+    import time
+
+    from taxo_trainer.db import get_gbif_cache_connection, prune_gbif_cache
+
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+    conn = get_gbif_cache_connection()
+    now = int(time.time())
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT INTO gbif_api_cache (url, response_json, cached_at) VALUES (?, ?, ?)",
+                [(f"https://api.gbif.org/v1/species/{key}", "x" * 8000, now + key)
+                 for key in range(12)],
+            )
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        assert (tmp_path / "cache.db").stat().st_size > 0.05 * 1024 * 1024
+
+        deleted = prune_gbif_cache(conn, max_size_mb=0.05, max_age_days=7)
+        remaining = [
+            row[0] for row in conn.execute(
+                "SELECT url FROM gbif_api_cache ORDER BY cached_at"
+            )
+        ]
+        assert 0 < deleted < 12
+        assert len(remaining) == 12 - deleted
+        assert remaining[-1].endswith("/11")
+        assert not remaining[0].endswith("/0")
+        assert (tmp_path / "cache.db").stat().st_size <= 0.05 * 1024 * 1024
+        assert prune_gbif_cache(conn, max_size_mb=0.05, max_age_days=7) == 0
+    finally:
+        conn.close()

@@ -695,7 +695,7 @@ def enrich_vernacular_names_from_gbif(
             progress_callback(0, total, "Preparing name lookup...")
         cache = get_gbif_cache_connection()
         try:
-            prune_gbif_cache(cache, max_size_mb=100.0, max_age_days=7)
+            prune_gbif_cache(cache)
         finally:
             cache.close()
         rows = [dict(r) for r in conn.execute("SELECT * FROM taxa")]
