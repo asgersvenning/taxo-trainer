@@ -152,20 +152,12 @@ def render_photo_viewer(
 
         refresh_canvas()
 
-        # Bottom carousel navigation bar with photo credit & observation source link
-        with ui.row().classes(
-            "w-full justify-between items-center p-2 rounded-b-md z-10 flex-wrap gap-2"
-        ):
-            if len(media_urls) > 1:
-                prev_btn = (
-                    ui.button("◀ Previous Photo", color="primary")
-                    .props("flat dense")
-                    .classes("text-xs")
-                )
-                prev_btn.on_click(lambda: update_photo(-1))
-
+        # Keep navigation on its own bottom row so changing provenance cannot
+        # move the photo buttons when the comparison narrows both panels.
+        with ui.column().classes("w-full shrink-0 gap-1 p-2 rounded-b-md z-10"):
             details_container = ui.row().classes(
-                "items-center gap-3 text-xs text-tt-main mx-auto flex-wrap justify-center"
+                "w-full min-w-0 max-h-20 overflow-y-auto items-center "
+                "gap-2 text-xs text-tt-main flex-wrap justify-center"
             )
 
             def refresh_details() -> None:
@@ -194,12 +186,19 @@ def render_photo_viewer(
             refresh_details()
 
             if len(media_urls) > 1:
-                next_btn = (
-                    ui.button("Next Photo ▶", color="primary")
-                    .props("flat dense")
-                    .classes("text-xs")
-                )
-                next_btn.on_click(lambda: update_photo(1))
+                with ui.row().classes("w-full shrink-0 flex-nowrap justify-between items-center gap-2"):
+                    prev_btn = (
+                        ui.button("◀ Previous Photo", color="primary")
+                        .props("flat dense")
+                        .classes("text-xs shrink-0 whitespace-nowrap")
+                    )
+                    prev_btn.on_click(lambda: update_photo(-1))
+                    next_btn = (
+                        ui.button("Next Photo ▶", color="primary")
+                        .props("flat dense")
+                        .classes("text-xs shrink-0 whitespace-nowrap")
+                    )
+                    next_btn.on_click(lambda: update_photo(1))
 
     return container
 

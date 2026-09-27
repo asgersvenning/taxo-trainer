@@ -175,6 +175,11 @@ def test_reference_gallery_uses_all_local_photos_and_updates_provenance(quiz):
     assert viewers[0]._props['cache_key'] != viewers[1]._props['cache_key']
     reference = next(e for e in container.descendants() if e._props.get('aria-label') == 'Reference photo panel')
     next_photo = next(e for e in reference.descendants() if isinstance(e, ui.button) and e.text == 'Next Photo ▶')
+    previous_photo = next(e for e in reference.descendants() if isinstance(e, ui.button) and e.text == '◀ Previous Photo')
+    detail_label = next(e for e in reference.descendants() if isinstance(e, ui.label) and e.text == 'Field Observation')
+    assert next_photo.parent_slot.parent is previous_photo.parent_slot.parent
+    assert next_photo.parent_slot.parent is not detail_label.parent_slot.parent
+    assert 'flex-nowrap' in next_photo.parent_slot.parent._classes
     attempts = user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0]
     next(e for e in next_photo._event_listeners.values() if e.type == 'click').handler(None)
     assert user.execute('SELECT COUNT(*) FROM user_progress').fetchone()[0] == attempts
