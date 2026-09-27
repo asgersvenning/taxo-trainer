@@ -4,17 +4,16 @@
 
 - Original application code is licensed Apache-2.0 in commit b7eb1ad.
 - The desktop workflow builds Windows with PyInstaller and Inno Setup, then uploads and publishes unsigned artifacts. It also supports manual workflow dispatch.
-- The PyInstaller spec includes all of assets and src/data. The latter contains two tracked starter Darwin Core ZIP archives. Their rights.txt files list CC BY-NC and CC BY records. Their original rights and citations must be retained; the app license does not cover them.
-- The bundled guide screenshots include a photo example whose ownership and license have not been established by repository metadata.
+- Commit 145a266 removed the two GBIF starter archives from version control and the PyInstaller bundle, while retaining local workspace copies. Settings now links to GBIF-hosted extracts and their DOIs. The direct ZIP URLs and GBIF API metadata were verified on 2026-09-27. The built Linux bundle includes LICENSE and no data directory.
+- The owner states that the guide screenshots are project-created. Any third-party photographs depicted in screenshots retain their own rights; this audit does not determine whether an exception permits their inclusion.
 - The Inno Setup version is 0.1.0 while pyproject.toml is 0.1.3.
 - Local tags v0.1.1 through v0.1.3 exist. Public release assets were not verified because the GitHub page could not be fetched from this environment.
 
 ## Owner inputs needed before signing work
 
-1. Decide whether the signed Windows installer should omit the CC BY-NC starter archives, or whether to prepare a replacement dataset with eligible rights. Keeping these archives in the signed package may fail SignPath's all-components license condition. Confirm whether their presence in the source repository is acceptable with SignPath during application.
-2. Confirm ownership or redistribution permission for the guide images, especially assets/guides/quiz_page_walkthrough/current_photo.jpg. Replace or exclude any image that cannot be distributed under the selected terms.
-3. Identify the GitHub account or team responsible for release signing approval. SignPath requires author, reviewer, and approver roles and MFA for team members.
-4. Confirm a public Windows release download page for the application. SignPath requires a prior release in the form to be signed.
+1. Identify the GitHub account or team responsible for release signing approval. SignPath requires author, reviewer, and approver roles and MFA for team members.
+2. Confirm a public Windows release download page for the application. SignPath requires a prior release in the form to be signed.
+3. Review the guide screenshot with embedded third-party photography if SignPath requests evidence of rights or attribution.
 
 ## Local preparation possible after those inputs
 

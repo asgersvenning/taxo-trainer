@@ -278,7 +278,7 @@ name card is not a prerequisite for further development.
 | State consistency across sessions | Language/theme/cutoff and some filters persist, but settings callbacks are inconsistent. | Explicit near-term target: settings should survive reopening consistently. |
 | Documentation and guides | Existing illustrated guides are substantial, but README and onboarding still reference old name-lookup labels and Danish/English-only wording. | Small, concrete follow-up: align instructions with the selected-language workflow; inspect screenshots before claiming they are current. |
 | Themes and styling | Light/dark/system modes exist; hardcoded dark styles are counteracted by a large light-mode override block in app.py. | Legitimate contribution area, not categorically deferred until all internals are fixed. Start with consistency/readability if pursued. |
-| Packaging and license | Build scripts and installers exist; no license file found. Item 8 bundles several separate concerns. | Split packaging verification from the owner's license choice; do not select a license incidentally. |
+| Packaging and license | Apache-2.0 is selected for original code; example GBIF archives are linked rather than bundled. The three-OS packaging workflow remains unsigned. | Verify native installers and complete signing separately from the now-resolved license choice. |
 
 Recommended next target: **taxonomy and vernacular correctness during name
 enrichment**, starting with a bounded set of regression cases rather than a new
@@ -709,8 +709,8 @@ name/JSON searches followed by Python ranking and `fetchall`. Stage 1 reloads
 taxa and weights on each question. Analytics repeatedly initializes schema and
 runs aggregate queries. Indices alone do not establish constant-time behavior.
 
-**First deliverable:** A reproducible baseline on the bundled plant/butterfly
-archives and a larger representative input. Record input sizes, row/taxon counts,
+**First deliverable:** A reproducible baseline on the linked GBIF plant/butterfly
+extracts and a larger representative input. Record input sizes, row/taxon counts,
 environment, import wall time/peak memory, and p50/p95 autocomplete, next-question,
 and dashboard latency. Keep network enrichment timings separate. Compare repeated
 fresh runs and check equivalent database contents and ranking outputs.
@@ -748,20 +748,20 @@ taxon keys after merges. No silent success message when enrichment failed.
 3.12+, and `.python-version` pins 3.14. CI uses `uv sync` without a lock-enforcement
 flag and tests only Ubuntu in the ordinary workflow. Packaging tests simulate
 frozen resource paths; they do not launch a built app. Wheel configuration includes
-`src/taxo_trainer`, while runtime resources are resolved from repository-root
-`assets` and dataset directories. This warrants a clean installed-wheel check;
-source checkout tests can hide missing resources. The README leaves keyboard
-shortcuts partly undocumented and ends with an unfinished packaging/license item;
-no repository license file was found.
+`src/taxo_trainer`, while runtime guide assets are resolved from repository-root
+`assets`. This warrants a clean installed-wheel check; source checkout tests can
+hide missing resources. The README has Apache-2.0 licensing and links GBIF
+example extracts. Windows release signing and clean native installation remain
+unverified.
 
 **Scope:** Resolve the supported Python range explicitly, then align metadata,
 interpreter selection, and CI. Add clean wheel/resource and native bundle smoke
-checks; validate startup, guide assets, initial data, and persisted progress on
+checks; validate startup, guide assets, example imports, and persisted progress on
 the supported operating systems. Enforce the lockfile for reproducible CI without
 expanding every pull request into a full installer build. Preserve agent-only
 path exclusions. Document actual keyboard behavior, data location, recovery,
-and platform setup once checked. License selection requires the owner's choice;
-do not choose one on their behalf.
+and platform setup once checked. The owner selected Apache-2.0; keep
+third-party GBIF data and media rights separate.
 
 **Acceptance:** Clean installation outside the source tree resolves needed assets;
 chosen Python/OS combinations pass; built artifacts start and retain progress
