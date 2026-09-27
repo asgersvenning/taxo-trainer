@@ -4,6 +4,10 @@
 
 _**Note**: `taxo-trainer` is built around a "bring-your-own" data model. Review the licenses for the datasets and photographs you use._
 
+## License
+
+Taxo-Trainer's original application code is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, GBIF datasets, observation photographs, and other third-party material retain their own licenses. In particular, the bundled example Darwin Core archives include records under both CC BY and CC BY-NC; their `rights.txt` and `citations.txt` files identify the sources and terms. The Apache license does not relicense those materials.
+
 ---
 
 ## Features
@@ -208,4 +212,4 @@ Development items that help would be appreciated for include (in no particular o
   * More consistent state management across sessions.
   * Documentation and guides.
   * More themes and styling options.
-* Packaging and license
+* Packaging
