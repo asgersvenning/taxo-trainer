@@ -1,6 +1,6 @@
 {
   "id": "initial_dataset_setup",
-  "title": "Initial Default Dataset Setup",
+  "title": "Initial Dataset Setup",
   "description": "Set up observation data, choose a name language, and start your first quiz.",
   "category": "Setup & Onboarding",
   "icon": "rocket_launch",
@@ -19,7 +19,7 @@
     {
       "step_number": 3,
       "title": "Import Observation Data",
-      "description": "In 'Import observation data', use the prefilled local dataset path if the bundled archive is available, or supply your own ZIP path or direct download URL. Click 'Start import' or 'Import again' and wait for completion. Imports add or update records; they do not automatically replace existing data."
+      "description": "In 'Import observation data', choose a GBIF-hosted example or enter your own ZIP path or direct download URL. Check the example's GBIF page for source citations and terms. Click 'Start import' or 'Import again' and wait for the download and import to finish. Imports add or update records; they do not automatically replace existing data."
     },
     {
       "step_number": 4,

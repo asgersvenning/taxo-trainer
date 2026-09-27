@@ -69,8 +69,8 @@ def test_ensure_data_dir_seeding(tmp_path, monkeypatch):
 
     assert created_dir.exists()
     assert created_dir.is_dir()
-    # Datasets directory is tracked in source repository and should always be seeded
-    assert (created_dir / "datasets").exists()
+    # Example archives are linked from GBIF, not seeded from the app bundle.
+    assert not (created_dir / "datasets").exists()
 
     # Verify init_databases initializes database files and schemas
     init_databases()
@@ -83,6 +83,9 @@ def test_seed_initial_data_with_bundle_files(tmp_path, monkeypatch):
     test_bundle_dir = tmp_path / "bundle_data"
     test_bundle_dir.mkdir()
     (test_bundle_dir / "app_data.db").write_text("mock_db_content")
+    bundled_datasets = test_bundle_dir / "datasets"
+    bundled_datasets.mkdir()
+    (bundled_datasets / "example.zip").write_bytes(b"example")
 
     test_user_dir = tmp_path / "user_data"
     test_user_dir.mkdir()
@@ -92,6 +95,7 @@ def test_seed_initial_data_with_bundle_files(tmp_path, monkeypatch):
     seed_initial_data(test_user_dir)
     assert (test_user_dir / "app_data.db").exists()
     assert (test_user_dir / "app_data.db").read_text() == "mock_db_content"
+    assert not (test_user_dir / "datasets").exists()
 
 
 def test_guides_loading_with_resource_path():

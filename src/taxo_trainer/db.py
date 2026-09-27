@@ -26,7 +26,7 @@ GBIF_CACHE_DB_PATH = DATA_DIR / "gbif_cache.db"
 
 
 def seed_initial_data(data_dir: Path) -> None:
-    """Seed initial database files and datasets from resource bundle if missing."""
+    """Seed initial database files from resource bundle if missing."""
     resource_data_dir = get_resource_path("src/data")
     if not resource_data_dir.exists():
         resource_data_dir = get_resource_path("data")
@@ -40,14 +40,6 @@ def seed_initial_data(data_dir: Path) -> None:
                     shutil.copy2(src_item, target_item)
                 except OSError as err:
                     print(f"Warning: Failed to seed {item_name} into {data_dir}: {err}")
-
-        src_datasets = resource_data_dir / "datasets"
-        target_datasets = data_dir / "datasets"
-        if src_datasets.exists() and not target_datasets.exists():
-            try:
-                shutil.copytree(src_datasets, target_datasets)
-            except OSError as err:
-                print(f"Warning: Failed to seed datasets into {data_dir}: {err}")
 
 
 def ensure_data_dir() -> Path:

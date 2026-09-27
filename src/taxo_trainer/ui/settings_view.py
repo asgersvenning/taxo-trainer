@@ -14,7 +14,6 @@ from nicegui import run, ui
 
 from taxo_trainer.db import (
     APP_DB_PATH,
-    DATA_DIR,
     get_app_metadata,
     get_db_connection,
     set_app_metadata,
@@ -33,6 +32,19 @@ from taxo_trainer.ui.name_status import (
 from taxo_trainer.ui.theme import ACCENTS, THEME_LABELS, set_accent, set_surface_theme
 
 _LOGGER = logging.getLogger(__name__)
+
+EXAMPLE_DATASETS = (
+    (
+        "Danish plants",
+        "https://api.gbif.org/v1/occurrence/download/request/0005704-260806074905277.zip",
+        "https://doi.org/10.15468/dl.hxcqej",
+    ),
+    (
+        "Danish butterflies",
+        "https://api.gbif.org/v1/occurrence/download/request/0007018-260806074905277.zip",
+        "https://doi.org/10.15468/dl.bq556b",
+    ),
+)
 
 
 def get_path_suggestions(input_str: str, limit: int = 8) -> list[tuple[str, str, bool]]:
@@ -101,20 +113,14 @@ def render_settings_view(
             render_taxa_filter_controls(app_conn, active_filters, on_changed=changed)
 
     # Query active dataset metadata & stats
-    default_dataset_zip = DATA_DIR / "datasets" / "danske_planter_2026.zip"
-    default_path_str = (
-        str(default_dataset_zip)
-        if default_dataset_zip.exists()
-        else str(DATA_DIR / "datasets" / "")
-    )
     taxa_cnt = app_conn.execute("SELECT COUNT(*) FROM taxa;").fetchone()[0]
     occ_cnt = app_conn.execute("SELECT COUNT(*) FROM occurrences;").fetchone()[0]
 
     saved_dwc_path = get_app_metadata("active_dwc_path", "", conn=app_conn)
-    ingest_input_path = saved_dwc_path if saved_dwc_path else default_path_str
+    ingest_input_path = saved_dwc_path or ""
 
     if taxa_cnt > 0:
-        active_path = saved_dwc_path if saved_dwc_path else default_path_str
+        active_path = saved_dwc_path or "Loaded observations"
     else:
         active_path = "No dataset loaded. Import a GBIF archive below."
 
@@ -482,12 +488,26 @@ def render_settings_view(
                 ui.input(
                     label="Path or URL to DarwinCore dataset (.zip / occurrence.txt)",
                     value=ingest_input_path,
-                    placeholder="e.g. src/data/datasets/danske_planter_2026.zip or https://api.gbif.org/v1/...",
+                    placeholder="Choose a GBIF example below, or enter a local ZIP path or direct download URL",
                 )
                 .classes("w-full text-tt-main mb-1")
                 .props("outlined dense clearable")
             )
 
+
+            ui.label(
+                "Example extracts are hosted by GBIF. Choose one to fill the URL, then start import. "
+                "Check each download page for source citations and data-use terms."
+            ).classes("text-xs text-tt-muted mb-2")
+            with ui.row().classes("w-full gap-3 items-center flex-wrap mb-4"):
+                for label, archive_url, download_page in EXAMPLE_DATASETS:
+                    ui.button(
+                        f"Use {label} example",
+                        on_click=lambda url=archive_url: dwc_path_input.set_value(url),
+                    ).props("outline dense")
+                    ui.link(f"{label} on GBIF ↗", download_page, new_tab=True).classes(
+                        "text-xs text-primary"
+                    )
 
             # Filesystem Prefix-Matching Autocomplete Suggestions Box
             path_suggestions_box = ui.row().classes(

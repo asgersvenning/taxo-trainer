@@ -281,10 +281,12 @@ def test_resolve_dwc_source_path_remote_url(tmp_path, monkeypatch):
     # Verify is_url helper
     assert is_url("https://api.gbif.org/v1/occurrence/download/request/0010181-260806074905277.zip") is True
     assert is_url("http://example.com/dataset.zip") is True
-    assert is_url("src/data/datasets/danske_planter_2026.zip") is False
+    assert is_url("local_archive.zip") is False
 
     # Mock urllib.request.urlopen to simulate streaming zip download
-    target_url = "https://api.gbif.org/v1/occurrence/download/request/0010181-260806074905277.zip"
+    from taxo_trainer.ui.settings_view import EXAMPLE_DATASETS
+
+    target_url = EXAMPLE_DATASETS[0][1]
 
     class MockHTTPResponse:
         def __init__(self):
@@ -311,7 +313,7 @@ def test_resolve_dwc_source_path_remote_url(tmp_path, monkeypatch):
     resolved = resolve_dwc_source_path(target_url, progress_callback=progress_msgs.append)
 
     assert resolved.exists()
-    assert resolved.name == "0010181-260806074905277.zip"
+    assert resolved.name == "0005704-260806074905277.zip"
     assert len(progress_msgs) >= 1
     assert "Downloading" in progress_msgs[-1] or "Connecting" in progress_msgs[0]
 

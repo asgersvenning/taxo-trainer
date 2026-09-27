@@ -6,7 +6,7 @@ _**Note**: `taxo-trainer` is built around a "bring-your-own" data model. Review 
 
 ## License
 
-Taxo-Trainer's original application code is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, GBIF datasets, observation photographs, and other third-party material retain their own licenses. In particular, the bundled example Darwin Core archives include records under both CC BY and CC BY-NC; their `rights.txt` and `citations.txt` files identify the sources and terms. The Apache license does not relicense those materials.
+Taxo-Trainer's original application code and project-created guide screenshots are licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, GBIF datasets, observation photographs depicted in screenshots, and other third-party material retain their own rights. Example datasets are linked from GBIF and are not bundled with the app. Their download pages and archive files provide source citations and data-use terms; the Apache license does not relicense those materials.
 
 ---
 
@@ -122,10 +122,14 @@ The output executable directory will be created under `dist/taxo-trainer`.
 ## First session
 
 1. Open **Settings & Data**. If observations are already available, you can go straight to **Quiz**.
-2. In **Import observation data**, select a local archive or paste a direct download URL. A bundled dataset path is prefilled when that file is available; otherwise, supply your own file or URL. Click **Start import** or **Import again** and wait for completion.
+2. In **Import observation data**, choose one of the linked GBIF examples or enter your own local archive path or direct download URL. Review the GBIF download page for citations and terms, then click **Start import** or **Import again**. The selected archive downloads directly from GBIF and is cached in your local app data.
 3. Choose **Primary Display Language**. Danish is the default; English, German, Swedish, Norwegian, Finnish, Polish, Czech, French, Spanish, Italian, Portuguese, and Dutch are also supported. Choose **Scientific Binomial (Latin)** for scientific names. This changes taxon names, not the English interface labels.
 4. Under **Species Names**, click **Look Up Names** to retrieve available vernacular names. You can continue training during lookup, or skip it when using scientific names.
 5. Open **Quiz**, inspect a photo, and enter a species, genus, or family name. Select an autocomplete suggestion to submit it. The **Guides** tab explains the quiz, dashboard, datasets, and training preferences.
+
+### Example GBIF downloads
+
+The app links to two GBIF-hosted example extracts: [Danish plants](https://doi.org/10.15468/dl.hxcqej) and [Danish butterflies](https://doi.org/10.15468/dl.bq556b). The app provides the archive URL when you select an example. GBIF hosts the extract, while each publisher retains its rights; the app downloads the archive only when you start an import.
 
 ### Names and lookup progress
 

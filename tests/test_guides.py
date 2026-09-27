@@ -63,7 +63,7 @@ def test_get_guide_by_id() -> None:
     """Test retrieving guides by ID."""
     guide = get_guide_by_id("initial_dataset_setup")
     assert guide is not None
-    assert guide.title == "Initial Default Dataset Setup"
+    assert guide.title == "Initial Dataset Setup"
 
     non_existent = get_guide_by_id("invalid_guide_id_12345")
     assert non_existent is None

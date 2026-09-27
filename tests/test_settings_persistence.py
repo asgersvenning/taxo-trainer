@@ -41,6 +41,28 @@ def settings(tmp_path, monkeypatch):
     user.close()
 
 
+
+def test_gbif_example_choices_fill_import_url(settings):
+    """Example buttons select GBIF-hosted archives without starting an import."""
+    _, _, _, _, container, _ = settings
+    elements = list(container.descendants())
+    source_input = next(
+        element
+        for element in elements
+        if isinstance(element, ui.input)
+        and element._props.get("label") == "Path or URL to DarwinCore dataset (.zip / occurrence.txt)"
+    )
+    assert source_input.value == ""
+    for label, archive_url, _ in settings_view.EXAMPLE_DATASETS:
+        button = next(
+            element
+            for element in elements
+            if isinstance(element, ui.button) and element.text == f"Use {label} example"
+        )
+        next(listener.handler for listener in button._event_listeners.values() if listener.type == "click")(None)
+        assert source_input.value == archive_url
+
+
 def test_single_sampling_cutoff_and_mode_restore_after_reopening(settings, monkeypatch):
     conn, user, path, filters, container, changes = settings
     elements = list(container.descendants())
