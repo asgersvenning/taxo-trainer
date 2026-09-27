@@ -612,9 +612,12 @@ def _merge_names(old_json, new_names: dict) -> str:
     return json.dumps(old | new_names, ensure_ascii=False, sort_keys=True)
 
 
-def _lookup_taxon(row: dict, occurrence_id: str | None, diagnostics) -> tuple:
-    """Fetch one taxon's ID-linked data, owning and closing its cache connection."""
-    cache = get_gbif_cache_connection()
+def _lookup_taxon(
+    row: dict, occurrence_id: str | None, diagnostics, cache: sqlite3.Connection | None = None
+) -> tuple:
+    """Fetch one taxon's ID-linked data, reusing a supplied cache connection."""
+    own_cache = cache is None
+    cache = cache if cache is not None else get_gbif_cache_connection()
     try:
         api_key, data, links = _resolve_usage(row, occurrence_id, cache, diagnostics)
         if not api_key:
@@ -657,7 +660,8 @@ def _lookup_taxon(row: dict, occurrence_id: str | None, diagnostics) -> tuple:
             )
         return row, links, names, ranks, local_accepted
     finally:
-        cache.close()
+        if own_cache:
+            cache.close()
 
 
 def enrich_vernacular_names_from_gbif(
@@ -699,82 +703,116 @@ def enrich_vernacular_names_from_gbif(
             )
             for r in rows
         ]
+
+        def lookup_batch(batch):
+            """Reuse one cache connection across several taxa in a worker."""
+            cache = get_gbif_cache_connection()
+            results = []
+            try:
+                for row, obs in batch:
+                    try:
+                        results.append(
+                            _lookup_taxon(row, obs[0] if obs else None, diagnostics, cache)
+                        )
+                    except (GBIFRequestError, sqlite3.Error) as exc:
+                        return results, exc
+                return results, None
+            finally:
+                cache.close()
+
         updated = 0
+        checked = 0
         with ThreadPoolExecutor(max_workers=30) as executor:
             futures = [
-                executor.submit(_lookup_taxon, r, obs[0] if obs else None, diagnostics)
-                for r, obs in targets
+                executor.submit(lookup_batch, targets[start : start + 32])
+                for start in range(0, len(targets), 32)
             ]
             try:
-                for checked, future in enumerate(as_completed(futures), 1):
-                    row, links, names, ranks, accepted = future.result()
-                    merged = _merge_names(row.get("vernacular_json"), names)
-                    old = _merge_names(row.get("vernacular_json"), {})
-                    if names and (
-                        merged != old
-                        or names.get("da", row.get("vernacular_da"))
-                        != row.get("vernacular_da")
-                        or names.get("en", row.get("vernacular_en"))
-                        != row.get("vernacular_en")
-                    ):
-                        with conn:
-                            conn.execute(
-                                "UPDATE taxa SET vernacular_json=?, vernacular_da=COALESCE(?,vernacular_da), vernacular_en=COALESCE(?,vernacular_en) WHERE taxon_key=?",
-                                (
-                                    merged,
-                                    names.get("da"),
-                                    names.get("en"),
-                                    row["taxon_key"],
-                                ),
-                            )
-                        updated += 1
-                    with conn:
-                        for column, value in links.items():
-                            conn.execute(
-                                f"UPDATE taxa SET {column}=? WHERE taxon_key=?",
-                                (value, row["taxon_key"]),
-                            )
-                        if accepted:
-                            conn.execute(
-                                "UPDATE taxa SET accepted_taxon_key=? WHERE taxon_key=?",
-                                (accepted, row["taxon_key"]),
-                            )
-                        for key, name, rank, rank_names, checklist in ranks:
-                            existing = conn.execute(
-                                "SELECT * FROM higher_ranks WHERE taxon_key=?", (key,)
-                            ).fetchone()
-                            if existing and existing["checklist_key"] not in (
-                                None,
-                                checklist,
-                            ):
-                                raise GBIFRequestError(
-                                    "Conflicting checklist identity for higher rank"
+                for future in as_completed(futures):
+                    results, error = future.result()
+                    for row, links, names, ranks, accepted in results:
+                        checked += 1
+                        merged = _merge_names(row.get("vernacular_json"), names)
+                        old = _merge_names(row.get("vernacular_json"), {})
+                        if names and (
+                            merged != old
+                            or names.get("da", row.get("vernacular_da"))
+                            != row.get("vernacular_da")
+                            or names.get("en", row.get("vernacular_en"))
+                            != row.get("vernacular_en")
+                        ):
+                            with conn:
+                                conn.execute(
+                                    "UPDATE taxa SET vernacular_json=?, vernacular_da=COALESCE(?,vernacular_da), vernacular_en=COALESCE(?,vernacular_en) WHERE taxon_key=?",
+                                    (
+                                        merged,
+                                        names.get("da"),
+                                        names.get("en"),
+                                        row["taxon_key"],
+                                    ),
                                 )
-                            rank_json = _merge_names(
-                                existing["vernacular_json"] if existing else None,
-                                rank_names,
-                            )
-                            conn.execute(
-                                """INSERT INTO higher_ranks (taxon_key,rank_name,rank_level,vernacular_da,vernacular_en,vernacular_json,checklist_key)
-                                VALUES (?,?,?,?,?,?,?) ON CONFLICT(taxon_key) DO UPDATE SET
-                                rank_name=excluded.rank_name, checklist_key=excluded.checklist_key, vernacular_da=COALESCE(excluded.vernacular_da,higher_ranks.vernacular_da),
-                                vernacular_en=COALESCE(excluded.vernacular_en,higher_ranks.vernacular_en),vernacular_json=excluded.vernacular_json""",
-                                (
-                                    key,
-                                    name,
-                                    rank,
-                                    rank_names.get("da"),
-                                    rank_names.get("en"),
-                                    rank_json,
+                            updated += 1
+                        with conn:
+                            for column, value in links.items():
+                                if row.get(column) != value:
+                                    conn.execute(
+                                        f"UPDATE taxa SET {column}=? WHERE taxon_key=?",
+                                        (value, row["taxon_key"]),
+                                    )
+                            if accepted and row.get("accepted_taxon_key") != accepted:
+                                conn.execute(
+                                    "UPDATE taxa SET accepted_taxon_key=? WHERE taxon_key=?",
+                                    (accepted, row["taxon_key"]),
+                                )
+                            for key, name, rank, rank_names, checklist in ranks:
+                                existing = conn.execute(
+                                    "SELECT * FROM higher_ranks WHERE taxon_key=?", (key,)
+                                ).fetchone()
+                                if existing and existing["checklist_key"] not in (
+                                    None,
                                     checklist,
-                                ),
+                                ):
+                                    raise GBIFRequestError(
+                                        "Conflicting checklist identity for higher rank"
+                                    )
+                                rank_json = _merge_names(
+                                    existing["vernacular_json"] if existing else None,
+                                    rank_names,
+                                )
+                                if existing and all(
+                                    existing[column] == value
+                                    for column, value in {
+                                        "rank_name": name,
+                                        "checklist_key": checklist,
+                                        "vernacular_json": rank_json,
+                                        "vernacular_da": rank_names.get("da") or existing["vernacular_da"],
+                                        "vernacular_en": rank_names.get("en") or existing["vernacular_en"],
+                                    }.items()
+                                ):
+                                    continue
+                                conn.execute(
+                                    """INSERT INTO higher_ranks (taxon_key,rank_name,rank_level,vernacular_da,vernacular_en,vernacular_json,checklist_key)
+                                    VALUES (?,?,?,?,?,?,?) ON CONFLICT(taxon_key) DO UPDATE SET
+                                    rank_name=excluded.rank_name, checklist_key=excluded.checklist_key, vernacular_da=COALESCE(excluded.vernacular_da,higher_ranks.vernacular_da),
+                                    vernacular_en=COALESCE(excluded.vernacular_en,higher_ranks.vernacular_en),vernacular_json=excluded.vernacular_json""",
+                                    (
+                                        key,
+                                        name,
+                                        rank,
+                                        rank_names.get("da"),
+                                        rank_names.get("en"),
+                                        rank_json,
+                                        checklist,
+                                    ),
+                                )
+                        if progress_callback:
+                            progress_callback(
+                                checked,
+                                len(rows),
+                                f"Checked {checked}/{len(rows)} species...",
                             )
-                    if progress_callback:
-                        progress_callback(
-                            checked,
-                            len(rows),
-                            f"Checked {checked}/{len(rows)} species...",
-                        )
+                    if error is not None:
+                        raise error
             except Exception:
                 for pending in futures:
                     pending.cancel()

@@ -5,11 +5,12 @@ import json
 import logging
 import sqlite3
 import urllib.error
+from contextlib import closing
 from email.utils import formatdate
 
 import pytest
 
-from taxo_trainer.db import init_app_db
+from taxo_trainer.db import get_gbif_cache_connection, init_app_db
 from taxo_trainer.ingestion import taxonomy_builder as builder
 
 
@@ -128,12 +129,63 @@ def test_multilingual_lookup_reports_actual_changes_and_logs_cache_use(tmp_path,
         assert builder.enrich_vernacular_names_from_gbif(conn) == 1
         assert json.loads(conn.execute("SELECT vernacular_json FROM taxa").fetchone()[0]) == {"de": "Stieleiche"}
         caplog.clear()
+        changes_before_recheck = conn.total_changes
         assert builder.enrich_vernacular_names_from_gbif(conn) == 0
+        assert conn.total_changes == changes_before_recheck
         assert len(calls) == 2
         assert "'cache_hits': 2" in caplog.text
         assert "'requests'" not in caplog.text
     finally:
         conn.close()
+
+
+def test_cached_recheck_reuses_worker_connections(tmp_path, monkeypatch):
+    """A warm multi-batch recheck uses local cache without redundant writes."""
+    monkeypatch.setattr("taxo_trainer.db.ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("taxo_trainer.db.GBIF_CACHE_DB_PATH", tmp_path / "cache.db")
+    monkeypatch.setattr(
+        builder, "_open_gbif", lambda *_args, **_kwargs: pytest.fail("unexpected GBIF request")
+    )
+    app = sqlite3.connect(":memory:")
+    app.row_factory = sqlite3.Row
+    init_app_db(app)
+    app.executemany(
+        """INSERT INTO taxa (taxon_key, scientific_name, canonical_name,
+           accepted_name, rank, checklist_key, accepted_taxon_key, vernacular_json)
+           VALUES (?, 'Example species', 'Example species', 'Example species',
+                   'SPECIES', ?, ?, '{}')""",
+        [(str(key), builder.BACKBONE_CHECKLIST, str(key)) for key in range(1, 66)],
+    )
+    with closing(get_gbif_cache_connection()) as cache_conn, cache_conn:
+        cached_at = int(builder.time.time())
+        cache_conn.executemany(
+            "INSERT INTO gbif_api_cache (url, response_json, cached_at) VALUES (?, ?, ?)",
+            [
+                (f"https://api.gbif.org/v1/species/{key}",
+                 json.dumps({"key": key, "rank": "SPECIES"}), cached_at)
+                for key in range(1, 66)
+            ] + [
+                (f"https://api.gbif.org/v1/species/{key}/vernacularNames?limit=1000&offset=0",
+                 '{"results": [], "endOfRecords": true}', cached_at)
+                for key in range(1, 66)
+            ],
+        )
+    opened = 0
+    original_connection = builder.get_gbif_cache_connection
+
+    def counted_connection():
+        nonlocal opened
+        opened += 1
+        return original_connection()
+
+    monkeypatch.setattr(builder, "get_gbif_cache_connection", counted_connection)
+    before = app.total_changes
+    try:
+        assert builder.enrich_vernacular_names_from_gbif(app) == 0
+        assert app.total_changes == before
+        assert opened == 4  # One pruning connection and three batches of 32 taxa.
+    finally:
+        app.close()
 
 
 def test_existing_danish_higher_rank_does_not_block_other_languages(tmp_path, monkeypatch, cache):
@@ -159,6 +211,9 @@ def test_existing_danish_higher_rank_does_not_block_other_languages(tmp_path, mo
         row = conn.execute("SELECT vernacular_da, vernacular_json FROM higher_ranks").fetchone()
         assert row["vernacular_da"] == "Eg"
         assert json.loads(row["vernacular_json"]) == {"fr": "Chênes", "de": "Eichen"}
+        changes_before_recheck = conn.total_changes
+        assert builder.enrich_vernacular_names_from_gbif(conn) == 0
+        assert conn.total_changes == changes_before_recheck
     finally:
         conn.close()
 
